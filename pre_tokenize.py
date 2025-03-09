@@ -50,6 +50,10 @@ def process_directory(input_dir, output_dir, tokenizer_name, max_length=2048, st
         truncation=True,
         padding=True,
         max_length=max_length)
+
+    if tokenizer.pad_token_id is None:
+        tokenizer.pad_token = tokenizer.eos_token
+        print(f"Set pad_token to eos_token: {tokenizer.pad_token}")
     
     for filename in os.listdir(input_dir):
         if filename.endswith('.txt'):

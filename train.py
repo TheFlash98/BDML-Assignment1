@@ -1,5 +1,5 @@
 from transformers import AutoModelForCausalLM, AutoTokenizer, Trainer, TrainingArguments, BitsAndBytesConfig
-from peft import get_peft_model, LoraConfig, TaskType
+from peft import get_peft_model, LoraConfig, TaskType, prepare_model_for_kbit_training
 from dataset import ClimateDataset
 from transformers import DataCollatorWithPadding
 import torch
@@ -48,7 +48,7 @@ def main(args):
             bnb_4bit_use_double_quant=True,
         )
         base_model = AutoModelForCausalLM.from_pretrained(model_name, quantization_config=quantization_config)
-        
+        prepare_model_for_kbit_training(base_model, use_gradient_checkpointing = args.gradient_checkpointing)
         if args.gradient_checkpointing:
             base_model.gradient_checkpointing_enable()
         
@@ -66,7 +66,7 @@ def main(args):
         base_model = AutoModelForCausalLM.from_pretrained(model_name)
         
         if args.gradient_checkpointing:
-            model.gradient_checkpointing_enable()
+            base_model.gradient_checkpointing_enable()
         
         lora_config = LoraConfig(
             task_type=TaskType.CAUSAL_LM,
