@@ -1,6 +1,7 @@
 import os
 import json
 from transformers import AutoTokenizer
+import argparse
 
 def tokenize_and_chunk(text, tokenizer, max_length=2048, stride=512):
     """
@@ -50,7 +51,7 @@ def process_directory(input_dir, output_dir, tokenizer_name, max_length=2048, st
         padding=True,
         max_length=max_length)
     
-    for filename in os.listdir(input_dir)[:10]:
+    for filename in os.listdir(input_dir):
         if filename.endswith('.txt'):
             print("Tokenizing", filename)
             file_path = os.path.join(input_dir, filename)
@@ -71,10 +72,18 @@ def process_directory(input_dir, output_dir, tokenizer_name, max_length=2048, st
                     
 if __name__ == "__main__":
     # Directory containing your .txt files of research papers
-    input_dir = "climate_text_dataset_processed/eval"
+    parser = argparse.ArgumentParser(description="Tokenize and chunk text files.")
+    parser.add_argument("--input_dir", type=str, required=True, help="Directory containing .txt files.")
+    parser.add_argument("--output_dir", type=str, required=True, help="Directory to save tokenized JSONL files.")
+
     
-    # Output JSONL file with pre-tokenized examples
-    output_file = "/scratch/sk12184/climate_text_dataset_tokenized/eval"
+    args = parser.parse_args()
+    
+    input_dir = args.input_dir
+    output_dir = args.output_dir
+    tokenizer_name = args.tokenizer_name
+    max_length = args.max_length
+    stride = args.stride
     
     # Provide the path or model id for your LLaMA tokenizer
     tokenizer_name = "/scratch/sk12184/llama3.2-3B-HF/"  # e.g., "huggingface/llama-7b" if available
@@ -85,5 +94,5 @@ if __name__ == "__main__":
     # Stride for overlapping chunks (helps with context preservation)
     stride = 512
     
-    process_directory(input_dir, output_file, tokenizer_name, max_length, stride)
-    print("Tokenization complete. Data saved to:", output_file)
+    process_directory(input_dir, output_dir, tokenizer_name, max_length, stride)
+    print("Tokenization complete. Data saved to:", output_dir)

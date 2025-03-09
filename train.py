@@ -50,7 +50,7 @@ def main(args):
         base_model = AutoModelForCausalLM.from_pretrained(model_name, quantization_config=quantization_config)
         
         if args.gradient_checkpointing:
-            model.gradient_checkpointing_enable()
+            base_model.gradient_checkpointing_enable()
         
         lora_config = LoraConfig(
             r=8,
