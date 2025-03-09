@@ -1,7 +1,7 @@
 from transformers import AutoModelForCausalLM, AutoTokenizer, Trainer, TrainingArguments, BitsAndBytesConfig
 from peft import get_peft_model, LoraConfig, TaskType
 from dataset import ClimateDataset
-# from transformers import DataCollatorForLanguageModeling
+from transformers import DataCollatorWithPadding
 import torch
 import argparse
 from datasets import load_dataset
@@ -26,13 +26,16 @@ def main(args):
     tokenizer = AutoTokenizer.from_pretrained(
         model_name,
         trust_remote_code=True,
-        padding_side="right"
+        padding_side="right",
+        truncation=True,
+        padding=True,
+        max_length=1730,
     )
 
-    # data_collator = DataCollatorForLanguageModeling(
-    #     tokenizer=tokenizer,
-    #     mlm=False  # Use CLM (Causal Language Modeling) not MLM
-    # )
+    data_collator = DataCollatorWithPadding(
+        tokenizer=tokenizer,
+        padding=True,  # Ensure padding is enabled
+    )
 
     if tokenizer.pad_token_id is None:
         tokenizer.pad_token = tokenizer.eos_token
@@ -41,7 +44,7 @@ def main(args):
     if args.fine_tuning_type == "qlora":
         quantization_config = BitsAndBytesConfig(
             load_in_4bit=True,
-            bnb_4bit_quant_type=torch.float16,
+            bnb_4bit_quant_type="fp16",
             bnb_4bit_use_double_quant=True,
         )
         base_model = AutoModelForCausalLM.from_pretrained(model_name, quantization_config=quantization_config)
@@ -90,6 +93,7 @@ def main(args):
         args=training_args,
         train_dataset=train_dataset,
         eval_dataset=eval_dataset,
+        data_collator=data_collator
     )
     
     trainer.train()

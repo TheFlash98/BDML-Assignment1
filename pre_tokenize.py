@@ -24,6 +24,8 @@ def tokenize_and_chunk(text, tokenizer, max_length=2048, stride=512):
         chunk = tokenized[i: i + max_length]
         if len(chunk) < 10:  # Skip very short chunks
             continue
+        if len(chunk) < max_length:
+            chunk += [tokenizer.pad_token_id] * (max_length - len(chunk))
         chunks.append(chunk)
     return chunks
 
@@ -40,7 +42,13 @@ def process_directory(input_dir, output_dir, tokenizer_name, max_length=2048, st
         stride (int): Overlap between chunks.
     """
     # Initialize the tokenizer (make sure it matches your LLaMA model)
-    tokenizer = AutoTokenizer.from_pretrained(tokenizer_name)
+    tokenizer = AutoTokenizer.from_pretrained(
+        tokenizer_name,
+        trust_remote_code=True,
+        padding_side="right",
+        truncation=True,
+        padding=True,
+        max_length=max_length)
     
     for filename in os.listdir(input_dir)[:10]:
         if filename.endswith('.txt'):
@@ -72,7 +80,7 @@ if __name__ == "__main__":
     tokenizer_name = "/scratch/sk12184/llama3.2-3B-HF/"  # e.g., "huggingface/llama-7b" if available
     
     # Maximum tokens per input (typically 2048 for LLaMA, adjust as needed)
-    max_length = 2048
+    max_length = 1730
     
     # Stride for overlapping chunks (helps with context preservation)
     stride = 512
