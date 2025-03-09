@@ -6,10 +6,10 @@ import argparse
 from datasets import load_dataset
 
 def main(args):
-    model_name = "/scratch/BDML25SP/Llama3.2-3B"
+    model_name = "/scratch/sk12184/llama3.2-3B-HF"
     
-    train_dataset = ClimateDataset(data_root_path="climate_text_dataset_processed", split="train")
-    eval_dataset = ClimateDataset(data_root_path="climate_text_dataset_processed", split="eval")
+    train_dataset = ClimateDataset(data_root_path="/scratch/sk12184/climate_text_dataset_tokenized", split="train")
+    eval_dataset = ClimateDataset(data_root_path="/scratch/sk12184/climate_text_dataset_tokenized", split="eval")
     
     # train_dataset = load_dataset("imdb", split="train")
     # eval_dataset = load_dataset("imdb", split="test")
@@ -89,7 +89,7 @@ def main(args):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Train a model with LoRA")
-    parser.add_argument("--output_dir", type=str, default="output", help="Output directory")
+    parser.add_argument("--output_dir", type=str, default="/scratch/sk12184/output", help="Output directory")
     parser.add_argument("--num_train_epochs", type=int, default=3, help="Number of training epochs")
     parser.add_argument("--use_fp16", action="store_true", help="Use fp16")
     parser.add_argument("--use_bf16", action="store_true", help="Use bf16")
