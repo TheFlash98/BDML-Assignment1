@@ -1,0 +1,365 @@
+Deep Learning for Rapid Landslide Detection using
+Synthetic Aperture Radar (SAR) Datacubes
+Vanessa Boehm
+University of California Berkeley
+United StatesWei Ji Leong
+The Ohio State University
+United States
+Ragini Bal Mahesh
+German Aerospace Center DLR
+GermanyIoannis Prapas
+University of Valencia, Spain
+National Observatory of Athens, Greece
+Edoardo Nemni
+United Nations Satellite Centre
+SwitzerlandFreddie Kalaitzis
+University of Oxford
+United KingdomSiddha Ganju
+NVIDIA
+United States
+Raul Ramos-Pollan
+Universidad de Antioquia
+Colombia
+Abstract
+With climate change predicted to increase the likelihood of landslide events, there
+is a growing need for rapid landslide detection technologies that help inform
+emergency responses. Synthetic Aperture Radar (SAR) is a remote sensing tech-
+nique that can provide measurements of affected areas independent of weather or
+lighting conditions. Usage of SAR, however, is hindered by domain knowledge
+that is necessary for the pre-processing steps and its interpretation requires ex-
+pert knowledge. We provide simpliﬁed, pre-processed, machine-learning ready
+SAR datacubes for four globally located landslide events obtained from several
+Sentinel-1 satellite passes before and after a landslide triggering event together
+with segmentation maps of the landslides. From this dataset, using the Hokkaido,
+Japan datacube, we study the feasibility of SAR-based landslide detection with
+supervised deep learning (DL). Our results demonstrate that DL models can be used
+to detect landslides from SAR data, achieving an Area under the Precision-Recall
+curve exceeding 0.7. We ﬁnd that additional satellite visits enhance detection
+performance, but that early detection is possible when SAR data is combined
+with terrain information from a digital elevation model. This can be especially
+useful for time-critical emergency interventions. Code is made publicly available
+athttps://github.com/iprapas/landslide-sar-unet .
+1 Introduction
+According to the United Nations Ofﬁce for Disaster Risk Reduction, landslides have affected 4.8
+million people and caused 18,414 deaths between 1998-2017 [ 1]. Rising temperatures and climate
+Authors contributed equally.
+Tackling Climate Change with Machine Learning workshop at NeurIPS 2022.arXiv:2211.02869v1  [eess.SP]  5 Nov 2022change are projected to worsen this situation [ 2,3] with the increase of sustained droughts and intense
+rainfall events [ 4,5,6]. Given these predictions, there is a growing need for timely and accurate
+landslide assessment methods that can inform decision makers and emergency responders. In the
+aftermath of a landslide, optical satellite imagery is commonly used to map the extent of the event.
+The fact that optical data is is often hindered by clouds and limited to day time observations, motivates
+the study of weather independent Synthetic Aperture Radar (SAR) as a monitoring technique.
+DL algorithms for computer vision can be used for SAR analysis if SAR data is represented as images
+(or georeferenced data arrays) [ 7]. This has been exploited for multiple use cases such as the detection
+of volcanic activity [ 8], ﬂoods [ 9], and landslides[ 10]. The landslide change detection with DL can
+be performed in two ways: object-level [ 11] and pixel-level detection [ 10]. As per the authors’ best
+knowledge [ 10,11] are one of the ﬁrst studies in landslide mapping using DL and SAR images where
+bi- and tri-temporal images have been used. Usage of multi-temporal SAR polarization modes has
+been demonstrated with traditional approaches, such as thresholding [ 12], similar conclusion was
+reported in a DL study [ 13]. To achieve good accuracy, these methods require longer time series of
+SAR data (up to months after the event), which are unavailable in an emergency scenario.
+The development of DL algorithms for SAR analysis, however, is still hindered by its complex
+characteristics and pre-procesisng requirements. To help overcome this barrier, we publicly release
+curated DL-ready datasets [ 14] that includes SAR intensity and interferometry data before and after
+disaster events that triggered landslides. Using part of this dataset, we further develop a supervised
+DL algorithm for landslide detection and demonstrate the feasibility of rapid detection using only
+one satellite pass, if SAR data is combined with terrain information.
+2 Data
+We produce analysis-ready datacubes [ 14] with multiple layers of SAR time-series data and auxiliary
+geographic information for multiple landslide events. To this end, we develop a data pipeline that
+processes SAR intensity and interferometric products from multiple sources and compile them
+together with a Digital Elevation Model (DEM) and DEM-derived products into a format that can be
+fed into DL models (see Fig. 1).
+VV before
+ VV after
+ VH before
+ VH after
+ Elevation
+ Aspect
+ Slope
+ Curvature
+ Landslides
+Figure 1: Sample data used to train the DL model. In each of panels 1-8, we show one channel of
+the input data, in the last panel we show the target landslide mask. 1-4: Polarized Synthetic Aperture
+Radar intensity images (VV and VH) from before and after the landslide trigger event; 4-8: Digital
+Elevation Model (DEM, elevation) and DEM-derived products (aspect, slope, curvature).
+In this study, we focus our machine learning experiments on the datacube created for earthquake-
+triggered landslides over Hokkaid ¯o, Japan in 2017 (Fig 2). Additional datacubes are available for
+landslide events over Mt Talakmau, Indonesia (2022 earthquake), Kaik ¯oura, New Zealand (2016
+earthquake) and Puerto Rico (2017 Hurricane) (see Appendix A for more details on datacube creation).
+3 Methodology
+3.1 Experimental setup
+The machine learning pipeline is set up to solve a segmentation task (Fig. 3). We divide the Hokkaido
+datacube into data chips of size 128x128 pixels (each pixel is 10m 10min spatial resolution). Since
+the dataset is imbalanced, we reduce negative examples by keeping only data chips with one or more
+landslide pixels, similar to Nava et al. [11]. These chips are split into training, and test sets with 216,
+and 61 chips respectively. Model performance is measured using the Area Under the Precision Recall
+Curve (AUPRC), as it is appropriate for imbalanced datasets. About 9% of pixels in the dataset are
+labeled as landslides, which makes the baseline AUPRC 0.09.
+2a) Hokkaido, Japan
+ b) VV_20180901T082647
+ c) VV_20181007T082648
+ d) Landslide labels
+ e) Digital Elevation ModelFigure 2: Location map of the Hokkaido, Japan study area (a, blue box) and data layers covering
+spatial area of about 236 km2(4398x5382 pixels). Two VV-channel SAR images before (b) and
+after (c) the earthquake are shown, together with the landslides labels (d) and SRTM DEM (e). The
+actual datacube covers a temporal period from 2018/07 to 2019/11, with SAR images in ascending
+mode only, consisting of 18 dual polarized SAR (VV and VH) timesteps. Although not used in this
+study, the datacube also contains InSAR channels (coherence and interferometry) between 16 pairs
+of consecutive acquisitions.
+A U-Net [ 15] model with a ResNet-50 encoder (48,982,754 trainable parameters) and varying number
+of input channels is trained for 100 epochs using an Adam optimizer (weight decay=0.0001) and a
+ReduceLROnPlateau2learning rate schedule (factor=0.1, patience=10, threshold=0.0001) with an
+initial learning rate of 0.01. We use a standard cross-entropy loss to compare the model outputs to the
+landslide segmentation masks. VV and VH channels are log-transformed and standardized before
+serving as input.
+SAR
+Datacube
+x pixelsy pixels
+z channels
+POLSAR+INSAR+DEM+METADATATensor chips
+Channels: 2 to 8
+Height: 128
+Width: 128Extract chips
+U-Net
+(ResNet-50)
+modelDataLoaderPredicted
+landslide map
+Inference
+Figure 3: Machine Learning pipeline from the Synthetic Aperture Radar (SAR) datacube (left) to
+landslide map predictions (right). SAR time-series data and Digital Elevation Model (DEM) products
+are ﬁrst extracted into 128x128 chips. Next, batches of chips are fed via a DataLoader into the U-Net
+model with a ResNet-50 encoder. The trained U-Net model is then used to do inference and produce
+landslide segmentation maps.
+We test different combinations of inputs channels (shown in Figure 1) to identify the most informative
+features and their combinations for the landslide detection task. Along with SAR polarimetry data
+before and after the event we use as input DEM-derived features (elevation, slope, aspect and
+curvature). When using multiple timesteps of SAR inputs, we take the pixel-wise mean value. This
+means that using a combination of VV/VH polarimetry bands results in 4 input channels (VV before,
+VH before, VV before, VV after). We test how many timesteps/satellite passes before and after the
+event need to be aggregated to obtain reliable landslide segmentation predictions.
+We run experiments with the following inputs:
+•SAR (VV) : Only VV band before and after the earthquake (total 2 input channels).
+•SAR (VH) : Only VH band before and after the earthquake (total 2 input channels).
+•SAR (VV ,VH) : Only SAR bands (VV and VH) are used before and after the earthquake (total
+4 input channels).
+2https://pytorch.org/docs/stable/generated/torch.optim.lr_scheduler.
+ReduceLROnPlateau.html
+3•SAR+DEM : SAR bands (VV and VH) before and after the earthquake, plus DEM-derived
+data (elevation, slope, aspect, curvature) are used (total 8 input channels).
+For each input conﬁguration, we train using 1, 2, 3 or 4 time steps (average pixel-wise into 1 channel)
+before and after the event. Notice that regardless the number of time steps we use, the number of
+SAR channels remains constant as we take the pixel-wise mean value across all time steps.
+All models were trained on 1 NVIDIA Tesla V100 GPUs on the Google Cloud Platform. Training
+one model requires approximately 0.25 GPU hours.
+4 Results
+Results of our input ablation study are shown in Fig 4. We ﬁnd that increasing the number of time
+steps increases the performance of the model for all input conﬁgurations. VV is more informative
+than VH for landslide detection in Hokkaido, and the combination of VV and VH achieves the best
+results. Combining the SAR inputs with DEM-derived products, we can achieve better AUPRC when
+only 1 or 2 satellite overpasses are available. This shows that the addition of DEM-derived data
+can facilitate early detection in crisis-management scenarios. There is no evident gain from adding
+DEM-derived channels when more than 2 SAR timesteps are available.
+1 2 3 4
+Number of Timesteps0.500.550.600.650.700.75AUPRC
+SAR (VV,VH)
+SAR + DEM
+SAR (VV)
+SAR (VH)
+Figure 4: Test Area under the Precision-Recall Curve (AUPRC) metrics for different experiments.
+The x-axis shows the number of SAR timesteps used, while the y-axis shows the AUPRC metric.
+The four lines represent experiments using various combinations of Synthetic Aperture Radar (SAR)
+and Digital Elevation Model (DEM) inputs, from bottom to top (red: VH channel only; green: VV
+channel only; orange: SAR VV+VH channels + DEM; blue: SAR VV+VH channels with no DEM).
+It is important to note that a random model achieves a baseline AUPRC of 0.09 and a model
+trained with just the DEM and DEM-derived features achieves a maximum AUPRC of 0.17. This
+demonstrates the value added by SAR data and the complementarity of SAR and DEM input channels.
+5 Conclusion
+Rapid and automated disaster assessment is becoming more crucial than ever as climate change
+increases both the severity and frequency of weather-induced disasters. Here, we have demonstrated
+the feasibility of using deep learning to detect landslides from complex Synthetic Aperture Radar
+data and measure the trade offs of time series data for rapid response scenarios. Both the scalability
+of deep learning methods and the fact that SAR measurements are not obstructed by weather or night
+time conditions have the potential to signiﬁcantly shorten assessment times.
+To further foster research in this direction, and help bridge the barriers for computer vision specialists
+to work with SAR data, we make public the analysis-ready data cubes for landslide detection [14].
+Future work for this use case could include measuring the contribution on SAR interferometry,
+self-supervised pretraining on a subset of the datacube and understanding how this model could
+be applied to other regions of the world with different terrain, vegetation coverage and geological
+characteristics.
+4Figure 5: Examples of predicted landslide maps (top row) versus groundtruth target maps (bottom
+row) from the test set. Background (no landslide) areas in purple, landslide affected areas in yellow.
+Acknowledgments and Disclosure of Funding
+This work has been enabled by the Frontier Development Lab Program (FDL). FDL is a collaboration
+between SETI Institute and Trillium Technologies Inc., in partnership with Department of Energy
+(DOE) , National Aeronautics and Space Administration (NASA), and U.S. Geological Survey
+(USGS). The material is based upon work supported by NASA under award No(s) NNX14AT27A.
+Any opinions, ﬁndings, and conclusions or recommendations expressed in this material are those
+of the authors and do not necessarily reﬂect the views of the National Aeronautics and Space
+Administration.
+We thank Aaron Pina, our contact from NASA who helped shape this research. He also facilitated
+communication with experts from NASA and ASF, namely Gerald Bawden (NASA), Eric Fielding
+(NASA), Alex Handwerger (NASA), Erika Podest (NASA), Franz Meyer (ASF), Forrest Williams
+(ASF). We also thank our FDL reviewers Brad Neuberg (Planet), Ronny Hänsch (DLR), Erika
+Podest (NASA), Ioannis Papoutsis (National Observatory of Athens) who provided great feedback on
+speciﬁcities of ML for SAR.
+References
+[1]Pascaline Wallemacq, Regina Below, and Denis McClean. Economic losses, poverty & disasters:
+1998-2017 . United Nations Ofﬁce for Disaster Risk Reduction, 2018.
+[2]Stefano Luigi Gariano and Fausto Guzzetti. Landslides in a changing climate. Earth-Science
+Reviews , 162:227–252, November 2016. ISSN 00128252. doi: 10.1016/j.earscirev.2016.08.011.
+URL https://linkinghub.elsevier.com/retrieve/pii/S0012825216302458 .
+[3]Christian Huggel, Nikolay Khabarov, Oliver Korup, and Michael Obersteiner. Physical
+impacts of climate change on landslide occurrence and related adaptation. In John J.
+Clague and Douglas Stead, editors, Landslides , pages 121–133. Cambridge University
+Press, 1 edition, August 2012. ISBN 978-0-511-74036-7 978-1-107-00206-7. doi:
+10.1017/CBO9780511740367.012. URL https://www.cambridge.org/core/product/
+identifier/9780511740367%23c00206-11-1/type/book_part .
+[4]Myles R. Allen and William J. Ingram. Constraints on future changes in climate and the
+hydrologic cycle. Nature , 419(6903):228–232, September 2002. ISSN 0028-0836, 1476-4687.
+doi: 10.1038/nature01092. URL https://www.nature.com/articles/nature01092 .
+[5]William Ingram. Increases all round. Nature Climate Change , 6(5):443–444, May 2016.
+ISSN 1758-678X, 1758-6798. doi: 10.1038/nclimate2966. URL http://www.nature.com/
+articles/nclimate2966 .
+[6]Kieran T. Bhatia, Gabriel A. Vecchi, Thomas R. Knutson, Hiroyuki Murakami, James Kossin,
+Keith W. Dixon, and Carolyn E. Whitlock. Recent increases in tropical cyclone intensiﬁcation
+5rates. Nature Communications , 10(1):635, December 2019. ISSN 2041-1723. doi: 10.1038/
+s41467-019-08471-z. URL http://www.nature.com/articles/s41467-019-08471-z .
+[7]Xiao Xiang Zhu, Sina Montazeri, Mohsin Ali, Yuansheng Hua, Yuanyuan Wang, Lichao Mou,
+Yilei Shi, Feng Xu, and Richard Bamler. Deep Learning Meets SAR, January 2021. URL
+http://arxiv.org/abs/2006.10027 . Number: arXiv:2006.10027 arXiv:2006.10027 [cs,
+eess, stat].
+[8]Nikolaos Ioannis Bountos, Dimitrios Michail, and Ioannis Papoutsis. Learning from synthetic
+insar with vision transformers: The case of volcanic unrest detection. IEEE Transactions on
+Geoscience and Remote Sensing , 60:1–12, 2022. doi: 10.1109/TGRS.2022.3180891.
+[9]Sayak Paul and Siddha Ganju. Flood Segmentation on Sentinel-1 SAR Imagery with
+Semi-Supervised Learning, October 2021. URL http://arxiv.org/abs/2107.08369 .
+arXiv:2107.08369 [cs].
+[10] Lorenzo Nava, Kushanav Bhuyan, Sansar Raj Meena, Oriol Monserrat, and Filippo Catani.
+Rapid Mapping of Landslides on SAR Data by Attention U-Net. Remote Sensing , 14(6):1449,
+March 2022. ISSN 2072-4292. doi: 10.3390/rs14061449. URL https://www.mdpi.com/
+2072-4292/14/6/1449 .
+[11] Lorenzo Nava, Oriol Monserrat, and Filippo Catani. Improving Landslide Detection on SAR
+Data through Deep Learning. IEEE Geoscience and Remote Sensing Letters , 19:1–5, 2021.
+ISSN 1545-598X, 1558-0571. doi: 10.1109/LGRS.2021.3127073. URL http://arxiv.org/
+abs/2105.00782 . arXiv:2105.00782 [cs].
+[12] Alexander L. Handwerger, Mong-Han Huang, Shannan Y . Jones, Pukar Amatya, Hannah R.
+Kerner, and Dalia B. Kirschbaum. Generating landslide density heatmaps for rapid detection
+using open-access satellite radar data in Google Earth Engine. Natural Hazards and Earth Sys-
+tem Sciences , 22(3):753–773, March 2022. ISSN 1561-8633. doi: 10.5194/nhess-22-753-2022.
+URL https://nhess.copernicus.org/articles/22/753/2022/ . Publisher: Coperni-
+cus GmbH.
+[13] Marja Machielse. Landslide detection and mapping on Synthetic Aperture Radar amplitude
+satellite imagery . Delft University of Technology, Delft, Netherlands, 2021. URL http:
+//resolver.tudelft.nl/uuid:0994aadd-f5ae-43d3-8d82-3377e5c97b37 .
+[14] Vanessa Boehm, Wei Ji Leong, Ragini Bal Mahesh, Ioannis Prapas, Raul Ramos-Pollan, Siddha
+Ganju, Freddie Kalaitzis, and Edoardo Nemni. Datacubes for landslide detection with sar
+imagery, October 2022. URL https://doi.org/10.5281/zenodo.7248056 .
+[15] Olaf Ronneberger, Philipp Fischer, and Thomas Brox. U-Net: Convolutional Networks for
+Biomedical Image Segmentation, May 2015. URL http://arxiv.org/abs/1505.04597 .
+arXiv:1505.04597 [cs].
+[16] John L. Dwyer, David P. Roy, Brian Sauer, Calli B. Jenkerson, Hankui K. Zhang, and Leo
+Lymburner. Analysis Ready Data: Enabling Analysis of the Landsat Archive. Remote Sensing ,
+10(9):1363, August 2018. ISSN 2072-4292. doi: 10.3390/rs10091363. URL https://www.
+mdpi.com/2072-4292/10/9/1363 .
+[17] Charles Stern, Ryan Abernathey, Joseph Hamman, Rachel Wegener, Chiara Lepore, Sean
+Harkins, and Alexander Merose. Pangeo Forge: Crowdsourcing Analysis-Ready, Cloud Opti-
+mized Data Production. Frontiers in Climate , 3:782909, February 2022. ISSN 2624-9553. doi:
+10.3389/fclim.2021.782909. URL https://www.frontiersin.org/articles/10.3389/
+fclim.2021.782909/full .
+[18] Stephan Hoyer and Joe Hamman. xarray: N-D labeled Arrays and Datasets in Python. Journal
+of Open Research Software , 5(1):10, April 2017. ISSN 2049-9647. doi: 10.5334/jors.148. URL
+https://openresearchsoftware.metajnl.com/article/10.5334/jors.148/ .
+[19] Paul A. Rosen, Eric Gurrola, Gian Franco Sacco, and Howard Zebker. The InSAR scientiﬁc
+computing environment. In EUSAR 2012; 9th European Conference on Synthetic Aperture
+Radar , pages 730–733, April 2012. URL https://ieeexplore.ieee.org/abstract/
+document/6217174 .
+6[20] Paul A. Rosen, Eric M. Gurrola, Piyush Agram, Joshua Cohen, Marco Lavalle, Bryan V .
+Riel, Heresh Fattahi, Michael A.G. Aivazis, Mark Simons, and Sean M. Buckley. The InSAR
+Scientiﬁc Computing Environment 3.0: A Flexible Framework for NISAR Operational and User-
+Led Science Processing. In IGARSS 2018 - 2018 IEEE International Geoscience and Remote
+Sensing Symposium , pages 4897–4900, Valencia, July 2018. IEEE. ISBN 978-1-5386-7150-4.
+doi: 10.1109/IGARSS.2018.8517504. URL https://ieeexplore.ieee.org/document/
+8517504/ .
+[21] Bernhard Rabus, Michael Eineder, Achim Roth, and Richard Bamler. The shuttle radar to-
+pography mission—a new class of digital elevation models acquired by spaceborne radar.
+ISPRS Journal of Photogrammetry and Remote Sensing , 57(4):241–262, February 2003. ISSN
+09242716. doi: 10.1016/S0924-2716(02)00124-7. URL https://linkinghub.elsevier.
+com/retrieve/pii/S0924271602001247 .
+[22] William Schulz and K. Stephen Hughes. Geographic Information System Layer of a Map
+Depicting Susceptibility to Landslides Triggered by Intense Rainfall, Puerto Rico, 2021. URL
+https://www.sciencebase.gov/catalog/item/61087009d34ef8d70565c154 . Type:
+dataset.
+[23] Chris Massey, Dougal Townsend, Brenda Rosser, Regine Morgenstern, Katie
+Jones, Biljana Lukovic, and Jonathan Davidson. Version 2.0 of the landslide in-
+ventory for the Mw 7.8 14 November 2016, Kaik ¯oura Earthquake, 2021. URL
+https://www.designsafe-ci.org/data/browser/public/designsafe.storage.
+published/PRJ-2765/#details-6410851737832919531-242ac118-0001-012 . Type:
+dataset.
+[24] Shuai Zhang, Ran Li, Fawu Wang, and Akinori Iio. Characteristics of landslides triggered by the
+2018 Hokkaido Eastern Iburi Earthquake, North Japan. Zenodo , February 2019. doi: 10.5281/
+ZENODO.2577300. URL https://zenodo.org/record/2577300 . Publisher: Zenodo.
+[25] UNOSAT. Landslide analysis in Mount Talakmau in Pasaman & Pasaman Barat districts,
+Indonesia as of 04 March 2022, March 2022. URL https://www.unitar.org/maps/map/
+3498 .
+[26] Alan D. Snow, David Brochart, Martin Raspaud, Ray Bell, RichardScottOZ, Taher Chegini,
+Alessandro Amici, Rémi Braun, Andrew Annex, David Hoese, Fred Bunt, GBallesteros, Joe
+Hamman, Markus Zehner, Mauricio Cordeiro, Scott Henderson, Seth Miller, The Gitter Badger,
+Tom Augspurger, Apiwat-Chantawibul, and Pmallas. corteva/rioxarray: 0.11.1 Release, April
+2022. URL https://zenodo.org/record/6478182 .
+[27] Alistair Miles, Jakirkham, Matthias Bussonnier, Josh Moore, Andrew Fulton, James Bourbeau,
+Tarik Onalan, Joe Hamman, Dimitri Papadopoulos Orfanos, Zain Patel, Gregory Lee, Matthew
+Rocklin, Ryan Abernathey, Davis Bennett, Elliott Sales De Andrade, Martin Durant, Vincent
+Schut, Raphael Dussin, Shivank Chaudhary, Chris Barnes, Juan Nunez-Iglesias, Ben Williams,
+Boaz Mohar, Charles Noyes, Ray Bell, Hailiangzhang, Shikharsg, Aleksandar Jelenak, and
+Anderson Banihirwe. zarr-developers/zarr-python, June 2022. URL https://zenodo.org/
+record/6697361 .
+7A Datacube creation
+Earth Observation datacubes are analysis-ready data [ 16,17], an intermediate product ﬂexible enough
+to be used by both remote sensing scientists looking at time-series data on a geographic region, and
+by machine learning experts who can ingest the data as tensors into neural network models.
+Multiple streams of the data processing feed into the datacubes. Given a geographical area of interest
+(AOI) and a time range, we perform a spatiotemporal query to several SAR satellite data providers
+that return a list of raw Sentinel-1 granules matching the search criteria. SAR data is composed of
+amplitude and phase information and we handle them separately in our data pipeline.
+Input: Spatiotemporal Query:
+- Area of Interest
+- Temporal Range
+Single-Look Complex
+Ground Range DetectedOutput: Zarr Datacube
+Intensity (VV, VH) Radiometrically Terrain CorrectedPhase-derived coherence and interferogramTopography (DEM, slope, aspect, etc)Landslide labels (Segmentation maps)Geographic metadata
+x pixelsy pixels
+Figure 6: Datacube containing Synthetic Aperture Radar (SAR) data and other geographic layers.
+For amplitude-based SAR products, we directly obtain Sentinel-1 Radiometrically Terrain Corrected
+(RTC) data hosted on Microsoft Planetary Computer3which has been processed from Ground Range
+Detected (GRD) data. The RTC data is stacked both in the polarimetric channels and time to produce
+an xarray dataset [18] with dimensions (time, y, x), and two polarimetric directions, VV and VH.
+For the phase-based SAR product, we download the Sentinel-1 Single-Look Complex (SLC) product
+from the Alaska Satellite Facility (ASF). SLC data is further processed by using the phase information
+of two consecutive time steps (timepair, with a start and end date) to create interferogram and
+coherence maps with interferometry. SAR interferometry is used to measure the surface deformation
+with differences in phase of two SAR images over a region of interest and coherence is an indicator
+for agreement between the two phases. For these processing step, we used the InSAR Scientiﬁc
+Computing Environment (ISCE, version 2) software package [ 19,20] developed at the NASA Jet
+Propulsion Laboratory, California Institute of Technology. The topsApp program of the software
+is used on the interferometric wide (IW) swath mode SLC products with azimuth looks = 1 and
+range looks = 5 for processing of the interferograms. This includes steps such as computing the
+baseline using orbit ﬁles, co-registration with enhanced spectral diversity, calculating interferograms,
+geocoding. Note that no phase unwrapping is performed here. Thus phase-derived products have
+dimensions (timepair, y, x) and the data variables are ‘interferogram’ and ‘coherence’.
+Besides the Sentinel-1 SAR data, we include two additional geographical datasets in our data pipeline.
+The Shuttle Radar Topography Mission (SRTM) DEM [ 21] is downloaded, and processed to derive
+slope and aspect data layers. Landslide vector data for the multiple regions is obtained from multiple
+sources [ 22,23,24,25]. The vector ﬁles from these sources are rasterized to the same pixel resolution
+and spatial extent as the other raster SAR data.
+Finally, we assemble all the SAR and non-SAR products into a single datacube. The datacube itself
+is initialized from the RTC data with dimensions (timestep, y, x) and data variables VV and VH.
+Next, the DEM and landslide labels are appended as new data variables along the y and x dimensions.
+Then, the phase-derived products are appended, not just along the y and x dimensions, but also along
+a new ‘timepair’ dimension containing the ﬁrst and second dates of the Sentinel-1 scenes used to
+create the interferogram. All of these appended products are geographically reprojected and aligned
+using rioxarray [ 26] if necessary to match the RTC template. The resulting xarray Dataset [ 18] has
+dimensions (timepair, timestep, y, x) and is stored in a cloud-friendly Zarr format [ 27]. The datasets
+can be found in Zenodo [14].
+3https://planetarycomputer.microsoft.com/dataset/sentinel-1-rtc
+8

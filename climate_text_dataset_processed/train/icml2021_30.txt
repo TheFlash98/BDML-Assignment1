@@ -1,0 +1,490 @@
+Power Grid Cascading Failure Mitigation by Reinforcement Learning
+Yongli Zhu* 1
+Abstract
+This paper proposes a cascading failure mitigation
+strategy based on Reinforcement Learning (RL).
+The motivation of the Multi-Stage Cascading Fail-
+ure (MSCF) problem and its connection with the
+challenge of climate change are introduced. The
+bottom-level corrective control of the MCSF prob-
+lem is formulated based on DCOPF (Direct Cur-
+rent Optimal Power Flow). Then, to mitigate the
+MSCF issue by a high-level RL-based strategy,
+physics-informed reward, action, and state are de-
+vised. Besides, both shallow and deep neural net-
+work architectures are tested. Experiments on the
+IEEE 118-bus system by the proposed mitigation
+strategy demonstrate a promising performance in
+reducing system collapses.
+1. Introduction
+Increasing renewable sources (e.g., wind, solar) are inte-
+grated into modern power grids to reduce emissions. How-
+ever, due to the intermittent natures of those renewable
+sources, the original power grid can become fragile, i.e.,
+more easily affected by various risks. Among those risks,
+the cascading failure is one of the most challenging issues
+necessary to be addressed (Sun et al., 2019). A cascading
+failure is deﬁned as a series of consecutive malfunctions of
+physical components (e.g., power transmission lines, power
+substations). A cascading failure is typically caused by an
+unexpected natural disaster such as a hurricane, typhoon, or
+ﬂood. Severe cascading failures can lead to a total system
+collapse (i.e., disintegrated into small energized pieces) or
+even a blackout event (i.e., loss of electricity for the entire
+city or country). To recover the power grid to a healthy state,
+backup generators need to be turned on. The relevance of
+the cascading failure problem to climate change is:
+1) Given the increase in extreme weather events due to
+1ECE Dept., Texas A&M University, College Station,
+USA. Correspondence to: Yongli Zhu <zylpascal@gmail.com,
+yongliz@tamu.edu >.
+“Tackling Climate Change with Machine Learning” Workshop of
+the38thInternational Conference on Machine Learning , July 23,
+2021. Copyright 2021 by the author(s).climate change, having a stable power grid is critical for
+renewable resources integration;
+2) The backup generators are typically fossil-fuel (e.g., coal,
+diesel) based units that emit greenhouse gases.
+Therefore, it is meaningful to develop nuanced strategies to
+mitigate a cascading failure at its early stage with as little
+generation cost as possible.
+The cascading failure mitigation can be regarded as a
+stochastic dynamic programming problem with unknown
+information about the risk of failures. Previous researches
+try to tackle this problem based on either mathematical
+programming methods or heuristic methods. For example,
+bi-level programming is used to mitigate cascading fail-
+ures when energy storages exist (Du & Lu, 2014). In (Han
+et al., 2018), an algorithm based on percolation theory is
+employed for mitigating cascading failures by using UPFC
+(Uniﬁed Power Flow Controller) to redistribute the system
+power ﬂow more evenly. In (Tootaghaj et al., 2018), a re-
+covery plan for load-serving from cascading failures was
+put forward considering the uncertainty of failure locations.
+In (Cordova-Garcia et al., 2018), a cascade control algo-
+rithm using load shedding considering the communication
+network delays for power grids was proposed to reduce the
+failure of power lines. In (Shuvro et al., 2017), By charac-
+terizing the cascading-failure dynamics as a Markov chain
+model, it is found that the impact of human-operator action
+will have a signiﬁcant impact on cascading failures.
+However, some of the above research share the same limita-
+tion: unrealistic assumptions are often made, which yield
+impractical control strategies in terms of time or economic
+cost. Different from communication networks and social
+networks, the power grid is not a pure-mathematical graph ,
+but a physical grid. Its node (called “bus” in power sys-
+tem terminology) and edge (called “branch” in power sys-
+tem terminology) are both physical entities that can not
+be added or removed arbitrarily. On the other hand, most
+power system lines are equipped with automatic protection-
+relay devices, which can trip the line when the line cur-
+rent/power/temperature exceeds certain thresholds in a pre-
+deﬁned time window. Thus, in this paper, the main focus is
+on branch failures rather than node failures.
+Meanwhile, some emerging artiﬁcial intelligence technolo-Power Grid Cascading Failure Mitigation by Reinforcement Learning
+gies, such as reinforcement learning (RL) and deep learning
+(DL), have nourished both the ﬁelds of power systems and
+control theory (Kiumarsi et al., 2018). In (Glavic et al.,
+2017), a holistic literature review is given on the recent
+development of RL applications in the power system area,
+though topics regarding cascading failure are not covered.
+In (Vlachogiannis & Hatziargyriou, 2004), the RL method
+is used for reactive power control. In (Liu et al., 2018), volt-
+age restoration for an islanded microgrid is achieved via a
+distributed RL method. In (Zhu et al., 2018), an application
+for disturbance classiﬁcation is proposed based on image
+embedding and convolutional neural network (CNN). In
+(Yan et al., 2018), deep learning is applied in power con-
+sumption forecasting. However, the application of RL or
+DL for cascading failure study are less reported.
+In this paper, a reinforcement learning approach is designed
+for the mitigation of cascading failures with the following
+contributions:
+•1) Propose and formulate a novel problem called Multi-
+Stage Cascading Failure (MSCF) for the ﬁrst time.
+•2) Present a systematic reinforcement learning frame-
+work to tackle the MSCF problem. Similar to AlphaGo
+(Silver et al., 2016), a “two-player game“ idea is uti-
+lized in this study.
+•3) Unlike some previous study which treats power grid
+purely as a graph model with no or less physical back-
+ground, this paper uses a professional power system
+simulator as the environment in the RL framework to
+better reﬂect actual characteristics of the power system.
+In this way, the learning result is more convincing, and
+the trained mitigation strategy will be more practical.
+The remaining parts of this paper are organized as follows.
+Section 2 proposes an RL-based control framework for the
+mitigation of cascading failures. Section 3 presents the case
+study and results analysis. Finally, conclusions and future
+directions are given in Section 4.
+2. Multi-Stage Cascading Failure Control
+2.1. Multi-Stage Cascading Failure (MSCF) Problem
+Firstly, the following deﬁnitions are given:
+Generation : one event of the cascading failures within one
+stage, e.g., a line tripping (Qi et al., 2015).
+Stage : after an attack (e.g., one line is broken by a natural
+disaster), the grid evolves with a series of potential gener-
+ations (e.g., line tripping events if the line thermal limits
+are reached). At the end of each stage, the power system
+will either 1) reach a new equilibrium point if the ACPF(Alternative Current Power Flow) converges and all branch
+ﬂows are within secure limits or 2) become collapsed.
+In conventional cascading failure analysis, typically only
+one stage is considered (Qi et al., 2017). However, in cer-
+tain situations, succeeding stages might follow shortly. For
+example, a wind storm results in one generation, in which
+certain lines are lost, and the system reaches a new steady
+state. Then, shortly, a new stage is invoked by tripping an
+important line due to the misoperation of human-operator
+or relay protection. As an example, Table 1 and 2 list the
+simulation results of the IEEE 118 system for a two-stage
+MSCF problem in two independent episodes.
+A na¨ıve way to handle this complicated multi-stage scenario
+is to tackle each stage independently by existing method e.g.
+SCOPF (Security Constrained Optimal Power Flow). How-
+ever, merely using SCOPF may not work well due to the
+overlook of the correlations between any two consecutive
+stages. For example, the previous study (Zhu et al., 2014;
+Chen et al., 2007) found that sequentially attacking each line
+one by one can sometimes achieve a more severe effect (i.e.,
+more components loss) than attack multiple lines simultane-
+ously. Thus, the MSCF problem should be considered from
+aholistic perspective.
+2.2. Mimicking the corrective controls by DCOPF
+When a failure event happens, the following DCOPF (Direct
+Current Optimal Power Flow) is adopted (Chen et al., 2019)
+to mimic the bottom-level control measures, i.e., changing
+generator outputs and shedding loads (if necessary).
+min
+pi;pjX
+i2Gcipi+X
+j2Ddj(pj Pdj)
+s.t. F=Ap
+nX
+k=1pk= 0
+Pdjpj0; j 2D
+Pmin
+gipjPmax
+gi; i2G
+ Fmax
+LFlFmax
+L; l2L(1)
+Table 1. Result of Episode-1.
+Stage -1ACPF
+CONVERGEOVER-LIMIT
+LINES
+Generation -1 Y ES 0
+Stage -2ACPF
+CONVERGEOVER-LIMIT
+LINES
+Generation -2 Y ES 0
+Result WINPower Grid Cascading Failure Mitigation by Reinforcement Learning
+Where, nis the total bus number. G,D,Lare respectively
+the generator set, load set and branch set; F=[Fl](l2L)
+represents the branch ﬂow; pi(i2G)is the generation dis-
+patch for the i-th generator; pj(j2D) is the load dispatch
+for the j-th load; p=[pk],k= 1:::nrepresents the (net)
+nodal power injections. Ais a constant matrix to associate
+the (net) nodal power injections with the branch ﬂows. Pdj
+is the normal demand value for the j-th load;ciis the given
+cost coefﬁcient of generation; diis the given cost coefﬁcient
+of load shedding. pi(i2G)andpj(j2D)are the decision
+variables for generators and load respectively.
+2.3. Apply RL for MSCF problem
+To apply RL to a speciﬁc power system problem, the ﬁrst
+step is to map physical quantities of the power grid to com-
+ponents of the RL framework, i.e., reward, action, and state.
+1) Reward design (of each stage)
+ Total generation cost (i.e., the negative objective value
+of DCOPF), if DCOPF converge.
+ 1000, if DCOPF or ACPF diverge.
++1000, an extra reward if system ﬁnally reaches a new
+steady-state at the last stage .
+Those values (1000) are based on by trial-and-error exper-
+iments.
+2) Action design
+If the line ﬂow limit is too low, the DCOPF might not
+converge due to the narrow feasible region. On the contrary,
+if the line ﬂow limit is too high, the feasible region also
+becomes large. However, the obtained optimal solution
+might lead to an operation point with tighter power ﬂow
+status on each branch, resulting in cascading failures at
+the next stage of the MSCF problem. Thus, the “branch
+ﬂow limit”Fmax
+l in the previous DCOPF formulation (2) is
+adopted as the action in the RL learning framework.
+3) State design
+Table 2. Result of Episode-2.
+Stage -1ACPF
+CONVERGEOVER-LIMIT
+LINES
+Generation -1 Y ES 2
+Generation -2 Y ES 0
+Stage -2ACPF
+CONVERGEOVER-LIMIT
+LINES
+Generation -1 Y ES 4
+Generation -2 Y ES 2
+Generation -3 Y ES 2
+Generation -4 Y ES 3
+Generation -5 Y ES 10
+Generation -6 Y ES 20
+Generation -7 N O –
+Result LOSESeveral quantities of each bus and the power ﬂow of
+each branch are chosen and packed as the state, i.e.,
+state= [branchloadingstatus;V 1;1;P1;Q1;:::;V n;
+n;Pn;Qn], where,branchloadingstatus are the per-
+centage values calculated by dividing each branch ﬂow by its
+loading limit for all the branches; Vi;i;Pi;Qi(i= 1:::n)
+are respectively the voltage magnitude, voltage angle, active
+power injection, and reactive power injection of each bus.
+4) Environment
+In this study, the learning environment in the RL frame-
+work is just the power grid itself. Thus, a co-simulation
+platform based on DIgSILENT and MATLAB is imple-
+mented. A professional tool DIgSILENT (DIg) is adopted
+as the simulator ( environment ) to provide all needed infor-
+mation ( states andrewards ) to the RL network for training.
+Besides, the concept of stepwithin one independent episode
+corresponds to one stage in the MSCF problem.
+Finally, the overall workﬂow of the power grid simulation
+for the MSCF study is shown in Figure 1.
+ Pick all 
+(islanded ) grids
+Converge ?
+Initial Grid 
+Pick one line to 
+break based on 
+certain rule
+Delete that line  
+and update the 
+power grid
+Run ACPF
+Check line flow 
+status
+Any line 
+overflow ?
+Break 
+such 
+line(s)
+Max . Stage 
+reached ?Y
+Run DC -OPFNN
+Current Stage 
+finshed
+ Generation  
+ Stage NY
+Y
+Converge ?Y
+Terminal State 
+(Win)
+Terminal State 
+(Lose )N
+Max . Episode 
+reached ?N
+ END Y
+Figure 1. The overall workﬂow of grid simulation for MSCF study.
+3. Case Study
+In this section, a modiﬁed IEEE 118-bus system is adopted
+as the test-bed for the proposed MSCF mitigation strategy.
+The maximum stage number is set to 3. It contains 137
+buses and 177 lines (parallel lines included), 19 generators,Power Grid Cascading Failure Mitigation by Reinforcement Learning
+and 91 loads. The system topology is shown in Figure 2,
+where the red dot stands for generators.
+109 8
+5
+3
+1
+2
+1171276114
+14151316173026 25
+27 28
+29 115
+114
+32
+31
+113
+18
+1934
+36
+35
+3337
+39404142434445464847
+4950 51
+52
+535758
+56596062
+6164
+63666765
+387098
+69 68
+20212223
+2471747273
+7511876
+7782
+7884
+1167980968395
+97
+99
+81
+111112110
+109 108105103104106
+1071001011029492938586
+87 88
+89
+9190
+1
+23 4
+5
+6
+7
+891011
+12131415
+16
+17
+18
+19
+Figure 2. The topology of IEEE 118-bus power systems.
+3.1. Shallow Neural Network
+The architecture for the shallow neural network is that:
+one input layer, one output player, and one hidden layer
+with 10 neuron units. Its input is a 1-D vector with 753
+(=1374+177+28) elements; the output is the action in the
+RL framework (i.e., the line ﬂow limit, c.f. Section 3).
+Since both the hidden-layer dimension and output-layer
+dimension of the shallow network are one, the SARSA (On-
+policy TD) method is employed. During the training, the
+action is bounded by the range [0.80, 1.25].
+3.2. Deep Neural Network
+1) Feature engineering
+To create an image-like input for the convolutional layer,
+the length of the original input (753) is extended to 784 =
+2828 by appending extra zeros.
+2) Network structure Typically, a deeper network and more
+layers might lead to over-ﬁtting in practice. Thus, the net-
+work structure used in this paper is shown in Figure 3.
+3) The Q-learning (Off-policy TD) method is applied on it.
+The output of the 2nd-last layer (dimension 1 10) will be
+used in both  greedy policy andgreedy policy. The last-
+layer output (dimension 1 1) will be ﬁnally used to update
+theQ-network parameters. The candidate set of action is
+[0.8, 0.85, 0.9, 0.95, 1.0, 1.05, 1.1, 1.15, 1.20, 1.25] 2R10.
+3.3. Experiments and Results
+For both networks, the maximum episode number is 10000,
+the learning rate is 10 4, and the discount rate is 0.7.
+The learning performance is shown in Table 3. The plot
+of moving average reward (window size = 1000) for deep
+network case is shown in Figure 4. It can be observed that
+8@28x2816@14x1432@7x7
+1x10
+1x1Figure 3. The network structure used in Deep RL.
+Table 3. Learning Performance.
+PERFORMANCESHALLOW
+NETWORKDEEP
+NETWORK
+Winning rate 78:00% 78 :07%
+Avg. reward 640.08 630.46
+both RL and Deep RL have achieved satisfactory results in
+terms of winning rates (i.e., lower cascading risks). In both
+cases, the average return per episode is more than half of the
+maximum possible value (i.e., 500 = 1000/2), which shows
+a positive learning ability of the RL agent in mitigating
+cascading failures.
+0 1000 2000 3000 4000 5000 6000 7000 8000 9000 10000
+Episode740760780800Win timesMoving a verage  win times (window  size: 1000)
+Deep RL
+RL
+Figure 4. The learning performance by the DRL (10000 episodes)
+(best viewed in color).
+4. Conclusions
+In this paper, a reinforcement learning-based mitigation
+strategy for the Multi-Stage Cascading Failure problem is
+proposed. The trained RL agent works effectively on the
+IEEE 118-bus system under both shallow and deep archi-
+tectures with an approximately 78% chance to avoid the
+power grid collapse. Potential beneﬁts of the proposed
+idea in this paper include 1) enhanced resilience to extreme
+weather events and 2) increased penetration level of renew-
+able sources. Investigating the effects of hyper-parameters
+(e.g., layer numbers, hidden neuron units, learning rate, re-
+ward amount, discount factor) of the RL network on the
+mitigation performance will be the next step.Power Grid Cascading Failure Mitigation by Reinforcement Learning
+References
+DIgSILENT/PowerFactory. http://www.digsilent.
+de/en/ . Accessed: 2021-07-01.
+Chen, C., Ju, W., Sun, K., and Ma, S. Mitigation of cascad-
+ing outages using a dynamic interaction graph-based opti-
+mal power ﬂow model. IEEE Access , 7:168637–168648,
+2019. doi: 10.1109/ACCESS.2019.2953774.
+Chen, X., Sun, K., Cao, Y ., and Wang, S. Identiﬁcation of
+vulnerable lines in power grid based on complex network
+theory. In 2007 IEEE Power Engineering Society General
+Meeting , pp. 1–6, June 2007.
+Cordova-Garcia, J., Wang, X., Xie, D., Zhao, Y ., and Zuo, L.
+Control of communications-dependent cascading failures
+in power grids. IEEE Transactions on Smart Grid , pp.
+1–1, 2018.
+Du, P. and Lu, N. Energy Storage for Smart Grids . Aca-
+demic Press, 1st edition, 2014.
+Glavic, M., Fonteneau, R., and Ernst, D. Reinforce-
+ment learning for electric power system decision and
+control: Past considerations and perspectives. IFAC-
+PapersOnLine , 50(1):6918 – 6927, 2017. 20th IFAC
+World Congress.
+Han, Y ., Guo, C., Ma, S., and Song, D. Modeling cas-
+cading failures and mitigation strategies in pmu based
+cyber-physical power systems. Journal of Modern Power
+Systems and Clean Energy , 6(5):944–957, Sep 2018.
+Kiumarsi, B., Vamvoudakis, K. G., Modares, H., and Lewis,
+F. L. Optimal and autonomous control using reinforce-
+ment learning: A survey. IEEE Transactions on Neural
+Networks and Learning Systems , 29(6):2042–2062, June
+2018.
+Liu, Z., Luo, Y ., Zhuo, R., and Jin, X. Distributed reinforce-
+ment learning to coordinate current sharing and voltage
+restoration for islanded dc microgrid. Journal of Modern
+Power Systems and Clean Energy , 6(2):364–374, Mar
+2018.
+Qi, J., Sun, K., and Mei, S. An interaction model for simu-
+lation and mitigation of cascading failures. IEEE Trans-
+actions on Power Systems , 30(2):804–819, 2015. doi:
+10.1109/TPWRS.2014.2337284.
+Qi, J., Ju, W., and Sun, K. Estimating the propagation of
+interdependent cascading outages with multi-type branch-
+ing processes. IEEE Transactions on Power Systems ,
+32(2):1212–1223, 2017. doi: 10.1109/TPWRS.2016.
+2577633.Shuvro, R. A., Wangt, Z., Das, P., Naeini, M. R., and Hayat,
+M. M. Modeling cascading-failures in power grids in-
+cluding communication and human operator impacts. In
+2017 IEEE Green Energy and Smart Systems Conference
+(IGESSC) , pp. 1–6, Nov 2017.
+Silver, D., Huang, A., Maddison, C. J., Guez, A., Sifre, L.,
+van den Driessche, G., Schrittwieser, J., Antonoglou, I.,
+Panneershelvam, V ., Lanctot, M., Dieleman, S., Grewe,
+D., Nham, J., Kalchbrenner, N., Sutskever, I., Lillicrap, T.,
+Leach, M., Kavukcuoglu, K., Graepel, T., and Hassabis,
+D. Mastering the game of go with deep neural networks
+and tree search. Nature , 529:484–503, 2016.
+Sun, K., Hou, Y ., Sun, W., and Qi, J. Power System Control
+Under Cascading Failures: Understanding, Mitigation,
+and System Restoration . Wiley-IEEE Press, 2019.
+Tootaghaj, D. Z., Bartolini, N., Khamfroush, H., He, T.,
+Chaudhuri, N. R., and Porta, T. L. Mitigation and recov-
+ery from cascading failures in interdependent networks
+under uncertainty. IEEE Transactions on Control of Net-
+work Systems , pp. 1–1, 2018.
+Vlachogiannis, J. G. and Hatziargyriou, N. D. Reinforce-
+ment learning for reactive power control. IEEE Transac-
+tions on Power Systems , 19(3):1317–1325, Aug 2004.
+Yan, K., Wang, X., Du, Y ., Jin, N., Huang, H., and Zhou,
+H. Multi-step short-term power consumption forecasting
+with a hybrid deep learning strategy. Energies , 11(11),
+2018.
+Zhu, Y ., Yan, J., Tang, Y ., Sun, Y ., and He, H. The sequen-
+tial attack against power grid networks. In 2014 IEEE
+International Conference on Communications (ICC) , pp.
+616–621, June 2014.
+Zhu, Y ., Liu, C., and Sun, K. Image embedding of pmu data
+for deep learning towards transient disturbance classiﬁca-
+tion. In 2018 IEEE International Conference on Energy
+Internet (ICEI) , pp. 169–174, May 2018.

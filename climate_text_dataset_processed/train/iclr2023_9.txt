@@ -1,0 +1,306 @@
+Published as a workshop paper at ”Tackling Climate Change with Machine Learning”, ICLR 2023
+ESTIMATING RESIDENTIAL SOLAR POTENTIAL USING
+AERIAL DATA
+Ross Goroshin, Alex Wilson, Andrew Lamb, Betty Peng, Brandon Ewonus, Cornelius Ratsch,
+Jordan Raisher, Marisa Leung, Max Burq, Thomas Colthurst, William Rucklidge, Carl Elkin
+Google Inc
+fgoroshin, alexwilson, andrewlamb, bettypeng, bewonus, cratsch
+jraisher, marisaleung, mburq, thomaswc, wjr, celkin g@google.com
+ABSTRACT
+Project Sunroof estimates the solar potential of residential buildings using high
+quality aerial data. That is, it estimates the potential solar energy (and associ-
+ated ﬁnancial savings) that can be captured by buildings if solar panels were to
+be installed on their roofs. Unfortunately its coverage is limited by the lack of
+high resolution digital surface map (DSM) data. We present a deep learning ap-
+proach that bridges this gap by enhancing widely available low-resolution data,
+thereby dramatically increasing the coverage of Sunroof. We also present some
+ongoing efforts to potentially improve accuracy even further by replacing certain
+algorithmic components of Sunroof’s processing pipeline with deep learning.
+1 I NTRODUCTION
+Figure 1: Low quality, sub-meter, imagery and its corresponding digital surface map are shown
+on the left (RGB SMand DSM SM). High quality, centimeter-scale, of the same area collected at a
+different time, are shown on the right side (RGB CMand DSM CM). The DSMs are rendered in 3D
+using the “hillshade” technique to better visualize geometric details.
+Sunroof enables potential customers and policymakers to make informed decisions regarding solar
+energy by providing accurate solar energy estimates for individual buildings. Since its release, we
+estimate that Sunroof has been used in over 1 million residential solar projects. Installers report that
+the use of Sunroof substantially increases the likelihood of solar adoption by their customers.
+In order to accurately estimate a building’s solar energy potential it is necessary to ﬁrst create a
+detailed 3D model of it and its surrounding area. Even tiny features like chimneys, air vents or
+AC units can impact the viable install area for solar panels. Of particular importance is the precise
+geometry of the roof, as the expected angle of incidence of sunlight has a major impact on annual
+generated energy. Sunroof mainly uses a digital surface model (DSM) and a digital terrain model
+(DTM) to simulate solar potential, which are currently obtained from aerial imagery (15). Both give
+elevations as functions of location on a grid, with the DTM giving the elevation of the terrain, and
+the DSM providing the elevation inclusive of all objects, such as trees and buildings. The DSM can
+be computed from overlapping images using standard stereo vision algorithms.
+1Published as a workshop paper at ”Tackling Climate Change with Machine Learning”, ICLR 2023
+Sunroof relies on high quality, centimeter-level, aerial imagery in order to resolve details that are
+necessary for producing high accuracy solar estimates. However, even aerial imagery has varying
+degrees of quality. High ﬂying aircraft equipped with a single camera can cover a large area at
+lower resolution, while lower ﬂying aircraft equipped with calibrated multi-camera rigs are able to
+capture and register images at very high resolution. Other factors such as image registration quality
+and number of cameras used for stereoscopy, determine the signal to noise ratio of elevation data
+and therefore inﬂuence the effective resolution of the data. Figure 1 shows example DSMs com-
+puted from low and high quality image inputs, which we will refer to as sub-meter (DSM SM) and
+centimeter (DSM CM) scale, respectively. Sunroof relies on DSM CMdata to compute solar poten-
+tial estimates. Unfortunately, high quality aerial imagery is much more limited in its coverage and
+update frequency. In Section 3 we will discuss how this limitation was overcome and enabled Sun-
+roof to use widely available lower quality data, thus expanding its coverage, and thereby potentially
+increase the rate of solar adoption in new areas.
+2 T HESUNROOF ALGORITHM
+Sunroof estimates the solar power potential for the buildings in a given area by performing ﬁve
+major processing steps outlined in Algorithm 1. Steps (1-4) are involved in computing the viable
+solar potential of individual buildings. The resulting energy predicted by steps (1-3) was physi-
+cally validated by the National Renewable Energy Laboratory (NREL) (8). Furthermore, the entire
+pipeline has been validated by several major solar install companies which have queried millions of
+addresses via our API. Details of each step are described in Appendix A.
+Algorithm 1 Sunroof Algorithm
+Inputs :RGB, DSM, building footprints and probabilities
+(1)footprints SegmentBuildings(RGB, DSM, footprints, probabilities)
+foreach building 2footprints do
+(2)Segment roof DSM into planes and remove obstacles
+(3)Efficiently compute solar flux with fast ray-tracing
+(4)Compute panel layout & power produced by each panel
+(5)Financial calculations
+end for
+Outputs :Potential solar power and cost savings
+3 E NABLING SUNROOF TO PROCESS LOWQUALITY DATA
+Our low quality data coverage is about 10the area of the high quality data coverage, and is
+updated much more frequently. Therefore we seek a way to apply the Sunroof algorithm to the low
+quality data. As outlined in the previous section, Sunroof mainly relies on the DSM to compute the
+solar potential. Unfortunately, Sunroof does not generate accurate solar estimates from low quality
+DSMs.
+In order to overcome this limitation we train a deep network to enhance the low quality DSM, by
+fusing information from multiple input modalities. If the enhanced DSM is a sufﬁciently accurate
+estimate of the high resolution DSM, it can be input to the unmodiﬁed Sunroof algorithm to estimate
+the solar potential. After presenting this approach and its results, we discuss a potential future
+improvement to the Sunroof algorithm itself, which replaces the graph-cut based roof segmentation
+(Subsection A.2) with a segmentation derived from an additional output head of our model.
+3.1 A RCHITECTURE
+The inputs to our enhancement model are: 1-a visible spectrum RGB image of the area, 2-a low
+quality DSM and DTM, 3-building probabilities (see Appendix A.1). The outputs of our multi-head
+model are: 1-an enhanced DSM, 2-enhanced footprints, and 3-planar roof segments. All inputs,
+outputs, and targets have the same shape and spatial extent ( 512512covering the same area) but
+inputs are generally lower quality (i.e. have lower underlying resolution and are more noisy than the
+2Published as a workshop paper at ”Tackling Climate Change with Machine Learning”, ICLR 2023
+Figure 2: DSM enhancement by our model of the same area as Figure 1. DSM SMis input to the
+model while the DSM CMis used as ground truth.
+corresponding high quality DSM). We use the corresponding high quality data (i.e. DSM, footprint,
+and roof segments) as the target for the corresponding output head. High and low quality data
+are often collected several years apart (“temporal skew”), therefore high quality targets should be
+regarded as imperfect/misaligned ground truth. For example, in Figure 1 the tree at lower left of the
+DSM SMis missing in the DSM CM. We use a UNet (9)-like architecture with a ResNet-50 encoder
+(5) backbone pretrained on ImageNet classiﬁcation (10). Instead of using transposed-convolution,
+our architecture uses pixel-shufﬂe layers inspired by super-resolution architectures (13). The full
+architecture is depicted in Figure 7.
+3.2 E NHANCED DSM
+Inferring absolute elevation (or similarly depth) from monocular images is an ill-posed problem (2).
+Therefore, we train our network to infer relative elevation using a low resolution digital terrain map
+(DTM) as a reference (6). This is achieved by inputting DSM SM- DTM SMto our model, and then
+adding the DTM SMto the output before computing the error with the DSM CMas a target. Our loss
+consists of per-pixel modiﬁed L1regression and surface normal terms, speciﬁcally:
+L1=jho ht X
+xX
+y[ho ht]j
+Lsn= 1 nont
+jjnojjjjntjj
+The second term in the L1loss partially discounts the average deviation (over all spatial locations)
+between the output and target elevation maps. We have found that setting =1
+2yields the best
+performance in metrics discussed in Section 4. The terms noandntare the normal vectors computed
+at each point of the output and target DSMs, respectively. To compute the outward pointing normal
+vector we use the following expression:
+n= [ gx;gy;1]
+Wheregxandgydenote thexandycomponents of the gradient of the DSM, respectively. These
+are computed using ﬁnite differences and local smoothing. Surface normal loss minimization has
+the effect of enhancing high frequency details of the output DSM, as well directly enforcing that
+the normal vectors of roof segments derived from the output DSM are accurate. Similar approaches
+have been used in (6) and (7).
+3.3 A DDITIONAL OUTPUTS
+Our network also outputs reﬁned building probability and semantic roof segmentation maps. Build-
+ing probabilities corresponding to low and high quality images are obtained automatically using an-
+other network speciﬁcally trained to perform building segmentation (similar to (14)). Our network
+is trained to enhance building probabilities corresponding to low quality data to match those corre-
+sponding to high quality data using a binary cross-entropy loss. Roof plane segmentation is achieved
+3Published as a workshop paper at ”Tackling Climate Change with Machine Learning”, ICLR 2023
+Data MAPE MAPE@5kW Temporal Separation
+USA 29:14%10:50 4:62%1:58<1year
+EU 31:00%9:36 6:43%1:89<1year
+Temporal 20:10%12:71 4:43%2:58 1-5 years
+Table 1: MAPE and MAPE@5kW errors in the EU and USA. The Temporal row shows the error
+due to temporal skew.
+using a single shot afﬁnity mask approach with graph partition post-processing to obtain instance
+segments similar to (3). Brieﬂy, the N-dimensional output at each location predicts whether its N
+neighboring pixels belongs to the same instance label. Instance segments are obtained by applying
+a graph partitioning algorithm, to a graph whose edge weights are computed from the afﬁnity maps
+output by the network (see Figure 6). Ground truth roof instance segments are obtained by applying
+Sunroof’s graph-cut algorithm to the corresponding high quality DSMs described in Appendix A.2.
+Results presented in the next section were obtained by feeding enhanced DSMs and building prob-
+abilities to the Sunroof algorithm. Note that despite being trained to output the roof segmentation,
+the results presented in the next section used Sunroof’s original segmentation approach described in
+Appendix A.2.
+4 P ERFORMANCE AND FUTURE WORK
+We use two, physically grounded, performance measures to evaluate the performance of the reﬁne-
+ment model (see Table 1). The ﬁrst measures the percentage mean absolute power error (MAPE),
+that is the error between the total power, over the course of one year, predicted by Sunroof corre-
+sponding to the reﬁned data and high quality data over the same area. Total power implies tiling the
+entire viable roof area in solar panels (see Figure 4d), something typical consumers rarely do. There-
+fore we introduce a second error measure, MAPE@5kW which measures the error corresponding to
+a much smaller, but more typical 5kW array ( 10panels). These panels are optimally positioned
+by Sunroof in the most productive areas of the roof predicted using the solar ﬂux (Figure 4c). Thus
+the MAPE effectively measures the error for the entire roof, while the MAPE@5kW only measures
+the error corresponding to the most productive portions of the roof. Our enhancement model was
+trained on data collected over cities in the Southeastern USA, excluding any cities in Florida, which
+we reserved for validation. Our dataset is limited to cities where high/low quality pairs are available.
+The results presented in Table 1 are over test cities which are not present in the training or validation
+sets. We also report performance on Western European cities. To minimize temporal skew between
+inputs and ground truth (e.g. new construction, seasonal foliage, etc.), we selected high/low quality
+dataset pairs that were collected at most one year apart. Finally, in order to estimate the effect of
+temporal skew we evaluated the error between high quality assets collected between 1-5 years apart.
+This evaluation does not involve our enhancement model but simply compares Sunroof’s predictions
+corresponding to temporally separated high quality datasets. This evaluation leads to a substantially
+lower MAPE value, which conﬁrms that despite some temporal skew, the enhanced data still lags
+real high quality data in performance by about 10%. In ongoing work, we hope to achieve even
+better performance by replacing it with our model’s output. We have found that the segmentation is
+extremely sensitive to the enhanced DSM and is thus a major source of MAPE error.
+A S UNROOF DETAILS
+A.1 B UILDING FOOTPRINT REFINEMENT
+An initial set of footprints and probabilities are input to the Sunroof algorithm. Both of these are
+output by other, separately trained, models. Building footprints are rough polygons, but often sep-
+arate individual residential addresses although they may appear connected. Building probabilities
+take on values close to 1.0 where the corresponding pixel is likely to belong to a building. A graph is
+created whose edge weights are computed by fusing information from the footprints/ probabilities,
+and DSM (height discontinuities captured in the DSM are often good cues to detect the presence
+4Published as a workshop paper at ”Tackling Climate Change with Machine Learning”, ICLR 2023
+(a) RGB
+ (b) DSM
+(c) Building Footprints
+ (d) Building Probabilities
+Figure 3: Illustrations of the inputs to Sunroof.
+(a) Improved Building Footprints
+ (b) Roof Segments
+(c) Solar Flux
+ (d) Solar Panel Layout
+Figure 4: Illustrations of the outputs of the processing steps of Sunroof.
+of buildings). Footprint reﬁnement is performed by running a graph-cut algorithm on this graph.
+The reﬁned footprints often remove “tree overhangs” or buildings that are entirely occluded by
+trees, thanks to information from the building probabilities, while preserving separation between
+residences using information from the footprints.
+5Published as a workshop paper at ”Tackling Climate Change with Machine Learning”, ICLR 2023
+A.2 R OOF SEGMENTATION AND OBSTACLE REMOVAL
+Next, the roof pixels in the DSM are ﬁtted to a small number of planes using a RANSAC (1)
+algorithm. This is essential as solar panels can only be laid out on ﬂat roof segments. After the
+RANSAC procedure, the points assigned to each segment are reﬁned using a graph cut (4) approach
+– if a point could reasonably be assigned to multiple planes, the graph cut will prefer to assign it to
+the same plane as its neighbors. Speciﬁcally, the graph cut algorithm attempts to minimize a cost
+function consisting of: (i) the projection distance from a point to its assigned plane, (ii) a second
+cost that minimizes the number of planes with similar normal vectors. This is intended to make it
+harder for two very similar planes to partition a ﬂat area of the roof. The cost can be expressed as:
+X
+pX
+P2
+4d(p;Pp) +mX
+q2N(p)1 +max 
+0;^nPp^nPq3
+5 (1)
+Whered(p;Pp)denotes the projection distance when point pis assigned to plane P,N(p)denote
+the set of points neighboring point p, and ^nPpdenotes the normal vector to plane P. After running
+the graph cut, each roof plane is reﬁt based on its new points, and the graph cut plus reﬁtting
+procedure is repeated several times. Finally, the roof segments are ﬁltered by size to remove tiny
+segments. This step also removes roof obstacles such as air-vents and air-conditioners.
+A.3 S OLAR FLUX
+The solar ﬂux calculation estimates the incident solar energy on a building over the course of a year
+(irradiance). Factors that affect solar ﬂux include: the latitude, pitch angle of the roof segments,
+and surroundings which may occlude sunlight and cast shadows on the roof (usually trees or other
+buildings). The ﬂux calculation is parallelized by partitioning the data into tiles. These tiles overlap,
+with each tile having a core plus margins. The margins are used so that nearby obstructions are
+taken into account when calculations are performed on the core. This means that the effects of
+distant occluders outside the margin area, such as distant mountain ranges, will not be factored
+into the calculation. The main ﬂux calculation is performed using a method similar to (16), and its
+computational complexity is linear in the number of pixels, with a constant that depends on latitude,
+compared to O(n3), for direct ray tracing. The irradiance is summarized as two quantities: Direct
+Normal Irradiance (DNI), which is sunlight received directly from the sun, and Diffuse Horizontal
+Irradiance (DHI) which is indirect sunlight received by a ﬂat plane. Both are measured in units of
+Watts=m2. DNI and DHI are obtained from publicly available datasets, such as the National Solar
+Radiation Database (NSRDB) (12). Finally, both of these are further attenuated using a correction
+factor derived from the air temperature and wind speed using the model from (11). This reﬂects the
+decrease in silicon solar panel efﬁciency in elevated temperatures.
+A.4 O PTIMAL PANEL LAYOUT AND POWER PREDICTION
+In order to get an upper bound on the solar potential of buildings, the solar panel placement algorithm
+tiles a roof with as many panels as the viable roof area can support. Viable roof areas include roof
+segments that are not overly steep and are free of obstacles. For sloped roof segments, solar panels
+are laid out in the 2D coordinates deﬁned by the “eaves” and “up-slope” vectors (see Figure 5). If
+the unit normal is ^n= [nx;ny;nz]then the eaves and up-slope vectors are deﬁned as:
+^e=2
+4nyq
+n2x+n2y; nxq
+n2x+n2y;03
+5
+^u= ^e^n
+For a horizontal roof ( nx=ny= 0), the eaves and up-slope vectors are chosen arbitrarily.
+Panels are tiled over these ﬂat roof segments in a way that maximize both energy production and
+compactness of the layout – roughly minimize the area of the rectangle that bounds all panels in
+6Published as a workshop paper at ”Tackling Climate Change with Machine Learning”, ICLR 2023
+a given roof segment. The ﬂux allows simple estimation of the expected power generated by each
+panel, this facilitates ﬁnding optimal conﬁgurations for smaller solar installations. For example,
+Sunroof can be used to ﬁnd the optimal panel layout of a, more typical, 5kW array consisting of
+10-20 panels.
+B A DDITIONAL FIGURES
+Figure 5: Depiction of irradiance and roof coordinate system used for panel layout. Red, green, and
+blue vectors are the up-slope, normal, and eaves vectors, respectively. Image credit: U.S. Depart-
+ment of Energy.
+(a) One Channel from the Afﬁnity Mask Output
+ (b) Instance Segments
+Figure 6: Instance roof segments are obtained by post-processing the afﬁnity mask output.
+7Published as a workshop paper at ”Tackling Climate Change with Machine Learning”, ICLR 2023
+Figure 7: Sunroof UNet architecture
+8Published as a workshop paper at ”Tackling Climate Change with Machine Learning”, ICLR 2023
+REFERENCES
+[1] H Cantzler. Random sample consensus (ransac). Institute for Perception, Action and Be-
+haviour, Division of Informatics, University of Edinburgh , 3, 1981.
+[2] David Eigen, Christian Puhrsch, and Rob Fergus. Depth map prediction from a single image
+using a multi-scale deep network. Advances in neural information processing systems , 27,
+2014.
+[3] Naiyu Gao, Yanhu Shan, Yupei Wang, Xin Zhao, Yinan Yu, Ming Yang, and Kaiqi Huang.
+Ssap: Single-shot instance segmentation with afﬁnity pyramid. In Proceedings of the
+IEEE/CVF International Conference on Computer Vision , pages 642–651, 2019.
+[4] Dorothy M Greig, Bruce T Porteous, and Allan H Seheult. Exact maximum a posteriori esti-
+mation for binary images. Journal of the Royal Statistical Society: Series B (Methodological) ,
+51(2):271–279, 1989.
+[5] Kaiming He, Xiangyu Zhang, Shaoqing Ren, and Jian Sun. Deep residual learning for image
+recognition. In Proceedings of the IEEE conference on computer vision and pattern recogni-
+tion, pages 770–778, 2016.
+[6] Lukas Liebel, Ksenia Bittner, and Marco K ¨orner. A generalized multi-task learning approach
+to stereo dsm ﬁltering in urban areas. ISPRS Journal of Photogrammetry and Remote Sensing ,
+166:213–227, 2020.
+[7] Chao-Jung Liu, Vladimir A Krylov, Paul Kane, Geraldine Kavanagh, and Rozenn Dahyot.
+Im2elevation: Building height estimation from single-view aerial imagery. Remote Sensing ,
+12(17):2719, 2020.
+[8] NREL. Validating the accuracy of sighten’s automated shading tool.
+[9] Olaf Ronneberger, Philipp Fischer, and Thomas Brox. U-net: Convolutional networks for
+biomedical image segmentation. In International Conference on Medical image computing
+and computer-assisted intervention , pages 234–241. Springer, 2015.
+[10] Olga Russakovsky, Jia Deng, Hao Su, Jonathan Krause, Sanjeev Satheesh, Sean Ma, Zhiheng
+Huang, Andrej Karpathy, Aditya Khosla, Michael Bernstein, et al. Imagenet large scale visual
+recognition challenge. International journal of computer vision , 115(3):211–252, 2015.
+[11] Clemens Schwingshackl, Marcello Petitta, Jochen Ernst Wagner, Giorgio Belluardo, David
+Moser, Mariapina Castelli, Marc Zebisch, and Anke Tetzlaff. Wind effect on pv module
+temperature: Analysis of different techniques for an accurate estimation. Energy Procedia ,
+40:77–86, 2013.
+[12] Manajit Sengupta, Yu Xie, Anthony Lopez, Aron Habte, Galen Maclaurin, and James Shelby.
+The national solar radiation data base (nsrdb). Renewable and sustainable energy reviews ,
+89:51–60, 2018.
+[13] Wenzhe Shi, Jose Caballero, Ferenc Husz ´ar, Johannes Totz, Andrew P Aitken, Rob Bishop,
+Daniel Rueckert, and Zehan Wang. Real-time single image and video super-resolution using
+an efﬁcient sub-pixel convolutional neural network. In Proceedings of the IEEE conference on
+computer vision and pattern recognition , pages 1874–1883, 2016.
+[14] Wojciech Sirko, Sergii Kashubin, Marvin Ritter, Abigail Annkah, Yasser Salah Eddine
+Bouchareb, Yann Dauphin, Daniel Keysers, Maxim Neumann, Moustapha Cisse, and John
+Quinn. Continental-scale building detection from high resolution satellite imagery. arXiv
+preprint arXiv:2107.12283 , 2021.
+[15] A. Sole and A. Valanzano. Digital Terrain Modelling , pages 175–194. Springer Netherlands,
+Dordrecht, 1996.
+[16] Ville Timonen and Jan Westerholm. Scalable height ﬁeld self-shadowing. In Computer Graph-
+ics Forum , volume 29, pages 723–731. Wiley Online Library, 2010.
+9

@@ -1,0 +1,262 @@
+Published as a workshop paper at "Tackling Climate Change with Machine Learning", ICLR 2024
+FORECASTING TROPICAL CYCLONES WITH CASCADED
+DIFFUSION MODELS
+Pritthijit Nath
+Department of Computing
+Imperial College London
+pritthijit.nath22@imperial.ac.ukPancham Shukla
+Department of Computing
+Imperial College London
+panchamkumar.shukla@imperial.ac.uk
+Shuai Wang
+Department of Geography and Spatial Sciences
+University of Delaware
+shwang@udel.eduCésar Quilodrán-Casas
+Department of Earth Science and Engineering
+Imperial College London
+c.quilodran@imperial.ac.uk
+ABSTRACT
+As tropical cyclones become more intense due to climate change, the rise of Al-
+based modelling provides a more affordable and accessible approach compared to
+traditional methods based on mathematical models. This work leverages generative
+diffusion models to forecast cyclone trajectories and precipitation patterns by
+integrating satellite imaging, remote sensing, and atmospheric data. It employs a
+cascaded approach that incorporates three main tasks: forecasting, super-resolution,
+and precipitation modelling. The training dataset includes 51 cyclones from six
+major tropical cyclone basins from January 2019 - March 2023. Experiments
+demonstrate that the final forecasts from the cascaded models show accurate
+predictions up to a 36-hour rollout, with excellent Structural Similarity (SSIM) and
+Peak-Signal-To-Noise Ratio (PSNR) values exceeding 0.5 and 20 dB, respectively,
+for all three tasks. The 36-hour forecasts can be produced in as little as 30 mins
+on a single Nvidia A30/RTX 2080 Ti. This work also highlights the promising
+efficiency of Al methods such as diffusion models for high-performance needs
+in weather forecasting, such as tropical cyclone forecasting, while remaining
+computationally affordable, making them ideal for highly vulnerable regions with
+critical forecasting needs and financial limitations. Code accessible at https:
+//github.com/nathzi1505/forecast-diffmodels .
+1 I NTRODUCTION
+Climate change is a pressing global issue causing unprecedented changes in the Earth’s climate system,
+resulting in altered precipitation patterns and a surge in extreme rainfall events with devastating
+environmental consequences [ 1]. Rising global temperatures and changing atmospheric circulation
+patterns are significant drivers of these extreme events [ 2], posing challenges for water resource
+management, infrastructure planning, and disaster risk reduction [ 3]. Advanced machine learning
+(ML) techniques have emerged as a promising solution for predicting and understanding extreme
+rainfall behaviour under climate change [ 4]. These algorithms can analyse large datasets, capture
+complex spatio-temporal relationships, and make precise predictions without the need for explicit
+programming. Leveraging modern computing systems like GPUs and distributed architectures, ML
+offers a revolutionary approach to meteorological modelling, replacing traditional supercomputer-
+based simulations [5].
+In recent times, diffusion models [ 6] have garnered substantial attention across various domains, in-
+cluding weather forecasting, climate modelling, and image processing. Leinonen et al. [ 7] introduced
+a latent diffusion model (LDM) for precipitation nowcasting, surpassing traditional methods and
+deep generative models in accuracy and uncertainty quantification. Bassetti et al. [ 8] demonstrated
+the efficiency of diffusion models, particularly DiffESM, in emulating Earth System Models (ESMs)
+for analyzing extreme weather events while demanding fewer computational resources. Hatanaka et
+1Published as a workshop paper at "Tackling Climate Change with Machine Learning", ICLR 2024
+al. [9] improved uncertainty modelling in weather and climate forecasts using score-based diffusion
+models, benefiting high-dimensional solar irradiance predictions. Addison et al. [ 10] showcased
+diffusion models’ ability to generate realistic high-resolution rainfall samples from low-resolution
+simulations for flood modelling.
+This study draws inspiration from previous works in atmospheric modelling that have utilised
+diffusion models. It explores a novel approach by employing multiple diffusion models organized in
+a cascading manner to predict tropical cyclones (TC), which are a critical example of extreme rainfall
+events that have been intensified by climate change. In particular, this research contributes to the
+existing literature on AI-based atmospheric modelling in the following ways:
+1.A novel adaptation of a framework utilising diffusion models (often used in natural language
+processing (NLP) tasks such as text-to-image generation, image-to-image transformation,
+etc.) in forecasting TCs using publicly available atmospheric reanalysis data such as
+ERA5 [11] [12] and IR 10.8µm satellite data.
+2.Experimental demonstration of highly effective model predictive ability having single-step
+SSIM and PSNR above 0.5 and 20 dB respectively, and strong accuracy with rollout around
+36 hours.
+3.Model design optimised on single GPUs (eg. Nvidia RTX 2080 Ti) to underscore the afford-
+ability argument of AI-based methods whilst exhibiting comparable predictive capabilities
+to simulation-based conventional methods utilising expensive supercomputers.
+2 D ATA
+2.1 D ATA ACQUISITION
+1.Satellite Data: Infrared (IR) 10.8 µm for a total of 51 cyclones (above 2 in the Saffir-
+Simpson Hurricane Wind Scale [ 13]) that have been reported to have major landfall impact
+are extracted from six major basins as shown in Table 1 over the time period between January
+2019 to March 2023.
+Table 1: List of TC basins along with their satellite data providers and cyclone counts
+Hemisphere Basin Satellite Sub-Region Count
+NorthernNorth Indian Ocean INSAT - 3D South Asia 13
+North Atlantic Ocean GOES - East US East Coast 11
+Eastern Pacific Ocean GOES - East/West US West Coast 4
+Western Pacific Ocean Himawari 8/9 Philippines 9
+SouthernSouth-West Indian Ocean Meteosat - 9 Madagascar 8
+Australia Himawari 8/9 North Australia 6
+2.Atmospheric Data: Hourly ERA5 reanalysis data for four atmospheric variables as shown
+in Table A.1 over the period from formation to dissipation is acquired from the Copernicus
+Climate Data Store for each recorded cyclone.
+2.2 D ATA PROCESSING
+1.Bounding Box Formulation: Square bounding boxes are empirically determined for all
+51 cyclones, to cover all regions of interest over the entire trajectory of a hurricane from
+formation to dissipation. These bounding boxes are then used to crop full disk IR 10.8 µm
+satellite images and the corresponding ERA5 data to generate the cyclone dataset.
+2.Metadata Creation: To facilitate easy cyclone data retrieval and address path accessibility
+issues, a functional data structure is designed to contain all the required metadata to load a
+given cyclone from memory. Fields included are:- region, name, bounding box coordinates,
+ERA5 filenames, total filecount and a list of sub-data structures, each containing data fields
+for each satellite file such as date, filepath and the corresponding ERA5 index.
+3.Train Test Bifurcation: For a fair evaluation of the diffusion models used, 20% of the entire
+cyclone dataset (calculated region-wise) is reserved for test set evaluation purposes and the
+remaining 80% of the dataset is used for training purposes.
+2Published as a workshop paper at "Tackling Climate Change with Machine Learning", ICLR 2024
+Figure 1: Illustration of the cascaded arrangement involving three task-specific diffusion models
+4.Dataloader Generation: Task specific dataloaders are created on the metadata data
+structure to facilitate model training and streamlining the data loading process. First,
+raw satellite and ERA5 image data are downsized to 64x64 (forecasting and precipitation
+modelling) and 128x128 (super-resolution) and then divided into randomly sampled batches
+of a specified batch size. In addition, supplementary methods such as min-max normalisation
+and data augmentation such as rotate90 are introduced at the dataloader level to aid model
+training.
+3 M ETHODOLOGY
+3.1 C ASCADED STRUCTURE
+Taking inspiration from the Imagen paper [ 14] and its application in image generation conditioned on
+text inputs [ 15], this study employs a cascaded arrangement, as depicted in Fig. 1. In particular, this
+specific arrangement utilises three independently trained U-Net based diffusion models, each tailored
+to a specific task which ultimately enhances the efficiency of cyclone forecast generation. Using
+the 64x64 satellite IR 10.8 µm at time t, forecast at time t+ 1, is generated and pushed downstream
+onto the super-resolution task and the precipitation modelling task models. The super-resolution
+task model creates the 128x128 satellite 10.8 µm version of the generated 64x64 forecast, while the
+precipitation modelling task model generates the 64x64 total precipitation map corresponding to the
+forecast. In all three tasks, the forecasted ERA5 data at t+ 1are used to condition the input.
+For each diffusion model, a similar U-Net structure to Imagen [ 15] is used with additional refinements
+including classifier free guidance [ 16], dynamic thresholding (for maintaining the outputs within the
+normalized range) and exponential moving averaged weights. For data augmentation, techniques such
+as rotate90 covering all four orientations and low-resolution noise injection (for the super-resolution
+task) are also used and found to contribute to better model outputs. To eliminate noise in the total
+precipitation maps, a minimum filter as post-processing is also utilized.
+3.2 E VALUATION STRATEGIES
+To effectively assess the three cascaded diffusion models mentioned in this work, the two evaluation
+strategies are undertaken. First, quantitative metrics involving MAE, PSNR, SSIM and FID scores
+are used to assess the one-step performance over all the epochs. And second, rollout analysis using
+SSIM evaluation over the forecast generated in an auto-regressive manner starting with an initial IR
+10.8µm assisted with forecasted ERA5 data is performed over the entire cyclone duration.
+3Published as a workshop paper at "Tackling Climate Change with Machine Learning", ICLR 2024
+4 R ESULTS
+Performance evaluation of the best performing model checkpoint over four distinct metrics is shown
+in Table 2. These results underscore the remarkable predictive capabilities of all three diffusion
+models for forecasting purposes, consistently surpassing the thresholds of 20dB and 0.5 for PSNR
+and SSIM values, respectively. Additionally, the MAE (measured over normalised images) is found
+to consistently yield values below 0.25, while the FID scores remain below 1 for all three models.
+Table 2: Task-wise performance metrics over the entire test set
+Task Best Epoch MAE ↓PSNR ↑SSIM ↑FID ↓
+Forecasting 180 0.200 24.359 0.572 0.168
+Super Resolution 240 0.186 25.760 0.658 0.214
+Precipitation Modelling 260 0.134 25.943 0.643 0.907
+For forecasts of all cyclones belonging to the region wise test set in Table 1 (such as the one for
+Cyclone Mocha shown in Fig. 2), upon closer examination of the SSIM charts generated over the
+entire cyclone duration as displayed in Fig. B.1, a notable decline can be observed in the majority of
+cyclone forecasts around the 36-hour mark. Given the challenge of identifying an absolute rollout with
+certainty, the consistent occurrence of sharp "dips" at approximately the 36-hour mark (approx. 30
+minutes on an Nvidia A30/RTX 2080Ti) implies that such a time length can be considered a reliable
+horizon where the generated forecast can be estimated to closely align with the actual conditions.
+Figure 2: Forecast at 31h (left) and 38h (right) of Cyclone Mocha over the North Indian Ocean
+on 10th May 2023. The upper rows resemble the ground truth IR 10.8 µm satellite image and total
+precipitation while the lower rows show the forecast generated at that particular timestep.
+5 C ONCLUSION
+This work presents a novel cascaded diffusion model architecture for forecasting tropical cyclones
+supported by using a custom-built data processing pipeline and trained on IR 10.8 µm in addition to
+ERA5 atmospheric reanalysis data. With strong enough capabilities for forecasts with horizons of
+around 36 hours, when integrated with atmospheric data, like ERA5, these instances of cost-effective
+AI-based modelling, optimised for single GPUs, facilitate affordable, almost real-time, precise, and
+photorealistic forecasts. This makes them particularly suitable for highly vulnerable regions facing
+critical forecasting demands but are financially constrained. Future iterations of this work aim to
+explore the modeling of cyclones over extended periods (eg. 10 years) and incorporate a broader array
+of atmospheric data variables. Leveraging the recent development in machine learning for ERA5
+forecasting [ 17] [18] and the use of more powerful computational platforms, including multi-GPU
+Nvidia A100 setups, we aim to enhance the model’s predictive accuracy and efficiency over limited
+execution timeframes.
+4Published as a workshop paper at "Tackling Climate Change with Machine Learning", ICLR 2024
+REFERENCES
+[1]Intergovernmental Panel on Climate Change (IPCC). Climate Change 2021: The Physical
+Science Basis. Contribution of Working Group I to the Sixth Assessment Report of the Intergov-
+ernmental Panel on Climate Change. Cambridge, United Kingdom and New York, NY , USA:
+Cambridge University Press; 2021.
+[2]Donat MG, Lowry AL, Alexander LV , O’Gorman PA, Maher N. More extreme precipitation in
+the world’s dry and wet regions. Nature Climate Change. 2016 May;6(5):508–513. Available
+from: https://www.nature.com/articles/nclimate2941 .
+[3]Van Aalst MK. The impacts of climate change on the risk of natural disasters: The Impacts
+of Climate Change on The Risk of Natural Disasters. Disasters. 2006 Mar;30(1):5–18. Avail-
+able from: https://onlinelibrary.wiley.com/doi/10.1111/j.1467-9523.
+2006.00303.x .
+[4]Pouyanfar S, Sadiq S, Yan Y , Tian H, Tao Y , Reyes MP, et al. A Survey on Deep Learning:
+Algorithms, Techniques, and Applications. ACM Computing Surveys. 2018 Sep;51(5):92:1-
+92:36. Available from: https://doi.org/10.1145/3234150 .
+[5]Schalkwijk J, Jonker HJJ, Siebesma AP, Meijgaard EV . Weather Forecasting Using GPU-
+Based Large-Eddy Simulations. Bulletin of the American Meteorological Society. 2015
+May;96(5):715–723. Available from: https://journals.ametsoc.org/view/
+journals/bams/96/5/bams-d-14-00114.1.xml .
+[6]Ho J, Jain A, Abbeel P. Denoising Diffusion Probabilistic Models. arXiv. 2020 Dec.
+ArXiv:2006.11239 [cs, stat]. Available from: http://arxiv.org/abs/2006.11239 .
+[7]Leinonen J, Hamann U, Nerini D, Germann U, Franch G. Latent diffusion models for gen-
+erative precipitation nowcasting with accurate uncertainty quantification. arXiv. 2023 Apr.
+ArXiv:2304.12891 [physics]. Available from: http://arxiv.org/abs/2304.12891 .
+[8]Bassetti S, Hutchinson B, Tebaldi C, Kravitz B. DiffESM: Conditional Emulation of Earth
+System Models with Diffusion Models. arXiv. 2023 Apr. ArXiv:2304.11699 [physics]. Available
+from: http://arxiv.org/abs/2304.11699 .
+[9]Hatanaka Y , Glaser Y , Galgon G, Torri G, Sadowski P. Diffusion Models for High-Resolution
+Solar Forecasts. arXiv. 2023 Jan. ArXiv:2302.00170 [physics]. Available from: http:
+//arxiv.org/abs/2302.00170 .
+[10] Addison H, Kendon E, Ravuri S, Aitchison L, Watson PA. Machine learning emulation of a
+local-scale UK climate model. arXiv. 2022 Nov. ArXiv:2211.16116 [physics]. Available from:
+http://arxiv.org/abs/2211.16116 .
+[11] Hersbach H, Bell B, Berrisford P, Hirahara S, Horányi A, Muñoz-Sabater J, et al. The
+ERA5 global reanalysis. Quarterly Journal of the Royal Meteorological Society. 2020
+Jul;146(730):1999–2049. Available from: https://rmets.onlinelibrary.wiley.
+com/doi/10.1002/qj.3803 .
+[12] Lavers DA, Simmons A, Vamborg F, Rodwell MJ. An evaluation of ERA5 precipita-
+tion for climate monitoring. Quarterly Journal of the Royal Meteorological Society. 2022
+Oct;148(748):3152–3165. Available from: https://onlinelibrary.wiley.com/
+doi/10.1002/qj.4351 .
+[13] Oxford University Press. A Dictionary of Earth Sciences. Oxford University Press;
+2008. Available from: https://www.oxfordreference.com/display/10.1093/
+acref/9780199211944.001.0001/acref-9780199211944 .
+[14] Ho J, Saharia C, Chan W, Fleet DJ, Norouzi M, Salimans T. Cascaded Diffusion Models for
+High Fidelity Image Generation. Journal of Machine Learning Research. 2022;23(47):1–33.
+Available from: http://jmlr.org/papers/v23/21-0635.html .
+5Published as a workshop paper at "Tackling Climate Change with Machine Learning", ICLR 2024
+[15] Wang P. Implementation of Imagen, Google’s Text-to-Image Neural Network, in Py-
+torch. GitHub; 2023. Available from: https://github.com/lucidrains/
+imagen-pytorch .
+[16] Ho J, Salimans T. Classifier-Free Diffusion Guidance. arXiv. 2022 Jul. ArXiv:2207.12598 [cs].
+Available from: http://arxiv.org/abs/2207.12598 .
+[17] Scholz J, Andersson TR, Vaughan A, Requeima J, Turner RE. Sim2Real for Environmental
+Neural Processes. arXiv. 2023 Oct. ArXiv:2310.19932 [physics]. Available from: http:
+//arxiv.org/abs/2310.19932 .
+[18] Bonev B, Kurth T, Hundt C, Pathak J, Baust M, Kashinath K, et al. Spherical Fourier Neural
+Operators: Learning Stable Dynamics on the Sphere. arXiv. 2023 Jun. ArXiv:2306.03838
+[physics]. Available from: http://arxiv.org/abs/2306.03838 .
+6Published as a workshop paper at "Tackling Climate Change with Machine Learning", ICLR 2024
+APPENDIX A A DDITIONAL DATA DESCRIPTION
+A.1 ERA5 V ARIABLES
+Table A.1: List of ERA5 variables considered for condition data
+Name Unit
+10m u-component of wind ms−1
+10m v-component of wind ms−1
+Total cloud cover -
+Total precipitation m
+For the experiments performed, due to the historical nature of the cyclones, forecasted ERA5 refers to
+the ERA5 reanalysis data generated by ECMWF. In deployment scenarios, due to ERA5 having a lag
+of 5 days, actual forecasted atmospheric data (corresponding to the three variables) from forecasting
+systems can be used. Therefore, to ensure consistency with common forecasting systems such as
+Global Forecast System (GFS), these specific four variables are chosen.
+APPENDIX B A DDITIONAL RESULTS
+B.1 F ORECAST SSIM
+(a) Mocha
+(North Indian Ocean)
+(b) Ida
+(North Atlantic Ocean)
+(c) Rosyln
+(Eastern Pacific Ocean)
+(d) Molave
+(Western Pacific Ocean)
+(e) Gombe
+(SW Indian Ocean)
+(f) Veronica
+(Australia)
+Figure B.1: SSIM values over the entire cyclonic duration. The dashed lines indicate the hourly
+marks at which the minimum SSIM values are obtained for each cyclone.
+7

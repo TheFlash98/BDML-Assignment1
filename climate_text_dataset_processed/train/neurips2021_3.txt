@@ -1,0 +1,324 @@
+Towards Representation Learning for Atmospheric
+Dynamics
+Effective Distance Measures to Address Climate Change
+Sebastian Hoffmann
+Dept. of Computer Science
+Universität Magdeburg
+sebastian1.hoffmann@ovgu.deChristian Lessig
+Dept. of Computer Science
+Universität Magdeburg
+christian.lessig@ovgu.de
+Abstract
+The prediction of future climate scenarios under anthropogenic forcing is critical
+to understand climate change and to assess the impact of potentially counter-acting
+technologies. Machine learning and hybrid techniques for this prediction rely on
+informative metrics that are sensitive to pertinent but often subtle inﬂuences. For
+atmospheric dynamics, a critical part of the climate system, no well established
+metric exists and visual inspection is currently still often used in practice. However,
+this “eyeball metric” cannot be used for machine learning where an algorithmic
+description is required. Motivated by the success of intermediate neural network
+activations as basis for learned metrics, e.g. in computer vision, we present a
+novel, self-supervised representation learning approach speciﬁcally designed for
+atmospheric dynamics. Our approach, called AtmoDist, trains a neural network on
+a simple, auxiliary task: predicting the temporal distance between elements of a
+randomly shufﬂed sequence of atmospheric ﬁelds (e.g. the components of the wind
+ﬁeld from reanalysis or simulation). The task forces the network to learn important
+intrinsic aspects of the data as activations in its layers and from these hence a
+discriminative metric can be obtained. We demonstrate this by using AtmoDist to
+deﬁne a metric for GAN-based super resolution of vorticity and divergence. Our
+upscaled data matches both visually and in terms of its statistics a high resolution
+reference closely and it signiﬁcantly outperform the state-of-the-art based on mean
+squared error. Since AtmoDist is unsupervised, only requires a temporal sequence
+of ﬁelds, and uses a simple auxiliary task, it has the potential to be of utility in a
+wide range of applications.
+1 Introduction
+A discriminative distance measure for atmospheric dynamics is critical for a wide range of applica-
+tions addressing climate change. Such a measure could, for instance, enable climate scientists to
+automatically classify patterns, such as polar jet behavior or blocking events, and how these change
+under anthropogenic forcing. It is also an amplifying technology for many machine learning tech-
+niques in the context of climate change since it allows for more effective loss functions or evaluation
+metrics. A third potential application, and the one motivating the present work, is the use in a hybrid
+climate simulations where a classical discretization is combined with a neural network that corrects
+for model biases and represents unresolved scales.
+Motivated by the deﬁciencies of existing distance measures [Stengel et al., 2020], we introduce in the
+present work AtmoDist, a representation learning approach tailored towards atmospheric dynamics
+that uses intermediate neural network activations to obtain an effective metric for such data. AtmoDist
+only requires time series of one or more atmospheric ﬁelds, e.g. from reanalysis or a simulation, as
+35th Conference on Neural Information Processing Systems (NeurIPS 2021), Sydney, Australia.Stack - 256shared
+weights
+ 
+3x3 Conv - 128
+ﬂatten3x3 Conv - 128
+Linear + softmax
+Patch 2 (at t + dt)
+160x160
+160x160Patch 1 (at time t)
+8x8 Conv - 16
+3x3 MaxPool
+3x3 ResBlock - 16
+3x3 ResBlock - 32
+3x3 ResBlock - 64
+3x3 ResBlock - 1288x8 Conv - 16
+3x3 MaxPool
+3x3 ResBlock - 16
+3x3 ResBlock - 32
+3x3 ResBlock - 64
+3x3 ResBlock - 128
+representation networkcomparison network6x 6x 6x 6x
+6x 6x 6x 6x
+Figure 1: Network architecture used for AtmoDist. The representation network has a siamese
+structure and generates the intermediate representations for the input signal that distill important
+features. The comparison network is necessary only during training.
+input and learns from it, through an appropriate choice of ﬁelds, a domain speciﬁc distance measure.
+We demonstrate the utility of AtmoDist by using it for GAN-based super resolution of vorticity
+and divergence, i.e. the potentials for the atmospheric wind velocity ﬁeld. Results obtained with
+AtmoDist match visually and in terms of key statistics the ground truth signiﬁcantly more closely
+than mean squared error, as used, e.g., in the state-of-the-art [Stengel et al., 2020].
+2 AtmoDist
+Mathematical distance measures, such as mean square error (MSE), are often not well suited as neural
+network loss function since they are oblivious to the relative importance of speciﬁc characteristics
+of the data for an application. For atmospheric data, this has recently been pointed out by Stengel
+et al. [2020]. More advanced statistical measures, such as structural similarity index measure (SSIM),
+can alleviate some of the problems but they are still largely ignorant to an application. As an
+alternative, intermediate neural network representations were used previously, e.g., in computer
+vision, to obtain more suitable metrics [Heusel et al., 2017, Salimans et al., 2016], e.g. for SOTA
+super-resolution [Ledig et al., 2017].
+Inspired by the success in computer vision, we propose a representation learning approach speciﬁcally
+designed for atmospheric data. To avoid the need for labelled training data, which is currently limited
+and whose generation is highly challenging, we use an unsupervised learning approach and exploit
+that, at least for short times, the temporal distance is a useful proxy for the intrinsic distance of the
+dynamics (indeed, in the case of an ideal atmospheric ﬂow, the intrinsic distance between ﬂow states
+is proportional to their time difference [Arnold, 1966, Ebin and Marsden, 1970]). We hence use the
+identiﬁcation of the (categorial) time difference between two temporally nearby inputs as auxiliary
+pretext task. This forces the representation network to learn informative internal representations of the
+input, given through the activations at intermediate layers [Krizhevsky et al., 2012]. The difference
+between internal activations, typically at one of the last layers, for two different inputs then provides
+a domain-speciﬁc distance measure (more precisely, a norm, such as MSE, of the difference).
+Network architecture The network architecture of AtmoDist is shown in Fig. 1. It has the
+structure of a siamese network [Chicco, 2021] with two inputs being fed through the same residual
+representation network [He et al., 2016]. The resulting weights are then stacked and analyzed in the
+comparison network that produces the categorial prediction of the temporal difference between the
+input signals.
+The representation network is loosely inspired by He et al. [2016] for classiﬁcation on CIFAR-
+10 [Krizhevsky et al., 2009]. It differs from conﬁgurations employed for classiﬁcation on ImageNet
+mainly through the reduced number of parameters ( 2:27106parameters for our network compared
+to10:99106for ResNet-18, the smallest one proposed by He et al. [2016]). We found that larger
+2Loss Accuracy Average loss
+Figure 2: Left and middle: Loss and accuracy of AtmoDist trained on vorticity and divergence. Right:
+Average loss and standard deviation (shaded) on the training set with a distance measure derived from
+our trained representation network ( L2norm of activation differences in last layer) and for MSE loss.
+networks resulted in severe overﬁtting on our dataset. The comparison network effectively acts as a
+learnable metric taking in the two intermediate representations and mapping these to their temporal
+distance. We found that its use, as opposed to classifying directly on the stacked representations,
+results in a signiﬁcantly increased classiﬁcation accuracy.
+Training for vorticity and divergence To evaluate the proposed representation learning network,
+we train it on (relative) vorticity and divergence, which together provide the potentials for the
+atmospheric wind velocity vector ﬁeld. The training data is obtained from ERA5 reanalysis [Hersbach
+et al., 2020], which we assume to be ground truth, measured atmospheric state. Training is performed
+on the time period from 1979 to 1998 (20 years) while the period from 2000 to 2005 is used
+for evaluation (6 years) This results in 58;440spatial ﬁelds for the training set and 17;536ones
+for the evaluation set. The ﬁelds are sampled on a regular latitude-longitude grid with resolution
+12802560 and at approximately 883 hPa height. Training is performed on randomly sampled
+patches of 160160pixels (about 2500 km2500 km ) with a maximum time difference of 69 h.
+The data follows a zero-centered Laplace distribution, i.e. it irregularly takes on very high values
+(relative to the standard deviation). To improve the stability and quality of the training we therefore
+log-transform vorticity and divergence in a preprocessing step (see the appendix for details).
+The training loss and accuracy as a function of the training epoch is shown in Fig. 2, left and middle.
+The results demonstrate good convergence of the training with the performance on the evaluation set
+improving up to epoch 27; afterwards overﬁtting sets in. Fig. 2, right, shows the average loss for the
+training set where the activations of the last layer of the trained representation network (violet block
+in Fig. 1) is used as distance measure, as described above. The results demonstrate the effectiveness
+of our ansatz since a more linear increase in the distance and lower variance is achieved.
+3 AtmoDist for Super Resolution
+Super resolution, or downscaling, is a classical problem in climate science. It arises from the lack
+of scale closure, i.e. while there is a coarsest scale, given by large scale patterns stretching over
+thousands of kilometers, there is no smallest one for climate dynamics and with each new scale, down
+to meters and centimeters, additional phenomena arise. Traditionally, this leads to larger and larger
+computers being used, with exascale computing being required to reach the 10 km grid resolution
+that is the state-of-the-art [Schulthess et al., 2019]. Recently, GANs have been proposed as an
+alternative to downscale both coarse scale simulations or observational data, e.g. [Stengel et al., 2020,
+Kashinath et al., 2021]. We will demonstrate the practical utility of AtmoDist with the state-of-the-art
+in GAN-based downscaling [Stengel et al., 2020] and comparing the MSE loss used in this work with
+a AtmoDist based representation loss.
+Results for 4x super resolution are presented in Fig. 3 and Fig. 4. The energy spectrum in Fig. 3,
+left, shows a clear improvement compared to MSE and almost perfectly ﬁts the ground truth. Some
+artifacts are apparent for the highest frequencies but these can easily be suppressed by an appropriate
+low pass ﬁlter. In Fig. 3, right, we show the semivariogram [Matheron, 1963] for vorticity, which
+measures geospatial autocorrelation. It veriﬁes that our approach captures geostatistical properties
+3Energy Normalized varianceFigure 3: Energy spectrum (left) and vorticity semivariogram (right) for our representation learning
+approach and MSE loss. The semivariogram has been normalized to the evaluation set variance.
+signiﬁcantly better than MSE; similar results are obtained for divergence. Fig. 4 shows examples for
+the generated super resolution. Clearly visible are the overly smooth results obtained with MSE and
+that our representation network based loss signiﬁcantly improves this.
+4 Discussion
+We introduced AtmoDist, a representation learning approach tailored towards atmospheric dynamics
+that only requires a time series to obtain a domain speciﬁc distance measure for atmospheric data.
+We demonstrated the utility of our approach by using AtmoDist for super resolution of vorticity
+and divergence. Compared to MSE used in the state-of-the-art [Stengel et al., 2020], we obtained
+signiﬁcantly improved results both for the visual error and in terms of the statistics of the generated
+ﬁelds. More details on AtmoDist will be presented in a forthcoming publication; the code is available
+on github.1
+In future work, we would like to evaluate our ansatz more thoroughly, e.g. by considering physical
+ﬁelds other than vorticity and divergence, integrate vertical dependence, perform an ablation study to
+better understand design choice, perform hyper-parameter tuning, and thoroughly evaluate which
+block of the representation network is best suited to obtain a distance measure in different applications.
+An important direction in future work is also the application of AtmoDist to address climate change.
+For example, the automatic classiﬁcation of polar jet behavior (e.g. Woollings et al. [2010]) or of
+blocking events (e.g. Davini et al. [2012]) could be used to better understand the effect of global
+heating. Our long term objective is to develop a hybrid climate simulation that combines a traditional
+simulation based on partial differential equations with a neural network based correction. AtmoDist
+developed in the present paper is a ﬁrst but crucial step towards this objective.
+1https://github.com/sehoffmann/AtmoDist
+Vorticity Divergence
+ours ground truth MSE ours ground truth MSE
+Figure 4: Uncurated super resolution examples for vorticity (left) and divergence (right). The yellow
+boxes highlight regions where the difference between AtmoDist and MSE is particularly apparent.
+4References
+K. Stengel, A. Glaws, D. Hettinger, and R. N. King. Adversarial super-resolution of climatological
+wind and solar data. Proceedings of the National Academy of Sciences , 117(29):16805–16815, 2020.
+ISSN 0027-8424. doi: 10.1073/pnas.1918964117. URL https://www.pnas.org/content/
+117/29/16805 .
+M. Heusel, H. Ramsauer, T. Unterthiner, B. Nessler, and S. Hochreiter. Gans trained by a two
+time-scale update rule converge to a local nash equilibrium. Advances in neural information
+processing systems , 30, 2017.
+T. Salimans, I. Goodfellow, W. Zaremba, V . Cheung, A. Radford, and X. Chen. Improved techniques
+for training gans. Advances in neural information processing systems , 29:2234–2242, 2016.
+C. Ledig, L. Theis, F. Huszár, J. Caballero, A. Cunningham, A. Acosta, A. Aitken, A. Tejani, J. Totz,
+Z. Wang, and W. Shi. Photo-realistic single image super-resolution using a generative adversarial
+network. In 2017 IEEE Conference on Computer Vision and Pattern Recognition (CVPR) , pages
+105–114, 2017. doi: 10.1109/CVPR.2017.19.
+V . I. Arnold. Sur la géométrie différentielle des groupes de Lie de dimension inﬁnie et ses applications
+à l’hydrodynamique des ﬂuides parfaits. Annales de l’institut Fourier , 16:319–361, 1966. URL
+http://aif.cedram.org/aif-bin/item?id=AIF{_}1966{_}{_}16{_}1{_}319{_}0 .
+D. G. Ebin and J. E. Marsden. Groups of Diffeomorphisms and the Motion of an Incompressible
+Fluid. The Annals of Mathematics , 92(1):102–163, 1970. URL http://www.jstor.org/
+stable/1970699 .
+A. Krizhevsky, I. Sutskever, and G. E. Hinton. Imagenet classiﬁcation with deep convolutional neural
+networks. Advances in neural information processing systems , 25:1097–1105, 2012.
+D. Chicco. Siamese Neural Networks: An Overview , pages 73–94. Springer US, New York, NY ,
+2021. ISBN 978-1-0716-0826-5. doi: 10.1007/978-1-0716-0826-5_3. URL https://doi.org/
+10.1007/978-1-0716-0826-5_3 .
+K. He, X. Zhang, S. Ren, and J. Sun. Deep residual learning for image recognition. In Proceedings
+of the IEEE conference on computer vision and pattern recognition , pages 770–778, 2016.
+A. Krizhevsky, G. Hinton, et al. Learning multiple layers of features from tiny images. 2009.
+H. Hersbach, B. Bell, et al. The ERA5 global reanalysis. Quarterly Journal of the Royal Me-
+teorological Society , 146(730):1999–2049, 2020. doi: https://doi.org/10.1002/qj.3803. URL
+https://rmets.onlinelibrary.wiley.com/doi/abs/10.1002/qj.3803 .
+T. C. Schulthess, P. Bauer, N. Wedi, O. Fuhrer, T. Hoeﬂer, and C. Schär. Reﬂecting on the goal and
+baseline for exascale computing: A roadmap based on weather and climate simulations. Computing
+in Science Engineering , 21(1):30–41, 2019. doi: 10.1109/MCSE.2018.2888788.
+K. Kashinath, M. Mustafa, et al. Physics-informed machine learning: case studies for weather and
+climate modelling. Philosophical Transactions of the Royal Society A: Mathematical, Physical
+and Engineering Sciences , 379(2194):20200093, 2021. doi: 10.1098/rsta.2020.0093. URL
+https://royalsocietypublishing.org/doi/abs/10.1098/rsta.2020.0093 .
+G. Matheron. Principles of geostatistics. Economic geology , 58(8):1246–1266, 1963.
+T. Woollings, A. Hannachi, and B. Hoskins. Variability of the north atlantic eddy-driven jet stream.
+Quarterly Journal of the Royal Meteorological Society , 136(649):856–868, 2010. doi: https:
+//doi.org/10.1002/qj.625. URL https://rmets.onlinelibrary.wiley.com/doi/abs/10.
+1002/qj.625 .
+P. Davini, C. Cagnazzo, S. Gualdi, and A. Navarra. Bidimensional diagnostics, variability, and
+trends of northern hemisphere blocking. Journal of Climate , 25(19):6496 – 6509, 2012. doi: 10.
+1175/JCLI-D-12-00032.1. URL https://journals.ametsoc.org/view/journals/clim/
+25/19/jcli-d-12-00032.1.xml .
+5S. Ioffe and C. Szegedy. Batch normalization: Accelerating deep network training by reducing
+internal covariate shift. In International conference on machine learning , pages 448–456. PMLR,
+2015.
+K. He, X. Zhang, S. Ren, and J. Sun. Delving deep into rectiﬁers: Surpassing human-level per-
+formance on imagenet classiﬁcation. In Proceedings of the IEEE international conference on
+computer vision , pages 1026–1034, 2015.
+A. Aitken, C. Ledig, L. Theis, J. Caballero, Z. Wang, and W. Shi. Checkerboard artifact free sub-pixel
+convolution: A note on sub-pixel convolution, resize convolution and convolution resize. arXiv
+preprint arXiv:1707.02937 , 2017.
+Y . Bengio, J. Louradour, R. Collobert, and J. Weston. Curriculum learning. In Proceedings of
+the 26th Annual International Conference on Machine Learning , ICML ’09, page 41–48, New
+York, NY , USA, 2009. Association for Computing Machinery. ISBN 9781605585161. doi:
+10.1145/1553374.1553380. URL https://doi.org/10.1145/1553374.1553380 .
+D. Kingma and J. Ba. Adam: A method for stochastic optimization. In 3rd International Conference
+for Learning Representations , 2014. URL https://arxiv.org/abs/1412.6980 .
+A Appendix
+Network architecture The representation network begins with a strided 88convolution followed
+by a strided 33max-pooling operation. Each residual block depicted in Fig. 1 consists of two
+convolutions and a skip-connection (see [He et al., 2016] for details). After doubling the number of
+channels in each layer, the spatial resolution is halved using strided convolutions.
+Furthermore, each convolution (in a residual block or standalone) is followed by a batch normaliza-
+tion layer [Ioffe and Szegedy, 2015] before being passed to a ReLU activation function [He et al.,
+2015]. For skip connections that operate across two different channel dimensions, learnable linear
+projections are employed. All non-bias weights are initialized according to the method described
+in He et al. [2015].
+For super-resolution, we build upon the SRGAN [Ledig et al., 2017] implementation made openly
+available by Stengel et al. [2020]. Our only modiﬁcations are an incorporation of the improved
+initialization scheme for the upscaling sub-pixel convolutions [Aitken et al., 2017] as well as replacing
+transposed convolutions with regular ones in the generator as in the original architecture [Ledig et al.,
+2017]. In particular, we keep the omission of batch normalization layers in the generator introduced
+by Stengel et al. [2020].
+ERA5 training data Our training data is computed onto a regular latitude-longitude grid with
+resolution 12802560 directly from the native spherical harmonics coefﬁcients of ERA 5 at model
+level 120. Due to their Laplace distribution, the vorticity and divergence input data is log-transform
+byy=f(x)with the following mapping
+y=w 2
+2w= sign(z) log(1 +jzj)z=x 1
+1
+which is applied element-wise and channel-wise. Here 1and1denote the mean and standard
+deviation of the corresponding input channel, respectively, while 2and2denote the mean and
+standard deviation of the log-transformed ﬁeld w. All moments are calculated across the training
+dataset. The parameter controls the strength by which the dynamic range at the tails of the
+distribution is compressed.2We found that = 0:2is sufﬁcient to stabilize training while minimizing
+the compression applied to the original data.
+For the representation learning network, 21vorticity-divergence patch pairs of size 160160each
+are sampled randomly from the 12802560 ﬁelds at each time step in the input data. Due to the
+distortion near the poles, the latitude of the patch center is restricted to 60Nto60S. This results
+in patches starting between 82:5Nand60Nto still be included yet with linearly decreasingly
+2Notice that the logfunction behaves approximately linear around 1, thus leaving sufﬁciently small values
+almost unaffected.
+6probability; analogously in the Southern hemisphere. To obtain input for the super-resolution, we
+employ the same sampling scheme but sample 180patches of size 9696per time step. The
+low-resolution versions for these patches is then found by average pooling.
+Training details The representation network is trained using standard stochastic gradient descent
+with momentum = 0:9and an initial learning rate of = 10 1. If training encounters a plateau,
+the learning rate is reduced by an order of magnitude to a minimum of min= 10 5. Additionally,
+gradient clipping is employed, ensuring that the l2-norm of the gradient does not exceed 5:0. To
+counteract overﬁtting, weight decay of 10 4is used. The network is trained with regular log-loss,
+i.e.L= 1
+NPN
+i=1yilog(^ yi), where yiis a vector with one-hot encoded class-labels and ^ yiare the
+predictions of the network.
+In preliminary experiments with lower resolutions we observed that training is initially very slow for
+the ﬁrst four to ﬁve epochs before suddenly progressing rapidly. Furthermore, in initial test with the
+full resolution of 12802560 the training did not converge at all. We hypothesize that this behavior
+stems from the difﬁculty of the task combined with an initial lack of discerning features. We thus
+employ a pre-training scheme inspired by curriculum learning [Bengio et al., 2009] where initially
+simpler examples are presented to the machine learning algorithms before gradually increasing the
+difﬁculty.
+In particular, we performed the training of the network ﬁrst on a smaller subset of the data. While
+eventually leading to severe overﬁtting if continued for too long, some of the lower-level features
+learned by the network generalize and prove useful for the complete dataset. Concretely, the network
+is pre-trained for 20 epochs on a ﬁxed subset of 2000 batches before the learning rate is reset to
+= 10 1and training on the whole dataset begins. This pre-training scheme was sufﬁcient to ensure
+convergence of the training as shown in Fig. 2.
+For super-resolution, we use the same training parameters as Stengel et al. [2020]. In particular, the
+learning rate is set to = 10 4and the adversarial loss component is scaled by adv= 10 3. The
+GANs (one for MSE loss and one for our representation loss) are then trained for 6epochs using
+Adam [Kingma and Ba., 2014].
+Training the representation network took approximately 1:5days on a NVIDIA RTX 2080 Ti, while
+training a single GAN on a NVIDIA Quadro RTX 6000 took approximately 4days.
+Scaling of the loss function To ensure that MSE-based and AtmoDist-based super-resolution
+exhibit the same training dynamics, we normalize our loss-function. This is particularly important
+with respect to the advparameter which controls the trade-off between content-loss and adversarial-
+loss.
+We hypothesize that due to the chaotic dynamics of the atmosphere, any loss function should on
+average converge to a speciﬁc level after a certain time period (ignoring daily and annual oscillations,
+compare Fig. 2, right). Thus, we normalize our content-loss by ensuring that these equilibrium levels
+are roughly the same in terms of least squares by solving the following optimization problem for the
+scaling factor cnt
+minimize
+cnt2RNX
+t=bN=2c(cntct mt)2(1)
+where ctdenote the average content-loss of samples that are t(categorical) timesteps apart, and mt
+denote the average MSE of samples that are t(categorical) timesteps apart respectively (compare
+Fig. 2, right). It is easy to verify that the above optimization problem has the unique solution
+cnt=PN
+t=bN=2cctmt
+PN
+t=bN=2cc2
+t: (2)
+7

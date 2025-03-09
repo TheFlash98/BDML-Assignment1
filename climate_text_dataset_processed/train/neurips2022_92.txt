@@ -1,0 +1,296 @@
+Performance evaluation of deep segmentation models
+on Landsat-8 imagery
+Akshat Bhandari∗†
+Dept. of Computer Science and Engineering
+akshatbhandari15@gmail.comSriya Rallabandi∗†
+Dept. of Information and
+Communication Technology
+sriyarallabandi@gmail.com
+Sanchit Singhal∗†
+Dept. of Electrical and Electronics Engineering
+sanchitsinghal57@gmail.comAditya Kasliwal∗†
+Dept. of Data Science and
+Computer Applications
+kasliwaladitya17@gmail.com
+Pratinav Seth∗
+Dept. of Data Science and Computer Applications
+seth.pratinav@gmail.com
+Abstract
+Contrails, short for condensation trails, are line-shaped ice clouds produced by
+aircraft engine exhaust when they fly through cold and humid air. They generate
+a greenhouse effect by absorbing or directing back to Earth approximately 33%
+of emitted outgoing longwave radiation[ 1]. They account for over half of the
+climate change resulting from aviation activities. Avoiding contrails and adjusting
+flight routes could be an inexpensive and effective way to reduce their impact. An
+accurate, automated, and reliable detection algorithm is required to develop and
+evaluate contrail avoidance strategies. Advancement in contrail detection has been
+severely limited due to several factors, primarily due to a lack of quality-labeled
+data. Recently, [ 2] proposed a large human-labeled Landsat-8 contrails dataset.
+Each contrail is carefully labeled with various inputs in various scenes of Landsat-8
+satellite imagery. In this work, we benchmark several popular segmentation models
+with combinations of different loss functions and encoder backbones. This work
+is the first to apply state-of-the-art segmentation techniques to detect contrails in
+low-orbit satellite imagery. Our work can also be used as an open benchmark for
+contrail segmentation and is available at https://github.com/Kasliwal17/
+Contrail_Segmentation .
+1 Introduction
+Contrails, or vapor trails, usually form when water vapor from the exhaust combines with the low
+ambient temperatures in high-altitude regions. These contrails create an additional blanket of clouds,
+increasing the heat-trapping effect that directly contributes to global warming. Although some may
+be short-lived, they can, in many cases, linger for hours[ 3], which results in new contrails created by
+aircraft flying on the same routes, accumulating and forming a ’contrail cirrus’[ 4][5], which worsens
+the heat-trapping effect. As a result, contrails have become a new cause of alarm for climate change
+∗Manipal Institute of Technology, Manipal Academy of Higher Education, Manipal, India
+†Authors have contributed equally to this work
+Tackling Climate Change with Machine Learning: workshop at NeurIPS 2022.as they have become one of the most significant contributors to global warming caused by the aviation
+industry[6].
+An effective solution that can reduce the effect of contrails is to avoid the regions of the atmosphere
+that are cold and humid enough to create contrails[ 7] and to adjust flight routes and slight changes
+in flight altitudes[ 8] to reduce the air traffic in such regions. This can be a relatively easy solu-
+tion to prevent contrail formations and their effects, given that a comparably small proportion of
+aircraft contributes majorly. Physics-based models such as CoCIP[ 9] and APCEMM[ 10] simulate
+contrails’ microphysics and radiative transfer effects but suffer from uncertainties in their inputs.
+These uncertainties -such as the spatial resolution of numerical weather models and limitations of
+high-altitude humidity measurements[ 11]) - result in large errors in contrail RF predictions from
+such models. Contrail detection work in aerial images can be largely attributed to Mannstein et
+al.[12][13][14][15][16][17][18]. This algorithm operates on brightness temperature imagery using a
+sequence of manually designed convolution and thresholding procedures, followed by recognizing
+appropriate linear linked components. The algorithm is tuned to have either high precision or recall;
+however, no single model has succeeded in achieving both simultaneously. Apart from this, deep learn-
+ing models have been used for contrail detection using images of GOES-16 satellite[ 19] and images
+from Himawari-8 stationary satellite[ 20]. However, apart from [ 21] that has used Hough Transforms
+to segment A VHRR imagery, no work to our knowledge, has been done in over two decades to
+implement neural network-based segmentation models for contrails detection and Landsat-8 data.
+This work explores the potential of ’deep convolutional nets’ to identify and segment contrails in
+satellite imagery. For this purpose, we use popular semantic segmentation models, such as UNet[ 22],
+PSP Net[ 23], DeepLab V3[ 24] and DeepLab V3+[ 25] with different combinations of loss functions
+and encoders to adjust it accordingly for capturing the intricacies of contrails and achieve a more
+generalized result. We train these models on the labeled Landsat-8 contrails dataset proposed by
+[2], which consists of several scenes from the Landsat-8 satellite in which the contrails have been
+identified and marked as bounding polygons. We hope our proposed methods can be used as a
+benchmark for further work on this dataset and open the way for more substantial research on this
+domain.
+2 Data
+The dataset[ 2] includes Landsat-8 scenes (primarily from 2018 and inside the viewable extent of the
+GOES-16 satellite), which have been reviewed by human labellers taught to identify and mark the
+bounding polygon of each contrail in the scene. The dataset has 4289 scenes primarily from 2018 of
+the Landsat-8 satellite, out of which 47% of scenes have at least one contrail.
+While prediction work has already been done on the GOES-16 and other NOAA series satellite
+images, using images of a low-earth orbit satellite such as Landsat-8 is beneficial for contrails as
+its images have a high spatial resolution of 30m and 100m per pixel for cirrus and thermal infrared
+bands respectively. This makes it easier to distinguish contrails from natural cirrus clouds, which are
+made of ice crystals and look like long and thin white lines. Each scene has a true-color RGB image,
+a false color image, and labeled contrail points for this purpose.
+We use the false colour images and the contrail labels by generating them as a ground truth mask for
+each image. False colour images are generated by extracting the brightness temperature difference
+or red channel between the 12 µm and 11 µm bands, the 1.37 µm cirrus cloud reflectance band,
+which is the green channel and is omitted for nighttime images to avoid confusion and the 12 µm
+brightness temperature blue channel. The contrails in these images appear as black linear clouds,
+making it easier for the models to differentiate between cirrus clouds and contrails than RGB images
+for segmentation.
+3 Methodology
+3.1 Dataset Preprocessing
+The dataset is available in JSON string format stored in Google Cloud Storage. There are 100 files,
+each with the Landsat-8 filename, polygon bounds of contrails in the scene, and deidentified advected
+flight waypoints for each labeled scene. We manually preprocessed the data by constructing the
+2ground truth mask from the polygon bounds using matplotlib collections[ 26]. We then resized the
+images and the masks to 512x512 dimensions for training; anything less than 512 led to a deterioration
+in results. We use only images with at least one contrail for training due to class imbalance between
+contrails and background and to help the model generalize better. The dataset has been further divided
+into 80% for training (1737) and 20% for testing (434). We opted to use the false color images as it
+was visually easier to identify the contrail than RGB images. Experimentally as well, the models
+performed better on false color images.
+3.2 Models
+We experimented with different types of state-of-the-art segmentation networks, namely UNet[ 22],
+an encoder-decoder-based standard network, PSP Net[ 23], a pyramid pooling module-based network,
+DeepLabV3[ 24] and DeepLabV3+[ 25] which are a combination of both encoder-decoder and pyramid
+pooling-based module. We used multiple backbones for each of these architectures. We employed
+Resnet101[ 27],ResNeXt101-32x4d[ 28] and Xception71[ 29] with ImageNet pretrained weights.We
+experimented with both pretrained weights and random initialization and found that although results
+were almost the same, using pretrained weights helped the models to converge at least 30% faster.
+We chose these backbones for our segmentation models as[ 30] showed them as most effective for
+semantic segmentation of fine lines.
+Adam optimizer was used for all these instances with a learning rate of 0.0001 and sigmoid activa-
+tion function. We tried various loss functions such as Focal[ 31], Tversky[ 32], Focal-Tversky[ 33],
+Dice[ 34], and Jaccard loss[ 35]. Intersection over Union (IoU) was used as the primary evaluation
+metric. We used different loss functions and noticed that an over-suppression of the Focal-Tversky
+is observed when the class accuracy is high, as the model is close to convergence. In contrast, for
+Dice loss, we noticed that it is very unstable as the model goes closer to converges and hence doesn’t
+converge well. To combat these shortcomings, we used a combination of Dice and Focal-Tversky
+loss, as shown in equation. 1.
+TotalLoss =X
+c 
+δ 
+1−PN
+i=1picgic+ϵ
+PN
+i=1pic+gic+ϵ!
++
+(1−δ) 
+1−PN
+i=1picgic+ϵ
+PN
+i=1picgic+αPN
+i=1pi¯cgic+βPN
+i=1picgi¯c+ϵ!1/γ! (1)
+N denotes the total number of pixels in an image, gicandpicrepresent the per pixel ground truth
+and predicted probability respectively for contrail class c, similarly gi¯candpi¯crepresent the non-
+contrail class ¯c.α,β, and γare hyper-parameters for Focal-Tversky loss that can be tuned. δis a
+hyper-parameter that decides the percentage of contribution of both Focal-Tversky and Dice loss
+towards the final loss calculated. After careful experimentation, we observed the best results with
+δ= 0.5.
+4 Results
+Table 1 compares the train and test IoU of all the segmentation models-encoder combinations. While
+there is about ±0.03 difference in the IoUs among all the combinations, we notice that the combination
+of UNet[ 22] architecture with Xception 71[ 29] backbone gives the best IoU of 0.4395 . While the
+IoU was low, the model produced satisfactory contrail masks. We attribute this to the fact that the
+fundamental shape of the labels, i.e. thin and long hence IoU calculation is affected drastically if
+the prediction is even a few pixels off. We also tried simple data augmentation techniques, such as
+rotation and flipping, which didn’t improve the IoU. Also, since we used false color images for our
+purpose, using hue saturation augmentation caused deterioration in our results.
+We also noticed several mislabeled masks of contrails in the dataset. The dataset has several noisy
+labels due to manual labelling, due to which it suffers from large intra and inter-observer variability.
+Furthermore, numerous contrail labels in the dataset are broader than the corresponding visible
+contrail in the original image. This and a severe class imbalance in the dataset were the two significant
+issues limiting the model’s ability. We have used Dice and Focal-Tversky to create our loss function,
+as these are well known for dealing with class imbalance issues. We chose to consider images with at
+3Figure 1: Comparison of RGB, false colour, ground truth, and predicted mask for test images
+RGB
+Ground 
+Truth
+Predicted 
+Mask
+False 
+Colour
+Table 1: IoU scores of segmentation models with different backbones
+UNet PSP Net DeepLabV3 DeepLabV3+
+ResNet 101 Training 0.6479 0.5032 0.4714 0.7048
+Test 0.3410 0.3788 0.4143 0.4015
+ResNext 101-32x4d Training 0.5411 0.6500 0.7211 0.6657
+Test 0.4224 0.4044 0.4339 0.4266
+Xception 71 Training 0.6887 0.7272 0.7730 0.6290
+Test 0.4395 0.4027 0.4246 0.4230
+least one contrail for training. While these factors may affect the IoU, our combinations still have
+performed convincingly on the test dataset, evident in examples of the model’s predictions against
+the ground truth, as provided in Figure 1
+5 Conclusion
+Contrails account for about 57% of the global warming caused by the aviation industry[ 36]. Robust
+contrail detection and segmentation is the first step in quantifying its lifetime impact and linking it to
+possible flights that may have caused it, thus assisting in tracking and avoiding contrails.
+To the best of our knowledge, we are the first to present a detailed work on Landsat-8 data and
+evaluation on benchmarking of different state-of-the-art models for semantic segmentation for
+contrail detection. Using false color images of Landsat-8 imagery, we achieve 0.4395 testing IoU
+UNet architecture with Xception 71 backbone. While the IoU is low, it fails to capture the model’s
+true performance on the task. In our experiments, the model is more often than not able to segment
+contrails proficiently.
+While this work is a solid first step in utilizing deep learning methods for contrail detection, there is
+much room for improvement. In future studies, we would like to experiment with temperature-based
+colour preprocessing. To test the model’s robustness, we want to calculate uncertainty estimates under
+varying domains of satellite imagery and evaluate the model using a more suitable metric instead of
+IoU. Contextual information can also be incorporated based on publicly available datasets, such as
+overlapping segmentation masks containing land cover, naturally occurring clouds, flight paths etc.
+Another avenue for future experiments could be using self-supervised and pseudo-labelling training
+techniques, attention-based models, introduction of discriminator and vision transformers.
+46 Acknowledgments
+We would like to thank Mars Rover Manipal, an interdisciplinary student project team of MAHE, for
+providing the necessary resources for our research. We are grateful to our faculty advisor, Dr Ujjwal
+Verma, for providing the necessary guidance.
+References
+[1]Denis Avila, Lance Sherry, and Terry Thompson. Reducing global warming by airline contrail
+avoidance: A case study of annual benefits for the contiguous united states. Transportation
+Research Interdisciplinary Perspectives , 2:100033, 2019.
+[2]Kevin McCloskey, Scott Geraedts, Christopher Van Arsdale, and Erica Brand. A human-labeled
+landsat-8 contrails dataset. In ICML 2021 Workshop on Tackling Climate Change with Machine
+Learning , 2021.
+[3]Mannstein Vázquez-Navarro, Hermann Mannstein, and Stephan Kox. Contrail life cycle and
+properties from 1 year of msg/seviri rapid-scan images. Atmospheric Chemistry and Physics ,
+15(15):8739–8749, 2015.
+[4]Lisa Bock and Ulrike Burkhardt. Reassessing properties and radiative forcing of contrail cirrus
+using a climate model. Journal of Geophysical Research: Atmospheres , 121(16):9717–9736,
+2016.
+[5]Ulrike Burkhardt and Bernd Kärcher. Global radiative forcing from contrail cirrus. Nature
+climate change , 1(1):54–58, 2011.
+[6]Fred Pearce. How airplane contrails are helping make the planet warmer. YaleEnvironment360 ,
+2019.
+[7]Jarlath Molloy, Roger Teoh, Seán Harty, George Koudis, Ulrich Schumann, Ian Poll, and
+Marc EJ Stettler. Design principles for a contrail-minimizing trial in the north atlantic.
+Aerospace , 9(7):375, 2022.
+[8]Hermann Mannstein, Peter Spichtinger, and Klaus Gierens. A note on how to avoid contrail
+cirrus. Transportation Research Part D: Transport and Environment , 10(5):421–426, 2005.
+[9]Ulrich Schumann. A contrail cirrus prediction model. Geoscientific Model Development ,
+5(3):543–580, 2012.
+[10] Thibaud M Fritz, Sebastian D Eastham, Raymond L Speth, and Steven RH Barrett. The role of
+plume-scale processes in long-term impacts of aircraft emissions. Atmospheric Chemistry and
+Physics , 20(9):5697–5727, 2020.
+[11] Klaus Gierens, Sigrun Matthes, and Susanne Rohs. How well can persistent contrails be
+predicted? Aerospace , 7(12):169, 2020.
+[12] Hermann Mannstein, Richard Meyer, and Peter Wendling. Operational detection of contrails
+from noaa-avhrr-data. International Journal of Remote Sensing , 20(8):1641–1660, 1999.
+[13] Richard Meyer, H Mannstein, R Meerkötter, U Schumann, and P Wendling. Regional radiative
+forcing by line-shaped contrails derived from satellite data. Journal of Geophysical Research:
+Atmospheres , 107(D10):ACL–17, 2002.
+[14] Rabindra Palikonda, Patrick Minnis, David P Duda, and Hermann Mannstein. Contrail coverage
+derived from 2001 avhrr data over the continental united states of america and surrounding
+areas. Meteorologische Zeitschrift , 14(4):525–536, 2005.
+[15] Patrick Minnis, Rabindra Palikonda, Bryan J Walter, J Kirk Ayers, and Hermann Mannstein.
+Contrail coverage over the north pacific from avhrr data. Meteor. Z , 2005.
+5[16] Richard Meyer, Rüdiger Buell, Christian Leiter, Hermann Mannstein, Susanna Pechtl, Taikan
+Oki, and Peter Wendling. Contrail observations over southern and eastern asia in noaa/avhrr
+data and comparisons to contrail simulations in a gcm. International Journal of Remote Sensing ,
+28(9):2049–2069, 2007.
+[17] Mannstein Vazquez-Navarro, H Mannstein, and B Mayer. An automatic contrail tracking
+algorithm. Atmospheric Measurement Techniques , 3(4):1089–1101, 2010.
+[18] David P Duda, Patrick Minnis, Konstantin Khlopenkov, Thad L Chee, and Robyn Boeke.
+Estimation of 2006 northern hemisphere contrail coverage using modis data. Geophysical
+Research Letters , 40(3):612–617, 2013.
+[19] Luke Kulik. Satellite-based detection of contrails using deep learning . PhD thesis, Mas-
+sachusetts Institute of Technology, 2019.
+[20] Guoyu Zhang, Jinglin Zhang, and Jian Shang. Contrail recognition with convolutional neural
+network and contrail parameterizations evaluation. SOLA , 14:132–137, 2018.
+[21] John M Weiss, Sundar A Christopher, and Ronald M Welch. Automatic contrail detection and
+segmentation. IEEE transactions on geoscience and remote sensing , 36(5):1609–1619, 1998.
+[22] Olaf Ronneberger, Philipp Fischer, and Thomas Brox. U-net: Convolutional networks for
+biomedical image segmentation. In International Conference on Medical image computing and
+computer-assisted intervention , pages 234–241. Springer, 2015.
+[23] Hengshuang Zhao, Jianping Shi, Xiaojuan Qi, Xiaogang Wang, and Jiaya Jia. Pyramid scene
+parsing network. In Proceedings of the IEEE conference on computer vision and pattern
+recognition , pages 2881–2890, 2017.
+[24] Liang-Chieh Chen, George Papandreou, Florian Schroff, and Hartwig Adam. Rethinking atrous
+convolution for semantic image segmentation. arXiv preprint arXiv:1706.05587 , 2017.
+[25] Liang-Chieh Chen, Yukun Zhu, George Papandreou, Florian Schroff, and Hartwig Adam.
+Encoder-decoder with atrous separable convolution for semantic image segmentation. In
+Proceedings of the European conference on computer vision (ECCV) , pages 801–818, 2018.
+[26] J. D. Hunter. Matplotlib: A 2d graphics environment. Computing in Science & Engineering ,
+9(3):90–95, 2007.
+[27] Kaiming He, Xiangyu Zhang, Shaoqing Ren, and Jian Sun. Deep residual learning for image
+recognition. In Proceedings of the IEEE conference on computer vision and pattern recognition ,
+pages 770–778, 2016.
+[28] Saining Xie, Ross Girshick, Piotr Dollár, Zhuowen Tu, and Kaiming He. Aggregated residual
+transformations for deep neural networks. arXiv preprint arXiv:1611.05431 , 2016.
+[29] François Chollet. Xception: Deep learning with depthwise separable convolutions. In Proceed-
+ings of the IEEE conference on computer vision and pattern recognition , pages 1251–1258,
+2017.
+[30] Rongyu Zhang, Lixuan Du, Qi Xiao, and Jiaming Liu. Comparison of backbones for semantic
+segmentation network. In Journal of Physics: Conference Series , volume 1544, page 012196.
+IOP Publishing, 2020.
+[31] Tsung-Yi Lin, Priya Goyal, Ross Girshick, Kaiming He, and Piotr Dollár. Focal loss for dense
+object detection, 2017.
+[32] Seyed Sadegh Mohseni Salehi, Deniz Erdogmus, and Ali Gholipour. Tversky loss function for
+image segmentation using 3d fully convolutional deep networks, 2017.
+[33] Nabila Abraham and Naimul Mefraz Khan. A novel focal tversky loss function with improved
+attention u-net for lesion segmentation, 2018.
+6[34] Carole H Sudre, Wenqi Li, Tom Vercauteren, Sebastien Ourselin, and M Jorge Cardoso. Gener-
+alised dice overlap as a deep learning loss function for highly unbalanced segmentations. In
+Deep learning in medical image analysis and multimodal learning for clinical decision support ,
+pages 240–248. Springer, 2017.
+[35] David Duque-Arias, Santiago Velasco-Forero, Jean-Emmanuel Deschaud, Francois Goulette,
+Andrés Serna, Etienne Decencière, and Beatriz Marcotegui. On power jaccard losses for
+semantic segmentation. In VISAPP 2021: 16th International Conference on Computer Vision
+Theory and Applications , 2021.
+[36] D.-S. Lee, David W. Fahey, Agnieszka Skowron, Myles R. Allen, Ulrike Burkhardt, Qi Chen,
+Sarah J. Doherty, Sarah Freeman, Piers M. Forster, Jan S. Fuglestvedt, Andrew Gettelman,
+Rubén Rodríguez De León, Ling L. Lim, Marianne Tronstad Lund, Richard J. Millar, Bethan
+Owen, J. E. Penner, Giovanni Mario Pitari, Michael J. Prather, Robert Sausen, and Laura J.
+Wilcox. The contribution of global aviation to anthropogenic climate forcing for 2000 to 2018.
+Atmospheric Environment (Oxford, England : 1994) , 244:117834 – 117834, 2020.
+7

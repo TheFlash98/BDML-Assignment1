@@ -1,0 +1,435 @@
+Attention-Based Scattering Network
+for Satellite Imagery
+Jason Stock & Charles Anderson
+Computer Science
+Colorado State University
+{stock,anderson}@colostate.edu
+Abstract
+Multi-channel satellite imagery, from stacked spectral bands or spatiotemporal data,
+have meaningful representations for various atmospheric properties. Combining
+these features in an effective manner to create a performant and trustworthy model
+is of utmost importance to forecasters. Neural networks show promise, yet suffer
+from unintuitive computations, fusion of high-level features, and may be limited
+by the quantity of available data. In this work, we leverage the scattering transform
+to extract high-level features without additional trainable parameters and introduce
+a separation scheme to bring attention to independent input channels. Experiments
+show promising results on estimating tropical cyclone intensity and predicting the
+occurrence of lightning from satellite imagery.
+1 Introduction
+Machine learning has received great attention in the atmospheric science community over the past
+couple of years. Many satellite-based applications leverage convolutional neural networks (CNN)s for
+tasks including but not limited to: forecasting next-hour tornado occurrences [ 1], predicting intense
+convection [ 2], and estimating topical cyclone intensity [ 3]. These applications create input samples
+with stacked channel-wise features consisting of satellite imagery at different wavelengths and train a
+network to recognize certain patterns. While the approach is undoubtedly effective, it is not clear
+how these input channels are combined in the earlier layers of the network. On the other hand, a
+trained forecaster may intuitively look at individual channels, or the differences between multiple
+channels, to identify relevant features and patterns that can easily be explained. Furthermore, these
+networks are often limited by the quantity of available labeled data, which can lead to a model that
+underperforms with too few parameters or overfits as complexity increases. This further motivates
+the need for an architecture that is both interpretable-by-design and generalizable to small datasets.
+One effective technique to modeling sparsely labeled data is with the scattering transform as was
+introduced by Mallat [ 4]. This uses a cascade of wavelet transforms with a predetermined filterbank
+and a non-linear modulus, akin to the structure of CNNs. Not only has the scattering transform
+shown promise for applications with relatively few training samples [ 5–8], but it also has many nice
+properties for modeling satellite data. Specifically, the design builds strong geometric invariants (e.g.,
+translations, rotations, and scaling) and is stable to the action of diffeomorphisms – a desirable trait
+due to the continuous change in cloud structure over time. Studies have also shown the scattering
+transform to promote sparse representation of data with a high degree of discriminability which can
+ultimately simplify downstream tasks [5, 9].
+To build an architecture that more closely aligns with the visual interpretations of satellite imagery
+done by forecasters, we incorporate attention into the early layers preceding the scattering transform.
+Attention mechanisms work to identify salient regions in complex scenes as inspired by aspects of
+the human visual system [ 10]. Recent computer vision studies have shown attention to increase
+Tackling Climate Change with Machine Learning: workshop at NeurIPS 2022.Ac
+k×1×1×UcAs
+1×h×w× ×
+c×k×h×wS2
+⊢
+k×h×w˜S2
+× +
+k×h×wFw1
+1−w1
+c1:c0scattering
+coefficients
+separatechannel attention spatial attention fusion
+Figure 1: Network architecture illustrating the separation of attention modules on the scattering transform. The
+left most block represents the output of the scattering transform on the input. The separate operator isolates a
+single channel, e.g., C0, and passes the normalized scattering coefficients, ˜S2, through channel attention and
+spatial attention before fusion. There are Ctotal attention modules in the network. Figure modified from [12].
+performance and interpretability as well as improve confidence of post hoc explainability methods
+[11,12]. Most similar to this work are the studies from [ 13,8]. In [ 13], residual layers mix the input
+channels before applying attention and [ 8] applies a scattering attention module after each step in a
+U-Net. However, our approach differs in that we introduce a separation scheme that applies attention
+to individual input channels that directly follow the scattering transform.
+2 Methodology
+Figure 1 illustrates the primary components of our network, starting with our output of the scattering
+transform and showing an attention module separated by input channel. The implementation and
+design choice for each part is described in detail below.
+Scattering Transform Scattering representations yield invariant, stable (to noise and deformations),
+and informative signal descriptors with cascading wavelet decomposition using a non-linear modulus
+followed by spatial averaging. Using the Kymatio package [ 14], we compute a 2D transform with a
+predetermined filter bank of Morlet wavelets at J= 3scales and L= 6orientations. For each input
+channel, we apply a second-order transform to obtain the scattering coefficients S2. These channels
+are processed independently and combined later in the network. Additional details on the scattering
+transform can be found in Appendix A.1.
+Channel Separation Local attention methods routinely process their input using all the channel
+information at once, e.g., feature maps from RGB color channels. However, the result of the scattering
+transform yields a 5-dimensional tensor, S2, where each channel, C, in the input has their own set of
+Kscattering coefficients. Rather than stacking the result and passing them all through the subsequent
+layers together, we propose to first separate the input channels and process the coefficients individually.
+This creates Cnew attention modules, each with independent weights, that are processed in parallel.
+By following this separation scheme we add the benefit of localizing patterns in the input before
+joining high-level features. Thus, the interpretation of attention over individual input channels is
+improved significantly, especially if the channels have different meaning, e.g., temporal, visible,
+infrared, derived products, etc.
+Attention Modules The attention modules encompass three primary components, namely: (i) chan-
+nel attention, (ii) spatial attention and (iii) feature fusion. The channel attention features are used to
+inform the spatial attention module before fusion via feature recalibration. Specifically, the network
+learns to use the spatial information over the Kchannels to selectively highlight the more informative
+coefficients from the less useful ones. Not only does this offer a performance improvement to
+our network, but it also adds an additional layer of interpretability with channels corresponding
+to particular coefficients. The spatial attention features highlight the salient features in the spatial
+resolution of independent input channels. This differs from most computer vision problems with
+RGB imagery that only have one heat map for the full image. As such, our network provides a more
+transparent interpretation of how the spatial information in each input channel is used to form a
+prediction. Implementation details of each component can be found in appendices A.2, A.3, and A.4.
+2Combining Features The result of applying attention to the scattering coefficients of each input
+channel yields Coutput filters, F, that are stacked to Uf∈RC×K×W×H. Following could be
+any task specific transformation, e.g., additional convolutions, upsampling, residual connections,
+etc., but for our tasks we show how to design a regression and classification head to have relatively
+few trainable parameters. Specifically, we reshape Ufto have C·Kchannels, which we reduce
+to16via a pointwise convolution. This effectively combines the high-level features of each input
+channel. The feature maps are flattened and input to a layer with 8fully-connected units before a
+single linear output. After the convolutional and fully-connected layers are a ReLU activation for
+added non-linearity.
+Table 1: Experimental results using ntraining samples and pparameters.
+Scattering ResNet18 MobileNetV3 Conv.
+n↓p→ (51.8K) (11.2M) (1.5M) (268.2K)
+TC Intensity, rmse (R2)
+1000 15.83 (0.59) 16.47 (0.56) 56.85 (-4.28) 17.51 (0.50)
+5000 12.01 (0.76) 14.30 (0.67) 55.18 (-3.97) 13.34 (0.71)
+10000 10.98 (0.80) 11.85 (0.77) 21.13 (0.27) 13.81 (0.69)
+30000 10.35 (0.83) 10.74 (0.81) 13.07 (0.72) 11.68 (0.78)
+47904 9.34 (0.86) 10.66 (0.81) 11.90 (0.77) 11.67 (0.78)
+Lightning Occurrence, acc. (F1)
+1000 86.04 (0.85) 73.68 (0.74) 62.46 (0.39) 78.27 (0.74)
+5000 88.01 (0.87) 87.59 (0.87) 68.82 (0.55) 82.35 (0.82)
+10000 88.87 (0.88) 86.33 (0.85) 81.46 (0.83) 84.37 (0.84)
+50000 89.58 (0.89) 89.20 (0.88) 87.49 (0.87) 87.99 (0.87)
+212604 90.46 (0.90) 90.51 (0.90) 86.87 (0.88) 89.57 (0.89)
+3 Experiments
+We demonstrate the performance of our network on two separate datasets, namely estimating wind
+speeds from tropical storms and predicting the occurrence of lightning over previous observations.
+Note that the experiments serve as an outline that could extend to other tasks that leverage multi-
+channel inputs.
+For each experiment we compare results to a handcrafted CNN (named Conv) inspired by [ 15]: three
+convolutional layers with 8,16,and32filters, each followed by ReLU and max pooling before a
+fully-connected layer with 32units and a linear output unit. Further inspiration is taken from (a subset
+of) recent state-of-the-art vision models, namely ResNet18 [ 16] and MobileNetV3 (small) [ 17], to
+better understand how larger and more complex networks compare with our proposed method.
+3.1 Estimating Tropical Cyclone Intensity
+Tropical cyclones are among the most devastating natural disasters, causing billions of dollars of
+damage and significant loss of life every year. Predicting the track of these cyclones is well studied,
+but there is still an imperative need to improve upon the forecast of intensity [ 18]. The NASA Tropical
+Storm Wind Speed Competition [ 19] was released to study new automated and reliable methods of
+forecasting intensity. The data are single-band infrared images (i.e., band-13 or 10.3µm) captured
+by the Geostationary Operational Environmental Satellite (GOES)-16 Advanced Baseline Imager
+(ABI), with pixel values representing heat energy in the infrared spectrum, normalized to grayscale.
+We leverage the temporal relationships of previous timesteps up to the point of prediction to estimate
+the maximum sustained surface wind speed. Additional details can be found in Appendix B.1.
+The state-of-the-art reaches a root-mean-squared error (RMSE) of 6.256 kn with an ensemble of 51
+models [ 20]. We omit a direct comparison as interpreting these models would be increasingly difficult
+for end users. The proposed scattering network, with significantly fewer parameters, performs best
+overall with a minimum RMSE of 9.342 kn when using all available data for training. This is 12.35%
+lower than the closest competitor, ResNet18, and 21.44% and19.92% lower than MobileNetV3 and
+Conv, respectively (Table 1). As such, the competing networks are more prone to overfit or lack
+3the complexity to generalize, especially as the training size, n, decreases and for high-wind events
+(see Figure 4 for additional comparisons). By leveraging the high-level features from the scattering
+coefficients, we maintain competitive performance even with n= 5000 training samples.
+The local attention features AcandAsare visualized for each input channel to reveal additional
+insights to the network’s prediction (details on how figures are computed can be found in Appendix C).
+The example shown in Figure 5 displays the spatial attention, As, with structural highlights having
+greater weight generally in the center near the storm’s eyewall, where the strongest winds are usually
+found. Interestingly, we see points with the greatest weight along the edge of the inner rainband at
+timesteps t−18andt−9, and at the eyewall at t. Regions with lower attention values are commonly
+found in the environment between rainbands. Channel attention, Ac, generally shows an increase in
+weight as the structure of the cyclone intensifies. We speculate this to correspond with the coefficients
+that are strongest along the direction of edges in the imagery. This can be observed with timestep
+t−18having lower first-order features and considerably less variability than tat different indices.
+3.2 Short Range Lightning Prediction
+Accurate short-term prediction of lightning onset can help protect life and mitigate the economic
+impacts from disrupted outdoor work and natural fires by updating people on when to seek shelter
+and the persistence of lightning events. The AI for Earth System Science Hackathon [ 21] opens this
+challenge with data from GOES-16 ABI and aggregate lightning flash counts, lagged by one hour,
+from the Geostationary Lightning Mapper (GLM). The input channels include the following four
+water vapor bands: upper-level troposphere (band-8 or 6.2µm), mid-level troposphere (band-9 or
+6.9µm), low-level troposphere (band-10 or 7.3µm), and longwave (band-14 or 11.2µm). The target
+flash counts are converted to binary labels and used for predicting if lightning is present over the
+previous hour. Additional dataset details can be found in Appendix B.2.
+To the best of our knowledge there are no public benchmarks of this dataset. Thus, we conduct
+experiments with only the aforementioned models. The effect of sample size on the scattering network
+is minimal with 4.42% lower classification accuracy when 0.47% of the data is used for training. By
+contrast, ResNet18, with 0.05% higher overall accuracy compared to the scattering network, has a
+12.36% lower accuracy when the same n= 1000 samples are used for training (Table 1). Accuracy
+is also 7.77% higher with the scattering network over the CNN using the same training samples.
+Figure 6 displays the attention features for a given example. The spatial feature map, As, shows
+that for bands 8, 10, and 14 there is higher weight on the convective cells, where lower brightness
+temperatures are present. Band 9 displays a relative inverse of weight with higher values surrounding
+the convective cell. The channel features, As, show that the scenes with a convective cell have fewer
+first-order coefficients with higher weight. Specifically, there are dominant large scale wavelets, at a
+single orientation, that are more important for the network’s prediction.
+4 Conclusion
+In this work we introduce an attention-based scattering network that can serve as the early layers of
+a neural network. Our proposed separation scheme defines the most salient features and scattering
+coefficients on individual input channels and can easily be visualized to better understand the use
+of each channel. The result is a network that promotes interpretability and can easily be adapted to
+other satellite-based tasks. Findings show that our network, even with fewer trainable parameters
+than a linear model, achieves ∼20% lower error with better generalization than a standard CNN and
+state-of-the-art vision models on a sample application of estimating tropical cyclone intensity. For
+this dataset the network is effective under all constraints where data is limited. Our model shows
+similar results on the short-term predictions of lightning occurrence with great advantages primarily
+for small sample sizes, while there are diminishing returns for very large sample sizes.
+In future work we seek to better understand the individual components of our network and to improve
+upon the fusion of individual channels. By performing an ablation study we could identify which
+attention features contribute most to the improved performance and have a more robust understanding
+of computations. It would also be useful to evaluate other methods of combining high-level features,
+such as an informed method for selecting the top- nweighted scattering coefficients after each
+attention module or simpler aggregate functions. Lastly, as this method could be extended to different
+tasks, we would like to explore the results of applying our method to other satellite-based applications.
+4Acknowledgments and Disclosure of Funding
+This work is supported by NSF Grant No. 2019758, AI Institute for Research on Trustworthy AI in
+Weather, Climate, and Coastal Oceanography (AI2ES) .
+References
+[1]Ryan Lagerquist, Amy McGovern, Cameron R Homeyer, David John Gagne, II, and Travis
+Smith. Deep learning on Three-Dimensional multiscale data for Next-Hour tornado prediction.
+Mon. Weather Rev. , 148(7):2837–2861, June 2020.
+[2]John L Cintineo, Michael J Pavolonis, Justin M Sieglaff, Anthony Wimmers, Jason Brunner,
+and Willard Bellon. A Deep-Learning model for automated detection of intense midlatitude
+convection using geostationary satellite images. Weather Forecast. , 35(6):2567–2588, December
+2020.
+[3]Buo-Fu Chen, Boyo Chen, Hsuan-Tien Lin, and Russell L Elsberry. Estimating tropical cyclone
+intensity by satellite imagery utilizing convolutional neural networks. Weather Forecast. ,
+34(2):447–465, April 2019.
+[4]Stéphane Mallat. Group invariant scattering. Commun. Pure Appl. Math. , 65(10):1331–1398,
+October 2012.
+[5]Joan Bruna and Stéphane Mallat. Invariant scattering convolution networks. IEEE Trans.
+Pattern Anal. Mach. Intell. , 35(8):1872–1886, August 2013.
+[6]L Sifre and S Mallat. Rotation, scaling and deformation invariant scattering for texture discrimi-
+nation. Proceedings of the IEEE conference on , 2013.
+[7]Edouard Oyallon, Sergey Zagoruyko, Gabriel Huang, Nikos Komodakis, Simon Lacoste-Julien,
+Matthew Blaschko, and Eugene Belilovsky. Scattering networks for hybrid representation
+learning. IEEE Trans. Pattern Anal. Mach. Intell. , 41(9):2208–2221, September 2019.
+[8]Lennart Bargsten, Katharina A Riedl, Tobias Wissel, Fabian J Brunner, Klaus Schaefers, Michael
+Grass, Stefan Blankenberg, Moritz Seiffert, and Alexander Schlaefer. Attention via scattering
+transforms for segmentation of small intravascular ultrasound data sets. In Mattias Heinrich,
+Qi Dou, Marleen de Bruijne, Jan Lellmann, Alexander Schläfer, and Floris Ernst, editors,
+Proceedings of the Fourth Conference on Medical Imaging with Deep Learning , volume 143 of
+Proceedings of Machine Learning Research , pages 34–47. PMLR, 2021.
+[9]Stéphane Mallat. Understanding deep convolutional networks. Philos. Trans. A Math. Phys.
+Eng. Sci. , 374(2065):20150203, April 2016.
+[10] Laurent Itti, Christof Koch, and Ernst Niebur. A model of saliency-based visual attention
+for rapid scene analysis. IEEE Transactions on pattern analysis and machine intelligence ,
+20(11):1254–1259, 1998.
+[11] Sanghyun Woo, Jongchan Park, Joon-Young Lee, and In So Kweon. Cbam: Convolutional
+block attention module. In Proceedings of the European conference on computer vision (ECCV) ,
+pages 3–19, 2018.
+[12] Chull Hwan Song, Hye Joo Han, and Yannis Avrithis. All the attention you need: Global-
+local, spatial-channel attention for image retrieval. In Proceedings of the IEEE/CVF Winter
+Conference on Applications of Computer Vision , pages 2754–2763, 2022.
+[13] Yiliang Zeng, Christian Ritz, Jiahong Zhao, and Jinhui Lan. Attention-Based residual network
+with scattering transform features for hyperspectral unmixing with limited training samples.
+Remote Sensing , 12(3):400, January 2020.
+[14] Mathieu Andreux, Tomás Angles, Georgios Exarchakis, Roberto Leonarduzzi, Gaspar Rochette,
+Louis Thiry, John Zarka, Stéphane Mallat, Joakim Andén, Eugene Belilovsky, Joan Bruna,
+Vincent Lostanlen, Muawiz Chaudhary, Matthew J. Hirn, Edouard Oyallon, Sixin Zhang,
+Carmine Cella, and Michael Eickenberg. Kymatio: Scattering transforms in python. Journal of
+Machine Learning Research , 21(60):1–6, 2020.
+5[15] Manil Maskey, Rahul Ramachandran, Muthukumaran Ramasubramanian, Iksha Gurung, Brian
+Freitag, Aaron Kaulfus, Drew Bollinger, Daniel J Cecil, and Jeffrey Miller. Deepti: Deep-
+Learning-Based tropical cyclone intensity estimation system. IEEE Journal of Selected Topics
+in Applied Earth Observations and Remote Sensing , 13:4271–4281, 2020.
+[16] Kaiming He, Xiangyu Zhang, Shaoqing Ren, and Jian Sun. Deep residual learning for image
+recognition. In Proceedings of the IEEE conference on computer vision and pattern recognition ,
+pages 770–778, 2016.
+[17] Andrew Howard, Mark Sandler, Grace Chu, Liang-Chieh Chen, Bo Chen, Mingxing Tan,
+Weijun Wang, Yukun Zhu, Ruoming Pang, Vijay Vasudevan, et al. Searching for mobilenetv3.
+InProceedings of the IEEE/CVF international conference on computer vision , pages 1314–1324,
+2019.
+[18] John P Cangialosi, Eric Blake, Mark DeMaria, Andrew Penny, Andrew Latto, Edward Rappa-
+port, and Vijay Tallapragada. Recent progress in tropical cyclone intensity forecasting at the
+national hurricane center. Weather and Forecasting , 35(5):1913–1922, 2020.
+[19] Manil Maskey, Rahul Ramachandran, Iksha Gurung, Brian Freitag, Muthukumaran Rama-
+subramanian, and Jeffrey Miller. Tropical cyclone wind estimation competition dataset.
+https://doi.org/10.34911/rdnt.xs53up . Version 1.0, Radiant MLHub; Accessed 13
+June 2022.
+[20] Igor Ivanov. Winners of the wind-dependent variables: Predict wind speeds of tropical storms
+competition. https://github.com/drivendataorg/wind-dependent-variables/
+blob/main/1st_Place/reports/DrivenData-Competition-Winner-Documentation.
+pdf, 2021.
+[21] David John Gagne, II, Gunther Wallach, Charlie Becker, and Bill Petzke. Ai4ess summer school
+hackathon 2020. https://github.com/NCAR/ai4ess-hackathon-2020 , 2020.
+[22] Jie Hu, Li Shen, Samuel Albanie, Gang Sun, and Enhua Wu. Squeeze-and-Excitation networks.
+IEEE Trans. Pattern Anal. Mach. Intell. , 42(8):2011–2023, August 2020.
+[23] Hyo Jin Kim, Enrique Dunn, and Jan-Michael Frahm. Learned contextual feature reweighting
+for image geo-localization. In Proceedings of the IEEE Conference on Computer Vision and
+Pattern Recognition , pages 2136–2145, 2017.
+[24] Mingxing Tan, Ruoming Pang, and Quoc V Le. Efficientdet: Scalable and efficient object detec-
+tion. In Proceedings of the IEEE/CVF conference on computer vision and pattern recognition ,
+pages 10781–10790, 2020.
+[25] Mukund Sundararajan, Ankur Taly, and Qiqi Yan. Axiomatic attribution for deep networks. In
+Doina Precup and Yee Whye Teh, editors, Proceedings of the 34th International Conference on
+Machine Learning , volume 70 of Proceedings of Machine Learning Research , pages 3319–3328.
+PMLR, 2017.
+6Appendix
+A Implementation Details
+A.1 Scattering Representations
+The wavelet transform of a 2D signal, x(u)withudenoting the spatial index, at scale J is defined as
+WJx(u):=
+x∗ϕ2J(u), x∗ψλ(u)	
+λ∈ΛJ, (1)
+where ψλ(u) = 2−2jψ(2−jr−1u)withλ= 2jrfor0≤j < J andr∈G+as the discrete, finite
+rotation group of R2withLequally spaced angles from [0, π). The traditional mother wavelet, ψ(u),
+in the scattering transform is the Morlet wavelet with a scaled Gaussian lowpass filter, ϕ2J(u) =
+2−2Jϕ(2−Ju). A wavelet transform is translation covariant, and thus invariance measures are
+extracted by computing a non-linear complex modulus, |x+iy|=p
+x2+y2, and averaging the
+result. The information lost during averaging is restored by applying a new wavelet decomposition
+with scales j1< j2, producing new invariants.
+By following an iterative scheme we can compute m-th order coefficients, although here we compute
+up to the second order as higher orders have negligible energy [ 5]. The zeroth-order coefficient is
+computed as S0x(u) =x∗ϕ2J(u)and downsampled by a factor of 2J. To recover the high-frequency
+information, we perform our first wavelet transform, apply a non-linear modulus, and average again.
+Formally, the first-order coefficients are found by
+S1x(λ1, u):=|x∗ψλ1| ∗ϕ2J(u). (2)
+The resulting feature maps have the same resolution as S0but with JLchannels. Second-order
+coefficients are computed similarly on S1using all rotations but for smaller coefficients, denoted by
+S2x(λ1, λ2, u):=||x∗ψλ1| ∗ψλ2| ∗ϕ2J(u), (3)
+which results in feature maps with1
+2J(J−1)L2output channels. Thus, if we assume xto be a
+tensor of size (B, C, W, H ), then the output via a second-order scattering transform, S2, with scale
+JandLangles will have size (B, C, 1 +LJ+1
+2J(J−1)L2, W/2J, H/2J). Note, for brevity, in
+the following subsections we use W×Hto denote the spatial dimension that actually occur over
+W/2J×H/2J.
+A.2 Channel Attention
+Following the design of the squeeze and excitation block in [ 22], this attention module emphasises
+the local channel information of individual inputs. We use ˜S2= [s1,s2, . . . ,sK]as the normalized
+coefficients from the separated input channel of S2. First, we squeeze skto obtain a global information
+embedding z∈RKvia global average pooling, where the k-th element, zk, is
+zk:=1
+HWHX
+i=1WX
+j=1sk(i, j). (4)
+Thereafter, we aggregate the the embedding with the excitation operation to adaptively recalibrate
+channel-wise features. This results in our channel attention weights Ac∈RKwith scalar elements,
+ak, computed as
+Ac:=σ(g(z;v,w)) =σ(δ(zv)w), (5)
+where σandδrefer to the sigmoid and ReLU functions, v∈RK×K
+r, andw∈RK
+r×K. Weight
+matrices vandware initialized without bias parameters and use a reduction ratio of r= 16 . This
+ratio value was shown by [ 22] to be a sufficient starting parameter across multiple experiments. The
+final output of the channel attention weighs the normalized coefficients with the scalar elements akto
+getUc∈RK×H×W, where the k-th filter, uk, is
+uk:=ak·sk. (6)
+7A.3 Spatial Attention
+We implement a spatial attention module that predicts the importance of regions within the scattering
+coefficients based on the image context, similar to [ 23,12]. We first apply a pointwise convolution
+to our normalized coefficients with r×1×1filters, using a reduction ratio of r= 16 , to compress
+channel dimensionality. Spatial context is then extracted from the resulting feature map by convolving
+three dilated convolutions of size 3×3with dilation factors of one, two, and three. These dilations
+increase the receptive field while preserving the input resolution. This allows us to stack the four
+feature maps to create a 4r×W×Htensor. This is reduced via a pointwise convolution using a
+1×1×1filter (per channel dimension) to yield the final spatial feature map As∈R1×W×H.
+The spatial feature map and channel weighted coefficients are multiplied together to get a complete
+local attention map, Us∈RK×W×H, as given by
+Us:=As⊙Uc, (7)
+where ⊙is the Hadamard product. At a high level, Uscontains all the normalized scattering
+coefficients where each coefficient (i.e. k-th channel) is weighted and spatially scaled to a localized
+region. This information is used downstream to highlight the positive or negative features of the
+scattering transform.
+A.4 Feature Fusion
+The normalized scattering coefficients and local attention maps are combined in the fusion block at
+the end of an attention module. We follow a method similar to [ 24] and [ 12] to get an output from the
+weighted average of features. A single parameter, w1, with an initial value of 0.5is trained to assign
+contributions of each pathway. Mathematically,
+F:=w1Us+ (1−w1)˜S2, (8)
+where w1is clamped on the interval [0,1]after each update to ensure the contributions sum to one.
+B Dataset Details
+B.1 Tropical Cyclones
+(
+Figure 2: Input data of size (1×3×128×128) with stacked channel-wise timesteps. The target variable is
+the wind speed associated with the last frame.
+The topical cyclone dataset contains a collection of satellite imagery for over 600 storms in the
+Eastern Pacific and Atlantic Oceans from 2000 to2019 . Test data consists of imagery from storms
+not included in the training data as well as held out samples from later in a storm’s life cycle.
+Since observations from temporal data are not independent, we seek to reduce the implications of
+autocorrelations (i.e., from trends and seasonality) and holdout imagery from the last 20% of each
+storm to create the validation set.
+To extend from the single channel imagery to multi-channel inputs we leverage the temporal rela-
+tionships of previous timesteps up to the point of prediction. Three frames separated by a nine step
+interval (i.e., t−18, t−9,andt) are stacked to create a 3×128×128input sample using the last
+frame’s wind speed as the target value (Figure 2). Inputs are created following the next t+ 1timestep
+and repeated over all datasets yielding 47,904training, 7,119validation, and 37,913test samples.
+These images are min-max normalized to the interval [0,1] to stabilize the result of the scattering
+transform. Target wind speeds are z-score normalized to have zero mean and unit variance using
+the statistics of the training data. Predicted and target values are unnormalized after inference for
+evaluation.
+8When subsampling the training data to smaller values of n, we define m= 11 equally spaced
+boundaries, B={r:r= 15 + 17 k|k=m−1, m−2, . . . , 0}, such that ntotal samples that
+comprise the entire training dataset are loosely divided into groups following Bi≤t > B i+1for
+targets t. Data within each group are randomly sampled and may borrow from the Bi+1boundary
+to ensure an equal distribution of target wind speeds. Table 1 defines the values of nused in our
+experiments.
+B.2 GOES-16 Lightning
+(
+Figure 3: Input data of size (1×4×64×64)with stacked channel-wise brightness temperatures. The target
+variable is a binary label indicating the presence of lightning over the previous hour.
+The GOES-16 data consists of 32×32image patches (for each band) across the Continental United
+States (between latitudes 29.09°and48.97°and longitudes −97.77°and−82.53°) at 20 minute
+intervals from 2019 -03-02through 2019 -10-01. We perform bilinear interpolation to each band to
+scale inputs to the resolution of 64×64for more accurate spatial attention features. This is done
+because the scattering transform yields coefficients of resolution W/2J×H/2J(i.e., 8×8) and
+resolutions too small will lose detail. The brightness temperatures, measured in kelvins, are min-max
+normalized on the interval [0,1]using the statistics of the training data. In total there are 212,604
+training, 212,604validation, and 199,157test samples. Figure 3 displays an example input sample
+with each stacked channel-wise bands.
+Flash counts from the GLM have a strong positively skewed distribution (i.e., 4.47±18.22) across
+all training samples. When converting to binary labels, where true when flash counts are greater
+than zero, we get a better distribution of targets with a slight class imbalance of 63.49% training
+samples having lightning. When subsampling the training data we reduce bias by maintaining the
+class distribution such that there are ntotal samples ranging from 1,000to212,604(Table 1).
+C Feature Visualizations
+C.1 Spatial Attention Features
+The separation of attention modules yield a spatial attention feature map, As, for each input channel
+in our data. This map can be visualized via a bilinear upsampling from W/2J×H/2Jto our original
+input resolution W×H. The scaled feature map can be superimposed on the original data, and the
+detail of this map will depend on the scale, J, of the scattering transform.
+C.2 Channel Attention Features
+For first-order coefficients, the polar radius is inversely proportional to scale 2j1for the wavelet
+ψλ1with an angle corresponding to the rotation r1(approximating the frequency bandwidth of the
+Fourier transform ˆψλ1). Thus, each quadrant can be indexed by (r1, j1). Second-order coefficients
+are displayed similarly by subdividing each first-order quadrant, (r1, j1), along the polar radius
+withj1< j2< J for all Langles, which can be indexed by (r1, r2, j1, j2). However, instead of
+visualizing individual scattering coefficients, we display each scalar element in Ac(normalized
+between [0,1]) corresponding to these indices and input channel.
+C.3 Gradient Based Methods
+The scattering transform is differentiable, and thus, allows for evaluations of post hoc explainability
+methods. We demonstrate an example of how gradients can be computed with respect to an individual
+9input pixel by computing integrated gradients for our example input. Following the work of [ 25], we
+establish a baseline of all zeros and compute importance scores for each pixel in the input. While we
+show integrated gradients as an example, alternative post hoc explainability methods, e.g., GradCAM,
+layer-wise relevance propagation, Shapley values, etc., could be used to evaluate this network.
+D Supplemental Figures
+(a)Scattering Network
+ (b)ResNet18
+Figure 4: Target vs. predicted wind speeds from the (a)proposed scattering network and (b)ResNet18 network,
+trained using all the available data. The greatest errors are observed with the highest intensity samples, and
+evidently, is where ResNet18 performs worst. Target wind speeds >140 kn have an RMSE = 51.630 kn from
+ResNet18 as compared to an RMSE = 27.231 kn from the scattering network.
+(a)IG (b)As(c)first-order (d)second-order
+Figure 5: Feature visualizations from the tropical cyclone intensity data.
+10(a)IG (b)As(c)first-order (d)second-order
+Figure 6: Feature visualizations from the short-term lightning prediction data.
+11

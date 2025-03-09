@@ -1,0 +1,715 @@
+SustainGym: A Benchmark Suite of Reinforcement
+Learning for Sustainability Applications
+Christopher Yeh, Victor Li, Rajeev Datta, Yisong Yue, Adam Wierman
+California Institute of Technology
+Department of Computing and Mathematical Sciences
+cyeh,vhli,rdatta,yyue,adamw @caltech.edu
+Abstract
+The lack of standardized benchmarks for reinforcement learning (RL) in sustain-
+ability applications has made it difficult to both track progress on specific domains
+and identify bottlenecks for researchers to focus their efforts on. In this paper, we
+present SustainGym, a suite of two environments designed to test the performance
+of RL algorithms on realistic sustainability tasks. The first environment simulates
+the problem of scheduling decisions for a fleet of electric vehicle (EV) charging
+stations, and the second environment simulates decisions for a battery storage
+system bidding in an electricity market. We describe the structure and features
+of the environments and show that standard RL algorithms have significant room
+for improving performance. We discuss current challenges in introducing RL to
+real-world sustainability tasks, including physical constraints and distribution shift.
+1 Introduction
+While reinforcement learning (RL) algorithms have demonstrated tremendous success in applications
+ranging from game-playing, e.g., Atari and Go, to robotic control [ 1–3], most RL algorithms continue
+to only be benchmarked on toy environments— e.g., OpenAI Gym [ 4]. These toy environments
+generally do not have realistic physical constraints, nor realistic environmental shifts over time. This
+realism gap limits our ability to reliably deploy off-the-shelf RL algorithms in real-world systems.
+Developing better RL algorithms to address these challenges requires a means of empirically bench-
+marking and comparing the performance of different algorithms in real-world settings. Our inspiration
+comes from progress in supervised machine learning (ML), where widespread adoption of break-
+through techniques were fueled by large datasets with standardized benchmarks, such as ImageNet
+for computer vision [ 5] and the GLUE benchmark for natural language processing [ 6]. More recently,
+many supervised learning datasets have been created to address specific real-world sustainability
+challenges, such as monitoring global progress towards the sustainable development goals [7].
+In this work, we introduce SustainGym, a new test bed of RL environments that realistically model
+real-world sustainability settings. The initial release of SustainGym is comprised of two environments
+(with more environments to be added in the near future):
+•EVChargingEnv models the problem of scheduling electric vehicle (EV) charging to meet
+user needs while minimizing CO 2emissions.
+•ElectricityMarketEnv models a grid-scale battery storage system bidding into the elec-
+tricity market to generate profit (through price arbitrage) and reduce CO 2emissions.
+Prior related work include ConservationGym for ecological applications [ 8], PowerGridWorld for
+power systems [ 9], and CityLearn for demand response and urban energy management [ 10], among
+others. RL environments and algorithms for both EV charging [ 11–13] and electricity markets
+[14–16] have also been explored. Compared to these prior work, the unique aspects of SustainGym
+Tackling Climate Change with Machine Learning: workshop at NeurIPS 2022.Figure 1: EV arrival vs. departure times for the Caltech EV charging network. Historical data is in
+blue, and log-likelihood contours from a 30-component GMM are in orange. The distribution of EV
+arrival and departure times changed noticeably between 2019 (pre-COVID) to 2020.
+are its focus on tracking estimated CO 2emissions and its ability to test RL algorithms on challenging
+distribution shifts (see Figures A3 and A6). We expect SustainGym to serve as a benchmark for the
+progress of RL algorithm development for real-world sustainability applications.
+Empirically, we find that standard off-the-shelf RL algorithms have mixed performance on Sus-
+tainGym. Furthermore, we show how distribution shifts may reduce the performance of these RL
+algorithms, demonstrating a need for more robust algorithms. Finally, comparisons against non-RL
+baselines and oracles show that RL has significant room for improvement.
+Due to page constraints, the main text of this paper summarizes key design choices and experimental
+observations for SustainGym. Details (including an extended related works section) can be found in
+Appendix A. Code and instructions for using SustainGym can be found on GitHub.1
+2 Environments
+This section summarizes design choices of the two environments included with the initial release
+of SustainGym. Both environments impose a cost on the simulated CO 2emissions induced by the
+actions of an agent as a result of changes in electricity consumption. Our environments use data
+on California’s historical marginal operating emissions rate (MOER, in kgCO 2/kWh), which is the
+increase in CO 2emissions per increase in energy demand. The MOER at time tis denoted mt∈R+,
+and the forecasts generated at time tfor the next ktime steps are denoted ˆmt:t+k−1|t∈Rk. By
+default, we use k= 36 . We impose a price PCO2(in $/kgCO 2) on emissions generated by an agent.
+2.1 EVChargingEnv
+EVChargingEnv uses ACNSim [ 11] to simulate the charging of electric vehicles (EVs) based on
+actual data gathered from EV charging networks between fall 2018 and summer 2021 [ 17,18].
+ACNSim is a digital twin of actual charging networks at Caltech and JPL, taking into account
+nonlinear battery charging dynamics and unbalanced three-phase AC power flows, and is thus very
+realistic. The Caltech and JPL networks have n= 54 and 52 charging stations (abbrv. EVSEs,
+Electric Vehicle Supply Equipment), respectively. When drivers charged their EVs, they provided an
+estimated time of departure and amount of energy requested. Thus, each charging session includes
+time of EV arrival, estimated departure, actual departure, energy delivered, and EVSE ID.
+Each episode starts at midnight and runs for 24 hours, with 5-minute time step intervals. EV arrival
+and departure events are discretized to these 5-minute intervals ( T= 288 ,τ= 5/60hours). At every
+time step, an agent decides the charging rates (a.k.a. “pilot signals”) for each EVSE to be executed
+for the duration of that time step. That is, a single agent simultaneously controls all nEVSEs.
+EVChargingEnv supports real historical data as well as data sampled from a 30-component Gaussian
+Mixture Model (GMM) fit to historical data. We fitted GMMs to 4 disjoint historical periods, as
+defined in [19]. Figures 1 and A4 show the distribution of arrival and departure times.
+Observation Space. An observation at time tiss(t) = (t, d, e, m t−1,ˆmt:t+k−1|t).t∈Z+is the
+fraction of day between 0 and 1, inclusive. d∈Znis estimated remaining duration of each EV (in
+# of time steps). e∈Rn
++is remaining energy demand of each EV (in kWh). If no EV is charging
+1https://github.com/chrisyeh96/sustaingym/
+2at EVSE i, then di= 0andei= 0. If an EV charging at EVSE ihas exceeded the user-specified
+estimated departure time, then dibecomes negative, while eimay still be nonzero.
+Action Space. The action space is continuous a(t)∈[0,1]n, representing the pilot signal nor-
+malized by the maximum signal allowed M(in amps) for each EVSE. Physical infrastructure in a
+charging network constrain the set Atof feasible actions at each time step t[18]. Furthermore, the
+EVSEs only support discrete pilot signals, so Atis nonconvex. To satisfy these physical constraints,
+EVChargingEnv can project (A1) an agent’s action a(t)into the convex hull of Atand round it to
+the nearest allowed pilot signal, resulting in final normalized pilot signals ˜a(t). ACNSim processes
+˜a(t)and returns the actual charging rate M¯a∈Rn
++(in amps) delivered at each EVSE, as well as the
+remaining demand ei(t+ 1) .
+Reward Function. The reward function is a sum of three components: r(t) =p(t)−cV(t)−cC(t).
+The profit term p(t)aims to maximize energy delivered to the EVs. The constraint violation cost
+cV(t)aims to reduce physical constraint violations and encourage the agent’s action a(t)to be in
+At. Finally, the CO 2emissions cost cC(t), which is a function of the MOER mtand charging action,
+aims to reduce emissions by encouraging the agent to charge EVs when the MOER is low.
+2.2 ElectricityMarketEnv
+ElectricityMarketEnv simulates a realtime electricity market with 5-minute settlements. The
+default environment consists of 10 dispatchable generators and 5 battery storage systems, all of which
+submit bids to the market operator (MO) at every time step. Based on the bids, the MO solves the
+economic dispatch problem (A3) which determines the price and amount of electricity purchased
+from (or sold by) each generator and battery to meet realtime electricity demand. Each episode runs
+for 1 day, with 5-minute time intervals ( T= 288 ,τ= 5/60hours). The agent controls one of the
+battery systems and is rewarded for submitting bids that result in charging (buy) when prices are low,
+and discharging (sell) when prices and CO 2emissions are high, thus performing price arbitrage.
+While ElectricityMarketEnv is a simplification of real-world electricity markets, the parameters
+of the environment’s generators and battery systems and the historical electricity demand and forecasts
+are obtained from actual systems within California. In this regard, ElectricityMarketEnv serves
+as a minimum test-bed for RL algorithms, as a real-world electricity market is significantly more
+complex ( e.g., featuring congestion constraints).
+Observation Space. An observation is s(t) = (t, e, a (t−1), xt−1, pt−1, lt−1,ˆlt, mt−1,ˆmt:t+k|t).
+t∈Z+is the time step in [0,288].e∈R+is the agent’s battery energy level (in MWh). a(t−1)∈
+R2
++is the previous action. xt−1∈Ris the previous dispatch (in MWh) asked of the agent, and
+pt−1∈Ris market clearing price from the previous step (in $/MWh). lt−1∈Ris energy demand
+from the previous step (in MWh). ˆlt∈Ris estimated net demand for this step (in MWh).
+Action Space. Each agent action is a bid a(t) = (ac, ad)∈R2
++, representing prices ($/MWh) that
+the agent is willing to pay (or receive) for charging (or discharging) per MWh of energy, at time
+stept. Bids for other generators and battery systems are sampled randomly by the environment.
+The environment solves the optimal dispatch problem (A3) to determine the electricity price pt(in
+$/MWh) and the agent’s dispatch xt∈R, which is the amount of energy (in MWh) that the agent is
+obligated to sell into or buy from the grid within the next time step. The dispatch in turn determines
+the storage system’s next energy level. We also provide a wrapper that discretizes the action space
+into 3 actions only: charge, do nothing, or discharge.
+Reward Function. The reward function is a sum of three components: r(t) =rR(t)+rC(t)−cT(t).
+The revenue term rR(t) =ptxtis the immediate revenue from the dispatch. The CO 2emissions
+reward term rC(t) =PCO2mtxtrepresents the price of CO 2emissions displaced or incurred by the
+battery dispatch. The terminal cost cT(t), which is nonzero only when t=T, encourages the battery
+to have the same energy level at the end of the day as when it started. We also provide an option to
+delay all reward signals until the terminal time step (intermediate rewards are set to 0).
+3 Experimental Results and Discussion
+We trained RL agents using implementations of PPO [ 20], A2C [ 21], SAC [ 22], and DQN [ 1]
+provided in Stable-Baselines3 [ 23]. For EV charging, we also tested a non-deep learning controller
+3Figure 2: Returns from controllers evaluated on (left) EVChargingEnv and (right)
+ElectricityMarketEnv . For EVChargingEnv , algorithms are tested on actual data from Summer
+2021 with discrete actions. A2C, SAC, and PPO were trained on artificial data sampled from GMM
+models fitted to Summer 2019 (“out dist”) or Summer 2021 (“in dist”). For ElectricityMarketEnv ,
+algorithms were evaluated on data from May 2021 with all rewards delayed until the terminal step.
+Thus, models trained on May 2019 data are out-of-distribution.
+based on model predictive control (MPC, (A2)) and found that a 3-step lookahead window was
+optimal. For ElectricityMarketEnv , we implemented an offline “oracle” algorithm (A4) that
+provides an upper-bound on the best return achievable by any controller.
+The results (Figures 2, A5, A8 and A9) show that these environments are challenging for off-the-shelf
+RL algorithms. The EV charging environment tests RL algorithms’ ability to learn to handle physical
+system constraints. Anecdotally, we found that RL agents trained with a constraint violation cost did
+learn to minimize constraint violations, but such agents achieved returns no better than random. We
+also tested projecting RL actions into the feasible set during training (Figure 2 left), which boosted
+RL performance slightly above random. This suggests that more recent state-of-the-art RL algorithms
+such as the PROF method [ 24], designed to explicitly handle convex constraints in neural policies,
+may be able to achieve even better performance. We plan to explore this for future work.
+For the electricity market environment, we observed that RL algorithms trained with discrete actions
+and delayed rewards significantly outperformed any algorithms trained with either continuous actions
+or intermediate rewards (Figures 2 and A9). Algorithms trained with continuous actions or interme-
+diate rewards only learned to greedily discharge and thus incurred a large terminal cost, even with
+a discount factor near 1 ( γ=0.9999). For discrete action spaces, we also noticed a large drop in
+performance under distribution shift for both DQN and PPO (Figure 2 right).
+For future work, we are investigating other possible reward functions, such as those explored in
+[15,18], to help RL agents learn better policies on our environments. We also plan on extending our
+environments to the multi-agent RL setting and incorporating additional environments.
+In conclusion, we have designed two RL environments that aim to realistically model the EV charging
+scheduling and the grid-scale battery storage bidding problems. We show that standard RL algorithms
+may only perform well under specific environment settings, and some algorithms perform worse under
+distribution shift than others. We hope that SustainGym inspires more RL research into algorithms
+suitable for real-world sustainability tasks and challenges.
+Acknowledgments
+This work was supported by the Resnick Sustainability Institute as well as NSF grants CNS-2146814,
+CPS-2136197, CNS-2106403, and NGSDI-2105648. We would like to thank Steven Low, Tongxin
+Li, Zachary Lee, Lucien Werner, Ivan Jimenez, Pieter Van Santvliet, and Ameera Abdelaziz for their
+helpful discussions.
+References
+[1]V olodymyr Mnih, Koray Kavukcuoglu, David Silver, Andrei A. Rusu, Joel Veness, Marc G.
+Bellemare, Alex Graves, Martin Riedmiller, Andreas K. Fidjeland, Georg Ostrovski, Stig Pe-
+tersen, Charles Beattie, Amir Sadik, Ioannis Antonoglou, Helen King, Dharshan Kumaran,
+4Daan Wierstra, Shane Legg, and Demis Hassabis. Human-level control through deep re-
+inforcement learning. Nature , 518(7540):529–33, February 2015. ISSN 1476-4687. doi:
+10.1038/nature14236. URL https://www.nature.com/articles/nature14236 .
+[2]David Silver, Julian Schrittwieser, Karen Simonyan, Ioannis Antonoglou, Aja Huang, Arthur
+Guez, Thomas Hubert, Lucas Baker, Matthew Lai, Adrian Bolton, Yutian Chen, Timothy
+Lillicrap, Fan Hui, Laurent Sifre, George van den Driessche, Thore Graepel, and Demis
+Hassabis. Mastering the game of Go without human knowledge. Nature , 550(7676):354–359,
+October 2017. ISSN 1476-4687. doi: 10.1038/nature24270. URL https://www.nature.
+com/articles/nature24270 .
+[3]Jens Kober, J. Andrew Bagnell, and Jan Peters. Reinforcement learning in robotics: A sur-
+vey. The International Journal of Robotics Research , 32(11):1238–1274, September 2013.
+ISSN 0278-3649. doi: 10.1177/0278364913495721. URL https://doi.org/10.1177/
+0278364913495721 .
+[4]Greg Brockman, Vicki Cheung, Ludwig Pettersson, Jonas Schneider, John Schulman, Jie
+Tang, and Wojciech Zaremba. OpenAI Gym. arXiv:1606.01540 [cs] , June 2016. URL
+http://arxiv.org/abs/1606.01540 .
+[5]Olga Russakovsky, Jia Deng, Hao Su, Jonathan Krause, Sanjeev Satheesh, Sean Ma, Zhiheng
+Huang, Andrej Karpathy, Aditya Khosla, Michael Bernstein, Alexander C. Berg, and Li Fei-Fei.
+ImageNet Large Scale Visual Recognition Challenge. International Journal of Computer Vision ,
+115(3):211–252, December 2015. ISSN 1573-1405. doi: 10.1007/s11263-015-0816-y. URL
+https://doi.org/10.1007/s11263-015-0816-y .
+[6]Alex Wang, Amanpreet Singh, Julian Michael, Felix Hill, Omer Levy, and Samuel R. Bowman.
+GLUE: A Multi-Task Benchmark and Analysis Platform for Natural Language Understanding.
+InInternational Conference on Learning Representations , September 2018. URL https:
+//openreview.net/forum?id=rJ4km2R5t7 .
+[7]Christopher Yeh, Chenlin Meng, Sherrie Wang, Anne Driscoll, Erik Rozi, Patrick Liu, Jihyeon
+Lee, Marshall Burke, David B. Lobell, and Stefano Ermon. SustainBench: Benchmarks
+for Monitoring the Sustainable Development Goals with Machine Learning. In Thirty-fifth
+Conference on Neural Information Processing Systems Datasets and Benchmarks Track (Round
+2), 12 2021. doi: 10.48550/arXiv.2111.04724. URL https://openreview.net/forum?id=
+5HR3vCylqD .
+[8]Marcus Lapeyrolerie, Melissa S. Chapman, Kari E. A. Norman, and Carl Boettiger. Deep
+Reinforcement Learning for Conservation Decisions, June 2021. URL http://arxiv.org/
+abs/2106.08272 .
+[9]David Biagioni, Xiangyu Zhang, Dylan Wald, Deepthi Vaidhynathan, Rohit Chintala, Jennifer
+King, and Ahmed S. Zamzam. PowerGridworld: A Framework for Multi-Agent Reinforcement
+Learning in Power Systems. November 2021. doi: 10.48550/arXiv.2111.05969. URL http:
+//arxiv.org/abs/2111.05969 .
+[10] Jose R. Vazquez-Canteli, Sourav Dey, Gregor Henze, and Zoltan Nagy. CityLearn: Standardiz-
+ing Research in Multi-Agent Reinforcement Learning for Demand Response and Urban Energy
+Management, December 2020. URL http://arxiv.org/abs/2012.10504 .
+[11] Zachary J. Lee, Sunash Sharma, Daniel Johansson, and Steven H. Low. ACN-Sim: An Open-
+Source Simulator for Data-Driven Electric Vehicle Charging Research. IEEE Transactions on
+Smart Grid , 12(6):5113–5123, 11 2021. ISSN 1949-3061. doi: 10.1109/TSG.2021.3103156.
+[12] Georgios Karatzinis, Christos Korkas, Michalis Terzopoulos, Christos Tsaknakis, Aliki Ste-
+fanopoulou, Iakovos Michailidis, and Elias Kosmatopoulos. Chargym: An EV Charging
+Station Model for Controller Benchmarking. IFIP Advances in Information and Communi-
+cation Technology, pages 241–252, Cham, 2022. Springer International Publishing. ISBN
+978-3-031-08341-9. doi: 10.1007/978-3-031-08341-9_20.
+[13] Heba M. Abdullah, Adel Gastli, and Lazhar Ben-Brahim. Reinforcement Learning Based
+EV Charging Management Systems–A Review. IEEE Access , 9:41506–41531, 2021. ISSN
+2169-3536. doi: 10.1109/ACCESS.2021.3064354.
+5[14] Hao Wang and Baosen Zhang. Energy Storage Arbitrage in Real-Time Markets via Reinforce-
+ment Learning. In 2018 IEEE Power Energy Society General Meeting (PESGM) , pages 1–5,
+August 2018. doi: 10.1109/PESGM.2018.8586321.
+[15] Hanchen Xu, Xiao Li, Xiangyu Zhang, and Junbo Zhang. Arbitrage of Energy Storage in
+Electricity Markets with Deep Reinforcement Learning, May 2019. URL http://arxiv.org/
+abs/1904.12232 .
+[16] Jun Cao, Dan Harrold, Zhong Fan, Thomas Morstyn, David Healey, and Kang Li. Deep
+Reinforcement Learning-Based Energy Storage Arbitrage With Accurate Lithium-Ion Battery
+Degradation Model. IEEE Transactions on Smart Grid , 11(5):4513–4521, September 2020.
+ISSN 1949-3061. doi: 10.1109/TSG.2020.2986333.
+[17] Zachary J. Lee, Tongxin Li, and Steven H. Low. ACN-Data: Analysis and Applications of
+an Open EV Charging Dataset. In Proceedings of the Tenth ACM International Conference
+on Future Energy Systems , e-Energy ’19, pages 139–149, New York, NY , USA, June 2019.
+Association for Computing Machinery. ISBN 978-1-4503-6671-7. doi: 10.1145/3307772.
+3328313. URL https://doi.org/10.1145/3307772.3328313 .
+[18] Zachary J. Lee, George Lee, Ted Lee, Cheng Jin, Rand Lee, Zhi Low, Daniel Chang, Christine
+Ortega, and Steven H. Low. Adaptive Charging Networks: A Framework for Smart Electric
+Vehicle Charging. IEEE Transactions on Smart Grid , 12(5):4339–4350, September 2021.
+ISSN 1949-3061. doi: 10.1109/TSG.2021.3074437. URL https://ieeexplore.ieee.org/
+document/9409126 .
+[19] Tongxin Li, Ruixiao Yang, Guannan Qu, Yiheng Lin, Steven Low, and Adam Wierman. Equip-
+ping Black-Box Policies with Model-Based Advice for Stable Nonlinear Control, June 2022.
+URL http://arxiv.org/abs/2206.01341 .
+[20] John Schulman, Filip Wolski, Prafulla Dhariwal, Alec Radford, and Oleg Klimov. Proximal
+Policy Optimization Algorithms, August 2017. URL http://arxiv.org/abs/1707.06347 .
+[21] V olodymyr Mnih, Adrià Puigdomènech Badia, Mehdi Mirza, Alex Graves, Timothy P. Lilli-
+crap, Tim Harley, David Silver, and Koray Kavukcuoglu. Asynchronous Methods for Deep
+Reinforcement Learning, June 2016. URL http://arxiv.org/abs/1602.01783 .
+[22] Tuomas Haarnoja, Aurick Zhou, Pieter Abbeel, and Sergey Levine. Soft Actor-Critic: Off-
+Policy Maximum Entropy Deep Reinforcement Learning with a Stochastic Actor, August 2018.
+URL http://arxiv.org/abs/1801.01290 .
+[23] Antonin Raffin, Ashley Hill, Adam Gleave, Anssi Kanervisto, Maximilian Ernestus, and Noah
+Dormann. Stable-Baselines3: Reliable Reinforcement Learning Implementations. Journal of
+Machine Learning Research , 22(268):1–8, 2021. ISSN 1533-7928. URL http://jmlr.org/
+papers/v22/20-1364.html .
+[24] Bingqing Chen, Priya L. Donti, Kyri Baker, J. Zico Kolter, and Mario Bergés. Enforcing
+Policy Feasibility Constraints through Differentiable Projection for Energy Optimization. In
+Proceedings of the Twelfth ACM International Conference on Future Energy Systems , e-Energy
+’21, pages 199–210, New York, NY , USA, June 2021. Association for Computing Machinery.
+ISBN 978-1-4503-8333-2. doi: 10.1145/3447555.3464874. URL https://doi.org/10.
+1145/3447555.3464874 .
+[25] Ruben Glatt. Enabling Optimized Charging of Electric Vehicles in Mobility Services. Technical
+Report LLNL-TR-800857, Lawrence Livermore National Lab. (LLNL), Livermore, CA (United
+States), January 2020. URL https://www.osti.gov/biblio/1581881 .
+[26] Yi Dong, Zhen Dong, Tianqiao Zhao, and Zhengtao Ding. A Strategic Day-ahead bidding strat-
+egy and operation for battery energy storage system by reinforcement learning. Electric Power
+Systems Research , 196:107229, July 2021. ISSN 0378-7796. doi: 10.1016/j.epsr.2021.107229.
+URL https://www.sciencedirect.com/science/article/pii/S0378779621002108 .
+6[27] Ran Yuan, Bo Wang, and Yeqi Sun. Real-time Economic Dispatch of Thermal-Wind-Battery
+Hybrid Systems based on Deep Reinforcement Learning. In 2021 International Conference
+on Cyber-Physical Social Intelligence (ICCSI) , pages 1–6, December 2021. doi: 10.1109/
+ICCSI53130.2021.9736172.
+[28] Teodoro Cardoso Bora, Viviana Cocco Mariani, and Leandro dos Santos Coelho. Multi-
+objective optimization of the environmental-economic dispatch with reinforcement learning
+based on non-dominated sorting genetic algorithm. Applied Thermal Engineering , 146:688–
+700, January 2019. ISSN 1359-4311. doi: 10.1016/j.applthermaleng.2018.10.020. URL
+https://www.sciencedirect.com/science/article/pii/S1359431118349317 .
+[29] E. A. Jasmin, T. P. Imthias Ahamed, and V . P. Jagathy Raj. Reinforcement Learning approaches
+to Economic Dispatch problem. International Journal of Electrical Power & Energy Systems ,
+33(4):836–845, May 2011. ISSN 0142-0615. doi: 10.1016/j.ijepes.2010.12.008. URL https:
+//www.sciencedirect.com/science/article/pii/S014206151000222X .
+[30] Ruosong Wang, Yifan Wu, Ruslan Salakhutdinov, and Sham Kakade. Instabilities of Offline RL
+with Pre-Trained Neural Representation. In Proceedings of the 38th International Conference
+on Machine Learning , pages 10948–10960. PMLR, July 2021. URL https://proceedings.
+mlr.press/v139/wang21z.html .
+[31] Matthew E. Taylor and Peter Stone. Transfer Learning for Reinforcement Learning Domains:
+A Survey. Journal of Machine Learning Research , 10(56):1633–1685, 2009. ISSN 1533-7928.
+URL http://jmlr.org/papers/v10/taylor09a.html .
+[32] Jun Morimoto and Kenji Doya. Robust Reinforcement Learning. Neural Computation , 17(2):
+335–359, February 2005. ISSN 0899-7667. doi: 10.1162/0899766053011528.
+[33] Wenshuai Zhao, Jorge Peña Queralta, and Tomi Westerlund. Sim-to-Real Transfer in Deep Rein-
+forcement Learning for Robotics: a Survey. In 2020 IEEE Symposium Series on Computational
+Intelligence (SSCI) , pages 737–744, December 2020. doi: 10.1109/SSCI47803.2020.9308468.
+7A Appendix
+A.1 Related Works
+EV charging. Simulators for EV charging stations have been widely studied globally. [ 13] surveyed
+51 EV charging environments and found that existing environments included a range of objectives
+(profit, waiting time, load balancing, grid losses, etc.) and a number of constraints (battery, charging,
+EV owner, transformer load, etc.). However, of these 51 surveyed environments, only one [ 25]
+investigated CO 2emissions, but only in the context of EV charging paired with ride-sharing services.
+Two other commonly used simulators, Chargym [ 12] and ACN-Sim [ 11], do not incorporate CO 2
+emissions either. By building on top of ACN-Sim, SustainGym’s EVChargingEnv is the first EV
+charging RL environment that we know of to explicitly include marginal CO 2emissions in its reward
+function.
+Battery systems and electricity markets. A number of works have explored the performance of
+RL algorithms for controlling grid-scale battery storage systems. [ 14] considers a Q-learning agent
+that learns charging and discharging decisions to perform price arbitrage, while [ 15] demonstrates
+improved performance from using policy gradient algorithms and a novel reward function. [ 16] also
+uses Q-learning and specifically aims to model the effect of battery degradation. However, these
+three works make a price-taking assumption, where the decisions of the RL agent do not affect
+the market clearing price. This simplifies the RL environment significantly by removing the need
+to implement a market clearing mechanism, but it does not accurately capture real-world market
+operations. As we demonstrate in Figures 2 and A9, removing the price-taking assumption may
+significantly increase the difficulty of the RL environment. (See further discussion in the section on
+the Oracle for ElectricityMarketEnv .)
+Especially in markets with congestion or a small number of bidders, individual bids can and do affect
+electricity market prices. A small number of previous works [ 26,27] do model the market bidding
+process, which SustainGym’s ElectricityMarketEnv does as well.
+As with existing EV charging environments, we are unaware of any existing environments for battery
+systems in electricity markets that consider marginal CO 2emissions, even though some actual energy
+markets such as CAISO already require that market participants incorporate greenhouse gas (GHG)
+compliance costs in their bids.2ElectricityMarketEnv is the first RL environment modeling an
+electricity market that we know of to explicitly price CO 2emissions in the reward function.
+We note that a different line of research studies the role of RL for more efficiently solving the
+economic dispatch problem [ 28,29]. These works are different from ElectricityMarketEnv in
+that they are focused on RL algorithms to help the market operator reach a particular objective, as
+opposed to helping market participants directly.
+Distribution shift. Common RL environments for benchmarking have stationary dynamics, mean-
+ing that the environment does not evolve over time. However, real-world dynamics are constantly
+changing. For example, Caltech saw a precipitous drop in EV charging usage at the start of the
+COVID-19 pandemic in Spring 2020 (see Figure 1). Our benchmark environments reflect these
+nonstationary dynamics, and we test RL agents on their ability to handle such “distribution shifts.”
+Existing RL algorithms trained offline are known to suffer from instability under online distribution
+shifts [30], making them poorly suited to tackle real-world sustainability settings.
+Related to the problem of distribution shift is transfer learning in RL [ 31], which aims to improve RL
+performance on a “target” task by pre-training on one or more “source” tasks. Transfer learning in
+RL typically addresses environments where the state and/or action spaces are different between the
+target and source tasks (beyond just distribution shift), and transfer learning typically allows some
+additional training on the “target” domain. In SustainGym, we simply test the policy learned from
+one environment on a new environment without additional training.
+Perhaps most related to this setting of distribution shift is robust RL ( e.g.[32]) and sim-to-real ( e.g.,
+[33]). Robust RL algorithms aim to help agents learn robust representations and choose actions that
+are robust to disturbances in the state observation and/or environment dynamics.
+2http://www.caiso.com/InitiativeDocuments/Presentation-CurrentFrameworkforGreenhouseGas-GHG-AccountingwithinCAISOMarkets-Costs-Feb22-2022.
+pdf
+8Figure A3: Log-likelihoods of data from testing periods (y-axis) for GMMs fitted on a training period
+(x-axis) using 30 components for the Caltech (left) and JPL (right) sites. A higher score implies a
+better fit. In all cases, GMMs scored highest on the period it was trained on. The significant drop in
+log-likelihood scores off-diagonal is indicative of distribution shift.
+Figure A4: Like Figure 1, but for the JPL charging network.
+A.2 Carbon data
+We obtained historical MOER and forecasted MOER from the California Self-Generation Incentive
+Program (SGIP).3As the Caltech and JPL EV charging networks (for EVChargingEnv ) and our
+generators and battery systems (for ElectricityMarketEnv ) are located in Southern California,
+we used MOER data for the Southern California Edison grid region. For times when MOER values
+were unavailable, we used the last-available MOER value.
+Furthermore, we impose a price on CO 2emissions of $30.85 / metric ton of CO 2, which comes from
+the settlement price from California’s Cap-and-Trade auction in May 2022.4We use PCO2to denote
+this carbon price, converted to units of $/kgCO 2.
+A.3 EVChargingEnv
+Assumptions. In addition to the description given in Section 2.1, EVChargingEnv makes the
+following assumptions:
+•EVs staying overnight can be ignored. Upon the start of each episode, we assume the garage
+is empty. Analysis of historical traces on the adaptive charging network show that at most
+12 cars at one time stay through midnight. Because this number is small compared to the
+3https://sgipsignal.com/
+4https://ww2.arb.ca.gov/sites/default/files/2022-05/nc-may_2022_summary_results_report.pdf
+9number of stations, we do not expect the assumption of an empty garage at the start of
+the day to significantly impact the accuracy of the environment in representing real-world
+settings.
+•All EVs have identical batteries. Because ACNData does not include data on the model
+of each EV , yet ACN-Sim models battery charging dynamics which vary based on battery
+capacity, we assume that all EVs contain 100 kWh batteries and come with an initial state
+of charge such that if the EV were charged to the amount of the user-requested energy, the
+battery would be full. Energies requested over 100 kWh are capped at 100 kWh. We use the
+Linear2StageBattery battery model within ACN-Sim.
+Feasible action space. LetLdenote physical infrastructure resources (e.g., transformers or break-
+ers) in the charging network. These infrastructure resources are characterized by (A, ϕ, c, v )where
+A∈R|L|×naccounts for the charging network layout, ϕ∈Rnis the voltage phase angle of each
+EVSE, c∈R|L|is the capacity limit for each resource, and v∈R+is the EVSE voltage (in kV).
+Along with the demand at each EVSE, (A, ϕ, c )defines the time-dependent set of valid actions At.
+Lastly, let M= 32 denote the maximum allowed pilot signal (in amps) for each EVSE.
+When an agent gives the environment its desired normalized pilot signals a(t)∈[0,1], the projection
+into the convex hull of Atis performed by solving the following convex optimization problem:
+min
+ˆa∈Rn∥a(t)−ˆa∥2 (A1a)
+s.t. 0≤ˆai≤1 ∀i∈ {1, . . . , n } (A1b)
+Mˆaivτ≤ei ∀i∈ {1, . . . , n } (A1c)nX
+i=1AliMˆaiejϕi
+| {z }
+|Il|≤cl ∀l∈ L (A1d)
+Here, j=√−1is the imaginary number and Ilis the aggregate current through constraint l∈ L.
+The quantity Mˆaivτcomputes the energy (in kWh) to be charged from EVSE iduring the next time
+step. The continuous pilot signals Mˆaare then rounded (up if fractional part >0.7, down otherwise)
+to the set of discrete pilot signals supported by each EVSE, resulting in the final pilot signals M˜a(t).
+(We found empirically that the rounding threshold of 0.7 worked well to encourage faster charging
+without causing constraint violations.)
+Reward function. The profit term p(t)aims to maximize the amount of energy delivered to the
+EVs. Let π∈R+denote a fixed marginal profit (in $/kWh) that the EV charging network earns for
+each unit of energy delivered and v∈R+be the voltage (in kV) of the charging network. Then,
+p(t) =πnX
+i=1M¯aivτ=πM¯a⊤1vτ
+where 1denotes a vector of all ones. The constraint violation cost cV(t)aims to reduce physical
+constraint violations and encourage the agent’s action a(t)to be in At. We penalize violation costs
+with a weight λV(in $/kWh), so
+cV(t) =λVX
+l∈Lmax{Il(t)−cl,0}vτ
+where Ilis the electrical current and clis the maximum current capacity at resource l. By default, we
+setλV= 0.01.
+Finally, the CO 2emissions cost cC(t)aims to reduce emissions by encouraging the agent to charge
+EVs when the MOER is low. We have
+cC(t) =PCO2mtnX
+i=1M¯aivτ=PCO2mtM¯a⊤1vτ
+10Model predictive control (MPC). As a baseline non-RL algorithm, we consider a model predictive
+control (MPC) controller similar to what is proposed in [ 18]. Let w≤kdenote the length of the
+lookahead window (up to the number of MOER forecast steps k). Then, at every time step t, the
+MPC controller solves the following optimization problem:
+max
+a0,...,aw−1∈Rnw−1X
+k=0(π−PCO2ˆmt+k|t)Mak⊤1vτ (A2a)
+s.t. 0⪯ak⪯1 ∀k∈ {0, . . . , w −1} (A2b)
+w−1X
+k=0Makvτ⪯e (A2c)
+ak
+i= 0 ∀i∈ {1, . . . , n }, k≥di (A2d)nX
+i=1AliMak
+iejϕi
+| {z }
+|Il|≤cl, ∀l∈ L, k∈ {0, . . . , w −1} (A2e)
+The optimization problem plans pilot signals for the next wtime steps to maximize revenue and
+minimize forecasted carbon emissions cost. (A2c) ensures that the pilot signals do not over-charge
+the EVs. (A2d) prevents charging EVs after their estimated departure times. (A2e) is the usual
+infrastructure constraint.
+Only the first planned pilot signal Ma0is used. It is rounded to the set of discrete pilot signals
+supported by each EVSE, resulting in the final pilot signal M˜a(t). On the next time step, the MPC
+algorithm resolves the optimization problem.
+Training. To evaluate the performance of our models during training, a two-week subsample, from
+July 5th to July 18th, 2021, of the summer 2021 period ([ 19] was selected as the testing period. We
+performed two splits: 1) by RL algorithm (PPO vs. A2C vs. SAC), and 2) training data generated
+by GMMs based on out-of-distribution data (summer 2019) vs. in-distribution data (summer 2021).
+In each of the four cases, we used action projection during training and testing, eliminating costs of
+network violations. Three experiments with different random seeds were trained, with the reward
+curve of the best ones presented. Figure A5 shows the reward and its breakdown on the two-week
+subsample period. The left plot in Figure 2 shows the test results on the entire summer 2021 period
+when training was finished.
+A.4 ElectricityMarketEnv
+Each episode of ElectricityMarketEnv starts at midnight (Pacific Time) and runs for 1 day. Let
+ngbe the number of dispatchable generators and let nbbe the number of battery storage systems
+participating in the market.
+Generator and battery dynamics. Each dispatchable generator5has a fixed maximum generation
+rategmax
+i∈R+(in MW), and we assume that the minimum generation rate is 0. (This is not the
+most realistic assumption, as many generators are unable to supply energy below some minimum
+threshold.) We also assume no ramping constraints. Thus, the market operator is allowed to dispatch
+generators up to the maximum generation rate ¯g=gmax.
+Each battery has a maximum charging cmax
+i∈R−and discharging dmax
+i∈R+rate (in MW). We
+assume that the batteries have symmetric charging and discharging rates, that is, cmax
+i=−dmax
+i. We
+assume that all batteries have the same efficiencies of ηc, ηd∈(0,1]for charging and discharging,
+respectively [ 14]. That is, increasing the battery energy level by 1 MWh requires purchasing 1/ηc
+MWh from the grid. Decreasing the battery energy level by 1 MWh supplies the grid with ηdMWh.
+5“Dispatchable” means that the generator can be controlled. For example, natural gas generators are
+dispatchable, whereas wind and solar systems generally are not.
+11Figure A5: These plots show the distribution of daily rewards over a 14-day test period at every
+10,000 timesteps during model training. Models were trained 3 times each with different random
+seeds for initialization; the training curve for the best model is shown. The solid line is the mean
+reward over the 14 days, and the shaded region indicates ±1 standard deviation. The top row shows
+rewards on an out-of-distribution setting, while the bottom row shows rewards in the in-distribution
+setting. The daily reward is plotted in green, which is comprised of a profit term (in blue) minus the
+carbon cost (in orange). The carbon cost incurred appears to be roughly in proportional to the profit
+generated.
+Figure A6: Demand and MOER values for May 2019 and 2021, used in ElectricityMarketEnv .
+The solid lines are mean values across the 31 days in the month, and the dashed lines show ±1
+standard deviation. While the curves have similar patterns, there is still a noticeable distribution shift
+between the two years, especially in the early morning and late evening hours.
+12Thus, given a dispatch xt, the energy level eof a battery changes as
+e←e−xtηc,ifxt<0
+e−xt/ηd,ifxt>0.
+Each battery has a maximum energy level ¯ei∈R+. Letei∈R+denote the current energy level of a
+battery (in MWh). To prevent over-charging or over-discharging, the market operator is given the
+maximum charging and discharging rates
+¯ci= max( cmax
+i,−(¯ei−ei)/(τηc))
+¯di= min( dmax
+i, eiηd/τ)
+As with the generators, we assume no ramping constraints on the battery systems.
+Discretized action space. ElectricityMarketEnv provides a wrapper for discretizing the action
+space, with 3 actions: charge, do nothing, and discharge. The corresponding bids for these 3 actions
+are:
+• Charge: a(t) = ( ¯m,¯m)
+• Do nothing: a(t) = (0 .01 ¯m,¯m)
+• Discharge: a(t) = (0 .01 ¯m,0.01 ¯m)
+Optimal dispatch problem. The optimal dispatch problem refers to the market operator’s task of
+deciding which generators and battery systems will be used to meet the energy demand.
+Table A1: Notation for optimal dispatch problem.
+τ∈R+ duration of time step (hours)
+ng∈N number of dispatchable generators
+nb∈N number of battery storage systems
+¯g∈Rng
++ maximum generation rate (MW) for each generator
+¯c∈Rnb
+− maximum charging rate (MW) for each battery
+¯d∈Rnb
++ maximum discharging rate (MW) for each battery
+xg∈Rng dispatches (MWh) for each generator
+xb∈Rnb dispatches (MWh) for each battery
+mg∈Rng
++ bid prices ($/MWh) of produced energy for generators
+mc∈Rnb
++ bid prices ($/MWh) of charged energy for batteries
+md∈Rnb
++ bid prices ($/MWh) of discharged energy for batteries
+l∈R energy demand (MWh)
+A dispatchable generator submits a bid mg
+i∈R+(in $/MWh) that represents the price at which
+it is willing to sell energy into the market. On the other hand, a battery system can produce and
+consume energy, so it submits a bid (mc
+i, md
+i)∈R2
++corresponding to the prices at which it is willing
+to purchase energy to charge ( mc) or sell energy to discharge ( md) in the market. These bids describe
+piecewise linear “bid curves” (see Figure A7). Since the agent controls the last battery system, the
+actions of the agent set the bids (mc
+nb, md
+nb) = (ac, ad).
+The bids from battery systems (including the agent) must satisfy 0≤mc
+i≤md
+i≤¯m. The
+requirement mc
+i≤md
+icomes from the convexity of the bid curve, while ¯mrepresents a maximum
+cost of energy that the market operator is willing to pay.
+While actual electricity markets may allow finer-grained specifications of bids, linear and piecewise-
+linear bidding strategies cover a large portion of realistic bidding strategies seen in realtime electricity
+markets. ElectricityMarketEnv uses these simplified piecewise linear bid curves.
+At each time step, the market operator observes an energy demand l∈R(in MWh) that it must
+meet with appropriate generation. To do so, it solves the following optimal dispatch problem, which
+minimizes the cost of electricity generation subject to appropriate constraints:
+13Figure A7: (left) A “bid curve” in an electricity market is a function that dictates the cost associated
+with a dispatch from the market operator. adis the slope of the bid curve for discharging energy,
+while acis the slope of the bid curve for charging energy. (right) This is a graphical representation
+of the optimal dispatch problem (assuming only generators, no batteries). It shows how the market
+clearing price of electricity is determined. The generation bids are arranged from low to high, and the
+price of the bid intersecting the current demand determines the market clearing price. Generators
+whose bids are at most this price are “dispatched,” meaning they must generate the amount of energy
+that they bid for. If the bid price represents the true cost of generation, then the difference between
+the market clearing price and the bid price is profit.
+min
+xg∈Rng, xb∈Rnbmg·xg+nbX
+i=1max( md
+ixb
+i, mc
+ixb
+i) (A3a)
+s.t.ngX
+i=1xg
+i+nbX
+i=1xb
+i=l (A3b)
+0⪯xg⪯¯gτ (A3c)
+¯cτ⪯xb⪯¯dτ (A3d)
+The values of the optimization variables xg∈Rng, xb∈Rnbare the “dispatch,” which is the amount
+of energy (in MWh) that each generator or battery is obligated to supply in the next time interval.
+The market clearing price p—that is, the price of electricity paid to all generators and discharging
+batteries (and paid bybattery systems, if charging)—is the Lagrange multiplier associated with the
+supply-demand balance constraint (A3b).
+Default environment values. By default, ElectricityMarketEnv is comprised of ng= 10
+dispatchable generators and nb= 5 battery storage systems, shown in Tables A2 and A3. These
+power plants were randomly selected from the list of power plants available on the California Energy
+Commission website.6Generators were selected only from among the Southern California Edison
+(SCE) utility, while battery systems were selected from the Southern California region. Charging and
+discharging efficiencies were set to ηc=ηd= 0.95, which yields a 90.25% round-trip efficiency,
+which is in line with modern lithium ion battery storage systems.7
+The last battery storage system ( i.e., the Escondido Energy Storage system) is what the environment
+allows the RL agent to submit bids for.
+The bid prices for all generators and batteries (excluding the one controlled by the agent) are sampled
+randomly via the following procedure. At the start of each episode, each generator and battery
+6https://cecgis-caenergy.opendata.arcgis.com/datasets/4a702cd67be24ae7ab8173423a768e1b_0/explore ,accessed on July 28,
+2022.
+7https://www.tesla.com/sites/default/files/pdfs/powerwall/Powerwall2_AC_Datasheet_en_northamerica.pdf .
+14Table A2: Dispatchable Generators
+Name Rate gmax(MW) Fuel
+Kern River 3 36.8 hydropower (WAT)
+Chino Cogeneration 31.19 natural gas (NG)
+Bishop Creek 5 3.8 hydropower (WAT)
+San Dimas Hydro Recovery Plant 9.92 hydropower (WAT)
+Barre Peaker 49 natural gas (NG)
+Delano Energy Center LLC 49.9 natural gas (NG)
+Puente Hills Energy Recovery 50 landfill gas (LFG)
+Mammoth Pacific II 15 geotheormal (GEO)
+EF Oxnard Inc. 48.5 natural gas (NG)
+Ellwood Generating Station 56.7 natural gas (NG)
+Table A3: Battery Storage Systems
+Name Rate dmax(MW) Capacity ¯e(MWh)
+AltaGas Pomona Energy Storage 20 80
+El Centro Generating Station BESS 29.7 20
+Eastern BESS 1 7.5 30
+Glendale Battery Energy Storage (G2BESS) 2 0 .95
+Escondido Energy Storage 30 120
+samples a “base” generation bid price ˆmg
+iiid∼Uniform (50,150) andˆmd
+iiid∼Uniform (50,100). For
+batteries, the “base” charging bid price is ˆnc= 0.75×ˆmd. By default, these base prices are used as
+the actual bid prices, e.g.,mg= ˆmg. However, the environment also provides an option to randomly
+scale each base price at every time step by factors sampled from Uniform (0.8,1.25)to determine the
+actual bid prices ( mg, md, mc). To maintain convexity of the bid curves after scaling, mdis always
+modified as md←max( mc, md)where the max is applied element-wise. The maximum price that
+the market operator is willing to pay is set as ¯m= 1.25×max iˆmd
+i.
+Oracle. To understand the performance of RL controllers, we compared them to an all-knowing
+“oracle” which sets an upper-bound on the performance of the best possible controller. The oracle
+decides on charging/discharging behavior as follows. First, it solves the optimal dispatch problem to
+compute prices ptthat correspond to what would occur if the agent did not participate in the market.
+This is done by constraining the agent’s dispatch to be zero: xb
+nb= 0. Next, the oracle optimizes over
+all charging and discharging decisions, solving the arbitrage maximization problem adapted from
+[14]:
+Oracle (e0) := max
+c,d∈RTTX
+t=1(pt+PCO2mt)
+ηddt−1
+ηcct
+(A4a)
+s.t. 0≤e0+tX
+j=1(cj−dj)≤¯e ∀t= 1, . . . , T (A4b)
+¯e
+2≤e0+TX
+t=1(ct−dt) (A4c)
+0⪯c⪯ −1
+ηc¯cnbτ (A4d)
+0⪯d⪯ηd¯dnbτ (A4e)
+Here, e0∈[0,¯e]is the initial energy level of the battery. At time t,ctis the amount of energy
+charged into the battery, and dtis the amount of energy discharged. The constraint (A4b) constrains
+15the battery’s energy level to between 0 and ¯e,(A4c) ensures that the battery ends with its battery
+half-charged, and (A4d)-(A4e) bound the charging and discharging rates at time t.
+The objective aims to maximize profit from arbitrage. Note that xt:=ηddt−ct/ηccan be thought
+of as the dispatch. Splitting up this dispatch into separate charging ctand discharging dtcomponents
+makes sense because in the optimal charge and discharge profiles {c∗
+t, d∗
+t}T
+t=1, at least one of c∗
+tor
+d∗
+tis 0 at every time t[14].8
+The oracle’s objective is an upper bound on the return achievable by any controller, for two reasons.
+First, the oracle makes a price-taking assumption, meaning that its decisions do not affect the energy
+market clearing price pt. In contrast, whenever an agent bids into the market, its price would be
+the same or worse. If the agent is discharging energy, the clearing price will be at most the price
+without the agent; likewise, if the agent purchases energy from the market, the clearing price will
+be at least the price without the agent. Second, the oracle has the flexibility to choose a particular
+charging/discharging rate, whereas a bidding agent would be forced to discharge at its maximum rate
+if its bid was lower than the clearing price (and likewise for charging).
+Indeed, our experiments demonstrate the impact of these two advantages that the oracle has over
+realistic agents. We show the returns for the oracle, as well as a “follow oracle” agent which submits
+bids according to the discretized actions space that tries to mimic what the oracle does. Whenever the
+oracle charges, the “follow oracle” agent submits a charge bid, and whenever the oracle discharges,
+the “follow oracle” agent submits a discharge bid. The large gap in performance between the
+oracle and the “follow oracle” agent suggests that ElectricityMarketEnv is more challenging and
+realistic compared to RL environments introduced in previous works ( e.g., [14,15]) which make the
+price-taking assumption.
+Reward Function. In this section, we describe ElectricityMarketEnv ’s reward function in
+greater detail. The overall goal of the reward function is to encourage the agent to maximize revenue
+while reducing the battery system’s carbon footprint.
+The revenue reward term is rR(t) =ptxt, where pt∈Ris the market clearing price of electricity
+(in $/MWh), and xt∈Ris the dispatch (in MWh) for the agent. When xt>0, it represents the
+amount of energy that the agent is obligated to supply into the grid from its battery; when xt<0, it
+represents the amount of energy that the agent is purchasing from the grid.
+The CO 2emissions reward term is rC(t) =PCO2mtxt, which represents the price of CO 2emissions
+displaced or incurred by the battery dispatch.
+The terminal cost cT(t), which is nonzero only when t=T, encourages the battery to have the same
+energy level at the end of the day as when it started. It imposes a cost that approximates the loss in
+future return based on the state of charge of the battery’s energy level at the end of the episode.
+cT(t) =max(0 , pT(eT−e0)/ηc) + max(0 ,Oracle (eT)−Oracle (e0)),ift=T
+0, otherwise
+The first term max(0 , pT(eT−e0)/ηc)represents the price the agent would need to pay to charge
+the battery’s energy level up to its initial level. The second term max(0 ,Oracle (e0)−Oracle (eT))
+represents the difference in return (under the oracle) that could be received if the agent started with a
+battery energy level of e0vs.eT. Essentially we are assuming that an optimal remaining charge will
+be at least half of the maximum capacity, and higher starting charge is always beneficial. Note that
+cT(t) = 0 whenever the battery’s final energy is at least half ( eT≥¯e/2), and cT(t)>0whenever
+the battery’s final energy is less than half ( eT<¯e/2).
+Training. We trained PPO, SAC, and DQN models on either May 2019 (out of distribution) or May
+2021 (in distribution) data, then evaluated them on May 2021. PPO and SAC models were trained
+on the default continuous action space, and PPO and DQN models were trained on the discretized
+actions space. The discount rate was set to γ= 0.9999 . We tested learning rates of (1e-3, 1e-4, 1e-5)
+for DQN, and (3e-3, 3e-4, 3e-5) for SAC and PPO. Models were trained for up to 1000 episodes,
+with early stopping if no improvement was observed for 50 episodes. The results for running the
+models on a single episode from May 2021 are shown in Figure A8.
+8This comes from claim (1) of Lemma 1 in [14]. However, claim (2) of that lemma is actually incorrect.
+16Figure A8: Evaluation of trained RL models on ElectricityMarketEnv on one day in May 2021.
+The year in parentheses specifies the data on which the model was trained. For example, “SAC
+(2019)” was trained on May 2019 data, while “SAC (2021)” was trained on May 2021 data. On
+the left, models were trained with intermediate rewards. On the right, models were trained with all
+rewards delayed until the last step of the episode. To keep the figure readable, PPO on the continuous
+action space is not plotted here, but the results are nearly indistinguishable from SAC.
+Figure A9: Returns from evaluating different algorithms on ElectricityMarketEnv , using data
+from May 2021. On the left, models were trained with intermediate rewards. On the right, models
+were trained with all rewards delayed until the last step of the episode. The violin plots show the
+distribution of returns over 30 episodes with different random seeds. Blue indicates that the model
+was trained on data from May 2019 (out of distribution), whereas orange indicates that the model
+was trained on data from May 2021 (in distribution).
+17

@@ -1,0 +1,227 @@
+TAUDiff: Improving statistical downscaling for
+extreme weather events using generative diffusion
+models
+Rahul Sundar
+Verisk Analytics
+Hyderabad, IND 500081
+rahulsundar@verisk.comNishant Parashar
+Verisk Analytics
+Hyderabad, IND 500081
+nparashar@verisk.comAntoine Blanchard
+Verisk Analytics
+Boston, MA 02115
+ablanchard@verisk.com
+Boyko Dodov
+Verisk Analytics
+Boston, MA 02115
+bdodov@verisk.com
+Abstract
+Deterministic regression-based downscaling models for climate variables often
+suffer from spectral bias, which can be mitigated by generative models like diffusion
+models. To enable efficient and reliable simulation of extreme weather events, it is
+crucial to achieve rapid turnaround, dynamical consistency, and accurate spatio-
+temporal spectral recovery. We propose an efficient correction diffusion model,
+TAUDiff, that combines a deterministic spatio-temporal model for mean field
+downscaling with a smaller generative diffusion model for recovering the fine-scale
+stochastic features. We demonstrate the efficacy of this approach on downscaling
+atmospheric wind velocity fields obtained from coarse GCM simulations. Our
+approach can not only ensure quicker simulation of extreme events but also reduce
+overall carbon footprint due to low inference times.
+1 Introduction
+Weather extremes are on the rise due to accelerated climate change [ 1]. Given their potential to
+severely damage life and property, it is becoming increasingly important to estimate their frequency,
+associated risks and economic losses beforehand [ 2–4]. By insuring for such losses, we can become
+more resilient towards extreme events [ 5]. Climate risk modeling often relies on historical Earth
+system observations [ 6] or physics-based general circulation models (GCMs) [ 7] to generate climate
+projections. Typically, GCMs operate at a coarse resolution ( O(10)−O(102)km) due to compute
+limitations. This leads to incorrect characterization of weather extremes. In recent years, machine-
+learning based statistical downscaling approaches have been explored to obtain realistic well-resolved
+climate data over specific regions [ 8–10]. These methods leverage historical Earth system observation
+data to create a non-linear mapping from bias-corrected coarse GCM simulations to the desired
+higher-resolution outputs.
+While deterministic regression models effectively capture large-scale features, they struggle with
+fine-scale stochastic atmospheric processes due to low-frequency spectral bias [ 11]. This limitation
+has recently led to the adoption of generative models like GANs [ 10,12,13], and denoising diffusion
+models for downscaling tasks [ 14,15]. Denoising diffusion models [ 16–18] are particularly promising
+due to their stability in training, reliable convergence, and high output quality. However, sampling is
+often time consuming. Addressing this, Karras et al. [19] explored the design space of such diffusion
+Tackling Climate Change with Machine Learning: workshop at NeurIPS 2024.models, and proposed the elucidated diffusion model (EDM) which successfully reduced the number
+of model evaluations (from O(103)toO(10)) required to generate a single sample. Motivated by
+this, a correction diffusion model (CorrDiff) [ 14] was proposed for kilometer-scale downscaling.
+CorrDiff combined a UNet-based deterministic model to map the mean field and an EDM correction
+to capture fine-scale stochastic content.
+In the context of extreme-event simulation, it is vital that both short- and long-term event statistics
+of downscaled data be consistent with historical observations. So, the lack of temporal model-
+ing in downscaling models may affect dynamical consistency of downscaled data (e.g. distorted
+propagation of storm fronts). One could address this issue by borrowing techniques from video
+generation/prediction [ 20], as explored by Yoon et al. [21] for regional weather forecasting. However,
+such techniques have not yet been explored for downscaling. Moreover, large models as in [ 14] are
+computationally intensive to train and infer. This prohibits the generation of even relatively small
+(O(103)) extreme-event datasets, which are crucial for accurately quantifying climate tail risk. Given
+a good mean-field model, it is possible that a smaller and computationally efficient diffusion model
+would suffice. This would reduce overall computational demands, inference times, and improve
+efficiency for real-time use.
+To address these challenges, we propose a computationally efficient Temporal Attention Unit en-
+hanced Diffusion model (TAUDiff) that integrates (a) a video prediction model for dynamically
+consistent mean-field downscaling, and (b) a smaller guided denoising diffusion model for stochasti-
+cally generating the fine-scale features. We train the models on atmospheric wind fields obtained
+from reanalysis dataset. The performance of TAUDiff is first compared against separate mean-field
+regression and end-to-end diffusion models under a fixed training budget. Finally, we evaluate the
+downscaling performance of TAUDiff on an ensemble of bias-corrected coarse GCM outputs using
+various spectral statistics. We finally discuss its potential in producing accurate and computationally
+efficient extreme-event datasets, and the implications of model inference times and carbon footprint
+offsetting.
+2 Methods
+Overview We demonstrate the efficacy of TAUDiff in downscaling atmospheric wind fields over the
+European region. For our training, we use the atmospheric reanalysis dataset (ERA5) at 0.25◦lat-lon
+resolution produced by the European Center for Medium-range Weather Forecasts (ECMWF) [ 6].
+Instead of a single time instance input like in [ 14], our approach uses a deterministic regression
+component that takes a temporal sequence of coarsened ERA5 wind velocity snapshots with orog-
+raphy data as input. Here, the high-resolution ERA5 wind fields from the final time step of the
+sequence serves as the target. Instead of using coarse interpolation, we use lowpass spherical wavelet
+filtering [ 22,23] to create band-limited low-resolution ERA5 fields to ensure proper scale separation.
+This approach closely mirrors real-world scenarios where bias-corrected GCM data lacks fine-scale
+spatio-temporal features. We use the Community Atmosphere Model 4.0 (CAM4) [ 24] (at 1◦lat-lon
+resolution) as the coarse GCM in this study. We briefly discuss the mean-field and diffusion model
+components of TAUDiff below.
+TAUDiff Component 1: Mean model We adopt the Simple yet better Video Prediction (SimVP)
+architecture [ 25] consisting of a spatial backbone, and a translator for temporal modelling, ensuring
+temporal coherence and simplicity as compared to the more complex transformer based architec-
+tures [ 20]. We specifically consider a UNet for the spatial backbone, and the temporal attention unit
+(TAU) [ 26] for the translator. The TAU first independently models spatial dependency via static, and
+both cross-channel and temporal dependencies using dynamical attention units, respectively, and
+then combines them. We train the mean model using a weighted combination of mean absolute error
+(MAE), mean squared error (MSE), and to additionally maintain dynamical consistency, physics-
+based losses on advection ( u· ∇u), vorticity ( ∇ ×u) and divergence ( ∇ ·u) of wind fields ( u) are
+also considered. Although dynamically consistent predictions are possible with this mean model, the
+downscaled fields still lack the stochastic fine scale features. This is where Component 2 comes into
+play.
+TAUDiff Component 2: Correction diffusion model To capture the residual stochastic fine scale
+features (which cannot be captured by the mean model), we build a relatively small correction
+2  
+Figure 1: Schematic of the TAUDiff model
+diffusion model ( ∼O(1)million (M) parameters) trained using a score-matching loss [ 27]. To
+maintain consistency of our approach, we use a SimVP architecture as in the mean model but with
+a residual dense UNet as the spatial backbone. Once the model is trained, a data sample can be
+generated by solving a stochastic differential equation modelling a reverse diffusion process [ 17,19].
+Since the conditional input to the diffusion model is the mean model output (for a single time
+instance), the TAU morphs into a Channel Attention Unit (CAU) where the dynamical attention unit
+now models cross-channel dependencies and their relative importance (see figure 1 for a detailed
+schematic of TAUDiff.).
+3 Results
+Experimental protocol We demonstrated the potential of our framework by comparing three
+models: a deterministic mean-field regression, an end-to-end diffusion, and our TAUDiff model,
+each with O(10)M trainable parameters overall. These models were trained over 40 years of ERA5
+atmospheric wind data over Europe (1980-2020) (figure 2(a)), and validated over 2021-23. All the
+models were trained on a single T4 GPU over 50 epochs, with training times of 24, 48, and 60 hours
+for the mean, end-to-end diffusion, and the TAUDiff models, respectively.
+Figure 2: (a) European region used for training the downscaling models, with select locations used for
+evaluating performance. Comparison of model predictions: (b) vorticity snapshot at UTC: 2023-12-31
+21:00, (c) spatial spectrum, and (d) temporal spectra at select locations shown in (a).
+Validation Qualitatively, the vorticity contour predictions of mean and TAUDiff models demon-
+strate dynamical consistency of storm fronts, whereas the end-to-end diffusion model distorts them
+due to noise injection (see the circled zone in figure 2(b)). Quantitatively, pointwise statistics
+3computed over validation years 2021-23 show good recovery of spatial and temporal spectrum
+for TAUDiff, while mean model underrepresents, and end-to-end diffusion overrepresents higher
+temporal frequencies, respectively (see figure 2(c) and 2(d)).
+Testing The performance of our TAUDiff model was then evaluated on downscaling bias corrected
+CAM4 obtained wind fields over 40 years. Bias correction is done by quantile-mapping [ 28] the
+40-year distribution of each grid cell to that of ERA5, wavelet-filtered to GCM resolution. As
+earlier, we obtain physically consistent output, and remarkable spectral recovery (see figures 3(a-c)).
+Although only a simple quantile mapping [ 28] is adopted for bias correction, we see good agreement
+with ERA5 ground truth in the local storm counts (see figure 3(d)). This cements the need for a
+stochastic correction using a diffusion model for accurate extreme-event risk estimation.
+Figure 3: Assessment of downscaling performance on bias corrected CAM4 data: (a) V orticity
+contours at a representative time instance, (b) temporal spectrum, (c) vorticity distributions, and (d)
+local storm counts.
+4 Discussion
+Overall, our proposed video-prediction-based TAUDiff model demonstrates dynamically consistent
+downscaling, remarkable reconstruction of spatio-temporal fine scale features, and viable inference
+times with the use of a small correction diffusion model. Since coarse and fine scale content of the
+atmospheric fields are resolved well, accurate estimation of storm statistics was possible and excellent
+performance on spectrum and storm statistics were obtained. Thus, we show that TAUDiff has
+immense potential in accurate, and computationally efficient estimation of extreme weather events.
+Accurate estimation of extreme events would enable reliable risk estimations and realistic climate
+projections. Our future work would involve staging of TAUDiff models to obtain multi-resolution
+outputs for extreme weather event simulations while maintaining reasonable inference times.
+Smaller models with low inference times also mean a lower carbon footprint. In our TAUDiff
+architecture with the size of O(10)M parameters, the diffusion model component is only O(1)M
+parameters. This allows for efficient inference and enables operationalization at scale. For inference
+on just one year worth of 3-hourly resolved wind fields over Europe, it takes approximately 30
+minutes on a single T4, and about 4 minutes on an H100 GPU. In contrast, the end-to-end diffusion
+model ( O(10)M parameters) takes about 80 minutes on a T4 GPU, and approximately 9 minutes
+on an H100 GPU. In large-scale operational settings, such as querying TAUDiff millions of time to
+create large exteme-event datasets, strategies for offsetting the carbon footprint should be considered.
+One option is to run inference on different cloud locations; for instance, 100 hours on an A100 GPU
+based AWS EC2 instance located in Canada (Central) can produce 0.5kg CO2Eq., fully offset by
+renewable energy; whereas, the same located in the US (North Virginia) can produce 9.25kg CO2Eq.
+with no offset at all (estimations made using the Machine Learning Impact calculator [29]).
+4References
+[1]P. Hoeppe. Trends in weather related disasters–consequences for insurers and society. Weather and Climate
+Extremes , 11:70–79, 2016.
+[2]T. Houser, S. Hsiang, R. Kopp, K. Larsen, M. Delgado, A. Jina, M. Mastrandrea, S. Mohan, R. Muir-Wood,
+D. J. Rasmussen, et al. Economic risks of climate change: an American prospectus . Columbia University
+Press, 2015.
+[3]C. B. Field, V . Barros, T. F. Stocker, and Q. Dahe. Managing the risks of extreme events and disasters to
+advance climate change adaptation: Special report of the Intergovernmental Panel on Climate Change .
+Cambridge University Press, 2012.
+[4]The Securities and Exchange Commission. SEC proposes rules to enhance and standardize climate-related
+disclosures for investors. https://www.sec.gov/news/press-release/2022-46 , March 21, 2022.
+[5]P. J. Robinson, W. J. W. Botzen, S. Duijndam, and A. Molenaar. Risk communication nudges and flood
+insurance demand. Climate Risk Management , 34:100366, 2021.
+[6]H. Hersbach, B. Bell, P. Berrisford, S. Hirahara, A. Horányi, J. Muñoz-Sabater, J. Nicolas, C. Peubey,
+R. Radu, D. Schepers, et al. The ERA5 global reanalysis. Quarterly Journal of the Royal Meteorological
+Society , 146(730):1999–2049, 2020.
+[7]C. Wang, L. Zhang, S.-K. Lee, L. Wu, and C. R. Mechoso. A global perspective on CMIP5 climate model
+biases. Nature Climate Change , 4(3):201–205, 2014.
+[8]S. Park, K. Singh, A. Nellikkattil, E. Zeller, and M. Mai, T. D.and Cha. Downscaling earth system models
+with deep learning. In Proceedings of the 28th ACM SIGKDD Conference on Knowledge Discovery and
+Data Mining , pages 3733–3742, 2022.
+[9]A. Blanchard, N. Parashar, B. Dodov, C. Lessig, and T. Sapsis. A multi-scale deep learning framework for
+projecting weather extremes. arXiv preprint arXiv:2210.12137 , 2022.
+[10] K. Daust and A. Monahan. Capturing climatic variability: Using deep learning for stochastic downscaling.
+arXiv preprint arXiv:2406.02587 , 2024.
+[11] Z. J. Xu, Y . Zhang, and T. Luo. Overview frequency principle/spectral bias in deep learning. arXiv preprint
+arXiv:2201.07395 , 2022.
+[12] N. Rampal, P. B. Gibson, S. Sherwood, G. Abramowitz, and S. Hobeichi. A robust generative adversarial
+network approach for climate downscaling and weather generation. Authorea Preprints , 2024.
+[13] G. Li and G. Cao. Generative Adversarial Models for Extreme Downscaling of Climate Datasets. arXiv
+preprint arXiv:2402.14049 , 2024.
+[14] M. Mardani, N. Brenowitz, Y . Cohen, J. Pathak, C.Y . Chen, C.C. Liu, A. Vahdat, K. Kashinath, J. Kautz,
+and M. Pritchard. Generative residual diffusion modeling for km-scale atmospheric downscaling. arXiv
+preprint arXiv:2309.15214 , 2023.
+[15] R. A. Watt and L. A Mansfield. Generative diffusion-based downscaling for climate. arXiv preprint
+arXiv:2404.17752 , 2024.
+[16] J. Song, C. Meng, and S. Ermon. Denoising diffusion implicit models. arXiv preprint arXiv:2010.02502 ,
+2020.
+[17] J. Ho, A. Jain, and P. Abbeel. Denoising diffusion probabilistic models. Advances in Neural Information
+Processing Systems , 33:6840–6851, 2020.
+[18] Y . Song, J. Sohl-Dickstein, D. P. Kingma, A. Kumar, S. Ermon, and B. Poole. Score-based generative
+modeling through stochastic differential equations. arXiv preprint arXiv:2011.13456 , 2020.
+[19] T. Karras, M. Aittala, T. Aila, and S. Laine. Elucidating the design space of diffusion-based generative
+models. Advances in Neural Information Processing Systems , 35:26565–26577, 2022.
+[20] C. Tan, S. Li, Z. Gao, W. Guan, Z. Wang, Z. Liu, L. Wu, and S. Z. Li. Openstl: A comprehensive
+benchmark of spatio-temporal predictive learning. Advances in Neural Information Processing Systems ,
+36:69819–69831, 2023.
+[21] D. Yoon, M. Seo, D. Kim, Y . Choi, and D. Cho. Deterministic guidance diffusion model for probabilistic
+weather forecasting. arXiv preprint arXiv:2312.02819 , 2023.
+5[22] P. Schröder and W. Sweldens. Spherical wavelets: Efficiently representing functions on the sphere. In
+Proceedings of the 22nd Annual Conference on Computer Graphics and Interactive Techniques , pages
+161–172, 1995.
+[23] C. C. da Silva, C. Lessig, B. Dodov, H. Dijkstra, and T. Sapsis. A local spectral exterior calculus for the
+sphere and application to the shallow water equations. arXiv preprint arXiv:2005.03598 , 2020.
+[24] R. B Neale, J. H. Richter, AJ Conley, S. Park, P. H. Lauritzen, A. Gettelman, D.L. Williamson, P.J. Rasch,
+S. J. Vavrus, M. A. Taylor, et al. Description of the NCAR Community Atmosphere Model (CAM 4.0),
+NCAR Tech. Note, TN–485 , 212, 2010.
+[25] Z. Gao, C. Tan, L. Wu, and S. Z Li. Simvp: Simpler yet better video prediction. In Proceedings of the
+IEEE/CVF Conference on Computer Vision and Pattern Recognition , pages 3170–3180, 2022.
+[26] C. Tan, Z. Gao, L. Wu, Y . Xu, J. Xia, S. Li, and S. Z. Li. Temporal attention unit: Towards efficient
+spatiotemporal predictive learning. In Proceedings of the IEEE/CVF Conference on Computer Vision and
+Pattern Recognition , pages 18770–18782, 2023.
+[27] Y . Song and S. Ermon. Improved techniques for training score-based generative models. Advances in
+Neural Information Processing Systems , 33:12438–12448, 2020.
+[28] D. Maraun. Bias correction, quantile mapping, and downscaling: Revisiting the inflation issue. Journal of
+Climate , 26(6):2137–2143, 2013.
+[29] A. Lacoste, A. Luccioni, V . Schmidt, and T. Dandres. Quantifying the carbon emissions of machine
+learning. arXiv preprint arXiv:1910.09700 , 2019.
+6

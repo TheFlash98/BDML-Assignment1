@@ -1,0 +1,322 @@
+GLOBAL -LOCAL POLICY SEARCH AND ITSAPPLICA -
+TION IN GRID-INTERACTIVE BUILDING CONTROL
+Xiangyu Zhang, Yue Chen & Andrey Bernstein
+National Renewable Energy Laboratory, Golden, CO 80401, USA
+{xiangyu.zhang, yue.chen, andrey.bernstein }@nrel.gov
+ABSTRACT
+As the buildings sector represents over 70% of the total U.S. electricity consump-
+tion, it offers a great amount of untapped demand-side resources to tackle many
+critical grid-side problems and improve the overall energy system’s efficiency.
+To help make buildings grid-interactive, this paper proposes a global-local policy
+search method to train a reinforcement learning (RL) based controller which op-
+timizes building operation during both normal hours and demand response (DR)
+events. Experiments on a simulated five-zone commercial building demonstrate
+that by adding a local fine-tuning stage to the evolution strategy policy training
+process, the control costs can be further reduced by 7.55% in unseen testing sce-
+narios. Baseline comparison also indicates that the learned RL controller outper-
+forms a pragmatic linear model predictive controller (MPC), while not requiring
+intensive online computation.
+1 I NTRODUCTION
+With the acceleration and exacerbation of global climate change, human society is in dire need
+of technologies for decarbonization and sustainable development to avoid any irreversible conse-
+quences caused to the earth. Grid-interactive efficient building (GEB) control enables resources at
+grid edge to be harnessed, and with the provided flexibility, power systems can be operated in a
+cleaner manner with higher efficiency. Thus, GEB is gaining traction in recent years. Direct load
+control (DLC), see (San Diego Gas & Electric, 2023) for an example, allows utility companies to
+directly control customers’ devices and is straightforward to implement. However, DLC does not
+explicitly consider specific building thermal condition and thus might jeopardize occupant comfort.
+Unlike DLC, MPC can combine building-centric and grid service objectives and achieves multi-
+objective optimal control, see (Drgo ˇna et al., 2020) for an extensive review. Despite the advantages
+of MPC, its massive deployment can be challenging. One of the reasons is that MPC requires on-
+demand computation to solve optimization problems during real time control (Zhang et al., 2021).
+Reinforcement learning (RL) policies, on the other hand, can be pre-trained offline and only require
+computationally cheap policy evaluation during real-time control. As a result, domain scientists are
+investigating using RL for optimal building control. For example, RL algorithms, including the deep
+Q-network (DQN) and asynchronous advantage actor-critic (A3C), are utilized for energy-saving
+while maintaining indoor comfort (Wei et al., 2017; Zhang et al., 2019). However, the discrete ac-
+tion spaces they employed usually require careful discretization to achieve good control performance
+and are more susceptible to the “curse of dimensionality” when applied to multi-zone control (Wei
+et al., 2017, Section 3.3). To use continuous action space, which greatly increases the policy search
+space and problem complexity, a Zap Q-learning method is leveraged in (Raman et al., 2020), though
+its application does not consider multi-zone building control. In addition, most prior building-RL
+studies are building-centric and do not consider enabling a building to be grid-interactive.
+In this paper, we investigate developing an RL controller for the most complex single building
+control problem studied in RL-building literature. To achieve this, a global-local policy search
+method is proposed, which strategically combines merits of two different types of RL algorithm, to
+allow policy to converge to a better performing local optimum in the non-convex policy searching
+process. A full version of this paper is published in Zhang et al. (2022).
+© [2023] IEEE. Reprinted, with permission, from “Two-Stage Reinforcement Learning Policy Search for
+Grid-Interactive Building Control,” IEEE Transactions on Smart Grid (V olume: 13, Issue: 3, May 2022).
+12 G LOBAL -LOCAL POLICY SEARCH
+In deep RL, a policy network πθ(at|st)parameterized by θis trained to maximize its control per-
+formance J(θ) :=Eat∼πθ(P
+t∈Tγtrt). The evolution strategies (ES) algorithm (Salimans et al.,
+2017) achieves this by maximizing a Gaussian smoothed version of the original objective:
+V(ˆθ) :=Eθ∼N(ˆθ,σ2I)J(θ) =Eϵ∼N(0,I)J(ˆθ+σϵ),
+where θfollows an isotropic multivariate Gaussian distribution with fixed covariance, i.e., θ∼
+N(ˆθ, σ2I), and ˆθis the mean parameter vector to be learned and σis a standard deviation, which
+controls the smoothness. ES updates ˆθviaˆθk+1=ˆθk+α∇V(ˆθ), and estimates ∇V(ˆθ)using
+zero-order gradient estimation (ZOE) (Nesterov & Spokoiny, 2017):
+∇V(ˆθ)≈1
+σEϵ∼N(0,I)[ϵ·J(ˆθ+σϵ)]. (1)
+According to Salimans et al. (2017), without the need for backpropagation, ES is highly scalable
+and requires less computation per episode. In addition, by optimizing on a Gaussian smoothed sur-
+face, better properties than those of the original function are introduced, see (Nesterov & Spokoiny,
+2017, Section 2) for more discussion. A direct benefit for this is the ability to converge to a better
+performing local optimum, if properly smoothed.
+Figure 1: Eight learning trajectories on a non-convex
+function searching for a minimum.Figure 1 shows an illustrative example
+of finding a minimum of a non-convex
+function f(x), with two optima, i.e., x∗
+L
+andx∗
+G, and f(x∗
+G)< f(x∗
+L). Eight
+trajectories represented by four types of
+gradient descent (GD) convergence with
+a)accurate gradient ∇f(x)b)zero-order
+estimated gradient, i.e., (1), with small,
+medium and large values of σ, corre-
+sponding to “under-smooth (us)”, “proper-
+smooth (ps)” and “over-smooth (os)”
+cases. Two trajectories, differentiated by
+the proximity of the initial point and an op-
+timum, are generated for each cases. The comparison reveals that once properly smoothed (using
+large enough σ), the converged solution can escape the attraction of x∗
+Land converging towards x∗
+G,
+even though the initial point is closer to x∗
+L, see “ps 1”. Figure 2 provides 3D surfaces that explain
+this. However, also due to the function smoothing, the converged solution deviates from the true
+optimum and the deviation increases with the increment of σ, see ‘B’, ‘A’, ‘C’ vs. x∗
+Gin Figure 1.
+More details about this example are provided in Appendix A.
+Figure 2: Three smoothed function surfaces with different σ.
+To summarize, from this simple illustrative example, two key observations of the ZOE-based
+method’s convergence feature are: a)An adequately large σis needed to search with a more “global”
+vision and avoid poor-performing local optima; and b)Conversely, it requires σto be small to con-
+verge “locally” to a better local optimum. Apparently, these two requirements are conflicting .
+To reconcile this, a global-local policy search method is devised:
+2In the global search stage (1STG) , the ES algorithm is used to search for a policy globally with a
+proper smoothing, and
+In the local search stage (2STG) the ES pre-trained policy is refined locally using proximal policy
+optimization (PPO) (Schulman et al., 2017) to further push the policy closer to the “true optimum”.
+PPO is suitable for fine-tuning because a) it directly optimizes on the original problem (instead of
+a smoothed objective) and b) the consideration of KL divergence in PPO policy update makes it
+suitable to improve an already good policy.
+Finally, it is worth noting that the sub-optimal convergence is not discussed in the original ES paper.
+This is possibly because most RL benchmark problems are of the task-completion type, and with the
+ES learned sub-optimal policy, those tasks can still be completed anyway. However, when applying
+RL to real-world engineering problems, e.g., cost optimization, the policy improvement can have
+more practical meaning and thus provides additional incentive for conducting the 2STG fine-tuning.
+3 G RID-INTERACTIVE BUILDING CONTROL
+Consider a commercial building with N={1, ..., N}thermal zones and a centralized air-
+conditioning (AC) unit in it. The AC can be controlled via two types of variables, i.e., chiller
+discharge air temperature Tda∈[Tda,Tda]and zonal mass flow rate ˙mi∈[ ˙mi
+t,˙mi
+t], i∈ N , to
+maintain indoor comfort. A grid-interactive building optimal control is formulated as follows by
+controlling at= [ ˙m1
+t,˙m2
+t, ...,˙mN
+t, Tda
+t]⊤∈ A ⊂ RN+1:
+minimize
+at∈A,∀tX
+t∈T"
+w(1,t)κ1X
+i∈ND(Ti
+t) +w(2,t)κ2pt(at)∆t+w(3,t)κ3((pt(at)−pt)+)2#
+subject to Tt=F(Tt−1,at,ϵt) (∀t∈ T),(2)
+where w(i,t)andκiare weighting factors and monetizing factors for the three objectives to be min-
+imized, i.e., costs associated with thermal discomfort D, energy consumption pt(at)∆tand power
+limit violation (pt(at)−pt)+. In (2), (·)+=max(0,·),pt(at)calculates AC power consumption
+at step t, and ptis the demand response (DR) power limit given by the utility company. Zonal
+temperature Ttis determined by the building thermal dynamics F, and ϵtdenotes environmen-
+tal disturbances. Problem (2) is formulated as a Markov Decision Process, with more details in
+Appendix B, and a policy πθ(at|st)is trained to implement optimal control.
+4 R ESULTS
+The global-local policy search method is used to train πθ(at|st)for (2), using one month of envi-
+ronmental disturbance data for training and use the next ten days (unseen scenarios) for testing. DR
+events are generated randomly, i.e., if or not there will be a DR event, duration of the DR event and
+what are the power limit values ptfort∈ T. The trained control policy needs to able to handle all
+these scenarios.
+4.1 C ONTROL EFFICACY
+To examine the control behavior of the trained controller, Figure (3a) shows the control trajectories
+of the trained controller in one testing scenario, with two cases: with a DR event and without an
+event. It can be seem that the demonstrated control behavior is desirable: i) zonal temperature are
+mostly kept within the comfort band over T; ii) DR power limits are satisfied; iii) in the DR case,
+proactive prior-event control is observed to prepare the building for the in-coming DR event; iv)
+though not instructed, the policy learned that Zone 2 (an east-facing zone) does not require pre-
+cooling prior to the DR event; and v) all cooling air goes to Zone 4 (the west-facing zone) during the
+DR event to counter the thermal discomfort. In addition to inspect the behavior of the learned control
+policy in one specific scenario, we also compared the learned control policy with an optimization
+based controller under multiple DR and weather scenarios as well, see Figure (3b). Over these
+testing scenarios and compared with the linear MPC, the two-stage trained RL controller reduces
+average control costs by 4.16%.
+3(a) Single testing scenario rollout.
+(b) Baseline comparison.
+(c) Fine-tuning comparison.
+Figure 3: Testing the global-locally searched RL policy in testing scenarios. (a) In all sub-figures,
+dashed lines are for the case without a DR event and the solid ones are for the DR scenario. Shaded
+areas in the first five sub-figures reveal the temperature comfort band and black lines (both dashed
+and solid) in the bottom figure represent the DR power limit Pt. (b) Cost comparison with a linear
+MPC baseline, each dot represents one of the fifty testing scenarios. Most of these dots are above to
+the dashed line, and on average RL controller can reduce costs by 4.16%, when compared with the
+baseline. (c) Cost comparison with the ES pre-trained policy.
+4.2 B ENEFIT FOR LOCAL FINE -TUNING
+Table 1: 2STG Cost Reduction.
+σConverged Episodic Cost
+1STG 2STG δ(%)
+0.01 18.74 14.48 22.73%
+0.02 15.67 14.55 7.15%
+0.05 15.09 14.17 6.49%Warmstarted with the 1STG ES pre-trained policy, PPO
+is used for policy fine-tuning in 2STG. Table 1 shows
+how much improvement, denoted as δin percentage,
+can be achieved in scenarios where three different
+smoothing factors are used in 1STG. In addition to
+training, the performance comparison of 1STG ES pre-
+trained and 2STG PPO fine-tuned controllers are shown
+in Figure (3c). Over these 50 testing scenarios, the
+2STG local fine-tuning can help achieve 7.55% cost re-
+duction.
+5 C ONCLUSION
+In this paper, we proposed a global-local policy search method, which first use a ZOE-based method
+to search globally and escape from the attraction of poor performing local optima, and then fine-
+tunes the policy using policy gradient method. The effectiveness and advantages of the proposed
+method were demonstrated in a multi-zone grid-interactive building control problem. We hope our
+findings can provide some insights on using RL for grid-interactive building control, enabling more
+buildings to provide grid services through DR programs and collectively contribute to a cleaner and
+more efficient energy system.
+4ACKNOWLEDGEMENTS
+This work was authored by the National Renewable Energy Laboratory, operated by Alliance for
+Sustainable Energy, LLC, for the U.S. Department of Energy (DOE) under Contract No. DE-AC36-
+08GO28308. Funding provided by the U.S. Department of Energy Office of Energy Efficiency
+and Renewable Energy Building Technologies Office. The views expressed in the article do not
+necessarily represent the views of the DOE or the U.S. Government. The U.S. Government retains
+and the publisher, by accepting the article for publication, acknowledges that the U.S. Government
+retains a nonexclusive, paid-up, irrevocable, worldwide license to publish or reproduce the published
+form of this work, or allow others to do so, for U.S. Government purposes.
+REFERENCES
+Sourav Dey, Thibault Marzullo, Xiangyu Zhang, and Gregor Henze. Reinforcement learning build-
+ing control approach harnessing imitation learning. Energy and AI , 14:100255, 2023.
+J´an Drgo ˇna, Javier Arroyo, Iago Cupeiro Figueroa, David Blum, Krzysztof Arendt, Donghun Kim,
+Enric Perarnau Oll ´e, Juraj Oravec, Michael Wetter, Draguna L Vrabie, et al. All you need to know
+about model predictive control for buildings. Annual Reviews in Control , 50:190–232, Sep. 2020.
+Yang Liu, Nanpeng Yu, Wei Wang, Xiaohong Guan, Zhanbo Xu, Bing Dong, and Ting Liu. Coor-
+dinating the operations of smart buildings in smart grids. Applied Energy , 228:2510–2525, Oct.
+2018.
+Yurii Nesterov and Vladimir Spokoiny. Random gradient-free minimization of convex functions.
+Foundations of Computational Mathematics , 17(2):527–566, Nov. 2017.
+June Young Park, Mohamed M Ouf, Burak Gunay, Yuzhen Peng, William O’Brien, Mikkel Baun
+Kjærgaard, and Zoltan Nagy. A critical review of field implementations of occupant-centric build-
+ing controls. Building and Environment , 165:106351, 2019.
+Matias Quintana, Zoltan Nagy, Federico Tartarini, Stefano Schiavon, and Clayton Miller. Com-
+fortlearn: enabling agent-based occupant-centric building controls. In Proceedings of the 9th
+ACM International Conference on Systems for Energy-Efficient Buildings, Cities, and Transporta-
+tion, pp. 475–478, 2022.
+Naren Srivaths Raman, Adithya M Devraj, Prabir Barooah, and Sean P Meyn. Reinforcement Learn-
+ing for Control of Building HV AC Systems. In 2020 American Control Conference (ACC) , pp.
+2326–2332. IEEE, Jul.1-3, 2020.
+Tim Salimans, Jonathan Ho, Xi Chen, Szymon Sidor, and Ilya Sutskever. Evolution strategies as a
+scalable alternative to reinforcement learning. arXiv preprint arXiv:1703.03864 , 2017.
+San Diego Gas & Electric. AC Saver (Summer Saver), 2023. Accessed: Feb. 3rd, 2023. [Online].
+Available: https://www.sdge.com/residential/savings-center/rebates/
+your-heating-cooling-systems/summer-saver-program .
+John Schulman, Filip Wolski, Prafulla Dhariwal, Alec Radford, and Oleg Klimov. Proximal policy
+optimization algorithms. arXiv preprint arXiv:1707.06347 , 2017.
+Olli Seppanen, William J Fisk, and David Faulkner. Cost benefit analysis of the night-time ventila-
+tive cooling in office building. 2003.
+Tianshu Wei, Yanzhi Wang, and Qi Zhu. Deep reinforcement learning for building HV AC control.
+InProceedings of the 54th Annual Design Automation Conference , pp. 1–6, Jun.18, 2017.
+Xiangyu Zhang, Dave Biagioni, Mengmeng Cai, Peter Graf, and Saifur Rahman. An edge-cloud in-
+tegrated solution for buildings demand response using reinforcement learning. IEEE Transactions
+on Smart Grid , 12(1):420–431, Jan. 2021. doi: 10.1109/TSG.2020.3014055.
+Xiangyu Zhang, Yue Chen, Andrey Bernstein, Rohit Chintala, Peter Graf, Xin Jin, and David Bia-
+gioni. Two-stage reinforcement learning policy search for grid-interactive building control. IEEE
+Transactions on Smart Grid , 13(3):1976–1987, 2022.
+5Zhiang Zhang, Adrian Chong, Yuqi Pan, Chenlu Zhang, and Khee Poh Lam. Whole building energy
+model for HV AC optimal control: A practical framework based on deep reinforcement learning.
+Energy and Buildings , 199:472–490, Sep. 2019.
+6A N UMERICAL EXPERIMENT DETAILS
+The non-convex function used in this numerical example is f(x) = 20 −70x1+ 65.7x2
+1−17.1x3
+1+
+1.3x4
+1+ 1.6x2
+2. Table 2 shows the smoothing factors and initial points used in the experiment in
+Section 2.
+Table 2: ZOE Trial Parameters
+Type σ Trial (Initial Points)
+Under Smoothed 0.5 us 1 (0.0, -2.0), us 2 (6.6, -4.0)
+Properly Smoothed 1.285 ps 1 (0.0, 2.0), ps 2 (6.6, 4.0)
+Over Smoothed 2.5 os 1 (0.5, 4.5), os 2 (5.5, 4.5)
+B A DDITIONAL DETAILS ON GRID-INTERACTIVE BUILDING CONTROL
+B.1 T ERM DEFINITIONS
+According to Seppanen et al. (2003), higher temperature can cause reduction in occupants’ produc-
+tivity; and Dey et al. (2023) further monetizes such comfort and includes it in the objective function.
+Without loss of generality, in this study, the cost associated with zonal thermal discomfort D(Ti
+t)in
+(2) is defined as the temperature deviation from a pre-defined comfort band [Ti,Ti]with a piece-
+wise function:
+D(Ti
+t) :=
+
+max( Ti
+t−Ti,(Ti
+t−Ti)2) (Ti
+t>Ti)
+max( Ti−Ti
+t,(Ti−Ti
+t)2) (Ti
+t< Ti)
+0.0 ( else)(B.1)
+where Ti
+tis the indoor temperature of zone iat step t. See Park et al. (2019); Quintana et al. (2022)
+for a more occupant-centric building control performance index.
+The AC power consumption P(at, Tout
+t)is given by:
+P(at, Tout
+t) :=a(Tout
+t−Tda
+t)NX
+i=1˙mi
+t+b(NX
+i=1˙mi
+t)3+c. (B.2)
+The first term in (B.2) describes the chiller power (Liu et al., 2018) and the rest depicts the fan power;
+Tout
+tis the outdoor temperature and a,bandcare known constants. Note, the chiller power term
+has products of Tda
+t˙mi
+t, both are decision variables, this bilinear term makes the problem nonlinear.
+B.2 MDP F ORMULATION
+The optimal control problem depicted by (2) is formulated into an MDP with the following elements:
+State: To properly guide the RL controller in decision-making, the state representation typically
+contains information regarding the current system status and other information related to its future
+evolving trajectory. As a result, we define the state in this study as
+st:= [Tt,Tout
+t,−K, ω,sint,cost, t,pt,K,wt]⊤,
+including
+1. zonal temperature Ttreflecting current status,
+2. outdoor temperature for the last KstepsTout
+t,−Kimplying weather condition,
+3. weekday indicator ω, trigonometric encoding of time sint,costreflecting the occupancy
+schedule, control step number tindicating the control progress,
+4. DR signal received from the utility company, i.e., power limit for the next Kstepspt,K,
+5. objectives’ weighting factors wt, provided by the building operator on how to balance the
+objectives of building thermal condition, energy consumption and grid-service.
+7Action: RL control action is the same as the decision variables in (2) as at=
+[ ˙m1
+t,˙m2
+t, ...,˙mN
+t, Tda
+t]⊤∈ A ⊂ RN+1.
+Reward: The reward is naturally defined as the negative single step cost in (2), i.e., rt=
+−[w(1,t)κ1P
+i∈ND(Ti
+t) +w(2,t)κ2pt(at)∆t+w(3,t)κ3((pt(at)−pt)+)2].
+State transition: The state transition is determined by the building thermal dynamics Tt=
+F(Tt−1,at,ϵt)and environmental disturbances.
+8

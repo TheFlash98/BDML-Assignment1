@@ -1,0 +1,390 @@
+Tackling Climate Change with Machine Learning workshop at ICLR 2024
+PREDICTING SPECIES OCCURRENCE PATTERNS FROM
+PARTIAL OBSERVATIONS
+Hager Radi Abdelwahed
+Mila: Quebec AI Institute
+hager.radi@mila.quebecM´elisande Teng
+Mila, Universit ´e de Montr ´eal
+tengmeli@mila.quebec
+David Rolnick
+Mila, McGill University
+drolnick@cs.mcgill.ca
+ABSTRACT
+To address the interlinked biodiversity and climate crises, we need an understand-
+ing of where species occur and how these patterns are changing. However, ob-
+servational data on most species remains very limited, and the amount of data
+available varies greatly between taxonomic groups. We introduce the problem of
+predicting species occurrence patterns given (a) satellite imagery, and (b) known
+information on the occurrence of other species. To evaluate algorithms on this
+task, we introduce SatButterfly, a dataset of satellite images, environmental data
+and observational data for butterflies, which is designed to pair with the existing
+SatBird dataset of bird observational data. To address this task, we propose a gen-
+eral model, R-Tran, for predicting species occurrence patterns that enables the use
+of partial observational data wherever found. We find that R-Tran outperforms
+other methods in predicting species encounter rates with partial information both
+within a taxon (birds) and across taxa (birds and butterflies). Our approach opens
+new perspectives to leveraging insights from species with abundant data to other
+species with scarce data, by modelling the ecosystems in which they co-occur.
+1 I NTRODUCTION
+The interconnectedness of the climate and biodiversity crises has been widely acknowl-
+edged (P ¨ortner et al., 2021). Biodiversity and associated ecosystem services play a crucial role
+in both mitigating and adapting to climate change, as well as being severely threatened by it. It is
+essential to understand species distributions to inform land use decisions and adaptation measures.
+Using machine learning and remote sensing data has proved promising for a variety of tasks in
+biodiversity monitoring (Wang et al., 2010; Reddy, 2021) including species distribution modelling
+(Beery et al., 2021; Estopinan et al., 2022; Joly et al., 2022), improving on traditional methods us-
+ing only environmental data. Moreover, the integration of machine learning and citizen science has
+proved helpful to monitor biodiversity at scale, automating labelling and decreasing the need for
+costly field surveys (Lotfian et al., 2021; Antonelli et al., 2023).
+Recently, the SatBird Teng et al. (2023) dataset was proposed for the task of predicting bird species
+encounter rates from remote sensing imagery, leveraging observational data from the citizen science
+database eBird (Kelling et al., 2013). While this framework is useful to model species’ distributions
+in places where no data has been recorded before, birds represent an atypical case since relatively
+large amounts of data are available. For most taxonomic groups, records are present in significantly
+fewer locations. For example, the eButterfly database (Prudic et al., 2017) modelled after eBird pro-
+vides high quality presence-absence data for butterfly species but has smaller geographical coverage
+and less observation reports than eBird. Given this challenge, a potentially promising approach is
+to leverage the relationships between the occurrence patterns of different species, which are used
+extensively by ecologists e.g. in joint species distribution models. We design a task to explore this
+direction, using extensive bird occurrence data to help learn from sparser butterfly occurrence data,
+given the correlation in abundances between these two taxonomic groups (Gilbert & Singer, 1975;
+1Tackling Climate Change with Machine Learning workshop at ICLR 2024
+Debinski et al., 2006; Eglington et al., 2015). Butterflies are particularly affected by climate change,
+with many species being adapted to specific environmental conditions (Hill et al., 2002; R ¨odder
+et al., 2021; ´Alvarez et al., 2024). We hope furthermore that such techniques will be useful in gener-
+alizing ML predictions to other under-observed but hyper-diverse taxa threatened by climate change,
+such as amphibians, freshwater fish, and plants.
+In this paper, we consider the practical setting in which we want to do checklist completion for
+species encounter rates. Our main contributions are as follows:
+• We introduce SatButterfly, a dataset for predicting butterfly species encounter rates from
+remote sensing and environmental data. Importantly, a subset of the data are colocated
+with existing data from SatBird, making it possible for the first time to leverage cross-taxon
+relationships in predicting species occurrence patterns from satellite images.
+• We propose R-Tran, a model to train and predict species encounter rates from partial infor-
+mation about other species. R-Tran uses a novel transformer encoder architecture to model
+interactions between features of satellite imagery and labels.
+• We evaluate R-Tran and other methods in predicting species encounter rates from satellite
+images and partial information on the encounter rates of other species. We find that R-Tran
+surpasses the baselines while providing flexibility to use with a variable set of information.
+Problem definition We consider the regression task of predicting species encounter rates from
+satellite imagery given partial information. Our work is in line with frameworks that leverage partial
+label annotations during inference such as Feedback-prop (Wang et al., 2018), a method designed
+to be used at inference time given partial labels and iteratively updates the scores of unknown la-
+bels using the known labels on the test set only. C-Tran (Lanchantin et al., 2021) also proposed
+a transformer-based architecture for data completion, using embeddings from image features, la-
+bels and states in a multi-label classification setting. We consider our task in two different settings:
+(1) within a single taxon (SatBird-USA-summer) where we split bird species into songbirds and
+non-songbirds and must predict one set of species from the other, and, (2) across taxa (SatBird-
+USA-summer and SatButterfly), where information for one taxon is given and the other must be
+inferred. Task 2 reflects the standard imbalance in data between birds and insects, and tests the abil-
+ity of ML models to leverage abundant bird data to predict butterfly data. Task 1 is designed so as
+to further investigate the task, with songbirds (Passeriformes) representing a discrete taxon of birds
+with approximately half the species of the whole.
+We refer to SatBird-USA-summer as SatBird throughout the rest of the paper.
+2 S ATBUTTERFLY DATASET
+We collect and publish SatButterfly, a dataset for the task of predicting butterfly species encounter
+rates from environmental data and satellite imagery. The dataset consists of remote sensing images
+and environmental data along with labels derived from eButterfly (Prudic et al., 2017) observation
+reports, in the continental USA. Observations in eButterfly are particularly skewed towards North
+America, and we work specifically with the continental USA to match SatBird. Unlike in SatBird,
+we consider observations over the full year as most butterflies are non-migratory. We follow the
+process of data collection, preparation, and splitting as in SatBird, collecting satellite images, en-
+vironmental data and encounter rates from recorded observations. We propose two versions of the
+dataset, a) SatButterfly-v1, where hotspots do not overlap with those of SatBird and b) SatButterfly-
+v2, where observations are collocated with those of SatBird (Teng et al., 2023). Each version of the
+dataset contains ∼7,000 data samples.
+For the targets, we use presence-absence data in the form of complete checklists from the eBut-
+terfly citizen science platform. We extract checklists recorded from 2010 to2023 in the conti-
+nental USA for a total of 601 species. We compute the encounter rates for each location has:
+yh= (yh
+s1, ..., yh
+sn), where yh
+sis the number of complete checklists reporting species sathdivided
+by the total number of complete checklists at h. We aggregate the species observations over 13
+years to construct the final targets. We follow the GeoLifeCLEF 2020 dataset (Cole et al., 2020) and
+SatBird in extracting satellite data and environmental variables. Further details are in Appendix A.
+2Tackling Climate Change with Machine Learning workshop at ICLR 2024
+Sentinel-2 RGB
+ResNet-18Transformer
+EncoderSpecies
+Checklist
+Target EmbeddingsT  +   S IConcat
+unknownknown
+Known: 
+To predict:
+State Embeddings
+Figure 1: R-Tran architecture for predicting species encounter rates with partial information.
+3 M ETHODOLOGY : R-T RAN
+Our goal is to explore methods for predicting species encounter rates given partial information. We
+draw inspiration from C-Tran (Lanchantin et al., 2021), an algorithm that predicts a set of target
+labels given an input set of known labels, and visual features from a convolutional neural network.
+A key ingredient of the method is a label mask training objective that encodes the three possible
+states of the labels (positive, negative, or unknown) during training. We propose the Regression
+Transformer (R-Tran) —a model adapted to our setting, which is regression not classification. Fig-
+ure 1 shows the architecture for R-Tran, which acts as a general framework for predicting species
+encounter rates given (a) satellite images and environmental data, and (b) observations for a subset
+of species. Key components of R-Tran are the target embeddings T, where we train an embedding
+layer to represent all possible species classes, and state embeddings S, that represent state of each
+species whether known or unknown through training another embedding layer. Both embeddings
+are added, and concatenated with extracted features Ifrom satellite and environmental data, then
+fed into a transformer encoder to model interactions between target classes and features. The model
+is flexible to accommodate any available partial species information to the full set of species. If
+no partial information are present, the model can still make predictions from satellite imagery and
+environmental variables. During training, we provide the full set of available encounter rates and
+randomly mask out a percentage of these as unknown. This percentage is chosen at random between
+0.25nandn, where nis the total number of targets. During inference, we can provide information
+on0or more species to predict occurrences of remaining species.
+4 E XPERIMENTS
+We compare R-Tran to ResNet18 (He et al., 2016) and Feedback-prop (Wang et al., 2018) models.
+Feedback-prop uses a trained model (in our case, ResNet18 model) and adapts the inference for
+unknown labels in a way that benefits from partial known labels. More experimental details are
+available in Appendix B. We evaluate our proposed model, R-Tran, in two settings: a) within taxon:
+SatBird, b) across taxa: SatBird & SatButterfly. For SatBird, we use only SatBird-USA-summer,
+since butterflies are rarely active in the winter.
+3Tackling Climate Change with Machine Learning workshop at ICLR 2024
+Table 1: Evaluation within a taxon (SatBird): Arefers to the subset of songbird classes only, Brefers
+to the subset of non-songbird classes.
+Model MAE[ 1−2]MSE[ 1−2] Top-10 % Top-30 % Top-k %
+All bird species
+ResNet18 2.19 0.65 45.28±0.61 64.62±0.566.26±0.43
+R-Tran 2.13 0.67 44.5±0.4 64.2±0.3 66.1±0.26
+Evaluation on classes A: Songbirds
+ResNet18 3.25 1.02 53.75±0.66 78.94±0.42 69.92±0.48
+ResNet18- A 3.23 1.02 53.91±0.23 79.03±0.28 70.1±0.29
+Feedback-prop (A|B) 2.97 0.90 56.54±0.680.71±0.35 71.72±0.32
+R-Tran (A|B) 2.46 0.72 59.98±0.16 82.3±0.1 73.45±0.2
+Evaluation on classes B: non-songbirds
+ResNet18 1.35 0.37 59.97±0.41 86.14±0.32 59.72±0.35
+ResNet18- B 1.32 0.36 60.04±0.29 86.09±0.19 59.61±0.16
+Feedback-prop (B|A) 1.22 0.32 63.09±0.67 87.68±0.461.94±0.48
+R-Tran (B|A) 0.99 0.26 66.25±0.08 89.28±0.07 64.19±0.11
+Within taxon (SatBird) : we split SatBird’s 670species into songbirds, denoted set A, and non-
+songbirds, set B, composed of 298and372species respectively. We train one ResNet18 model on
+all670species, as well as training individual ResNet18 models on A&Bspecies subsets, denoted
+ResNet18- Aand ResNet18- Brespectively. R-Tran is also trained on the full set of bird species.
+Table 1 shows results on SatBird: all species, subset Aand subset B. R-Tran and Feedback-prop
+allow the use of available partial information about species, unlike ResNet18. We observe that
+R-Tran outperforms other baselines in predicting species Agiven information about B, as well as
+predicting Bgiven information about A. All results reported are the average of 3different seeds,
+where the standard deviation for MSE and MAE is negligible. Also, metrics reported for set AorB
+are masked for that set only.
+Across taxa (SatButterfly & SatBird) : In this setting, we use the full dataset SatBird-USA-
+summer, joined with SatButterfly. In SatButterfly, we select species that have at least 100occur-
+rences, resulting in 172species of butterflies. When combining SatBird and SatButterfly, there are
+locations where only bird species are observed, only butterfly species are observed, or both species
+observed. For locations where not all classes of species are observed, we use a masked loss to mask
+out absent species; we provide more details in Appendix B.
+We train ResNet18 and R-Tran on SatBird and SatButterfly jointly, where we predict ( 670 + 172 =
+842) species classes. We evaluate on the test set where both taxa (birds and butterflies) are observed,
+where metrics reported are masked for set A, or set B. Top- krefers to the adaptive top-k metric
+defined in Teng et al. (2023), where for each hotspot kis the number of species with non-zero ground
+truth encounter rates in the set of predicted species. In Table 2, we report results for ResNet18,
+Feedback-prop and RTran given partial observations of species to predict others. We find that R-Tran
+improves the performance on species A(birds) given information about butterflies, and B(butterflies)
+given information about birds. While we only evaluated the model in settings where the sets of
+known and unknown labels are fixed, it should be noted that R-Tran allows for more flexibility than
+Feedback-prop because at inference time, any arbitrary subset of species could be unknown, and
+R-Tran does not require multiple test examples to be effective.
+5 C ONCLUSION
+We presented SatButterfly, a dataset that maps satellite images and environmental data to butterflies
+observations. We benchmarked different models for predicting species encounter rates considering
+partial information, within a taxon (SatBird), and across taxa (SatBird and SatButterfly). We find
+that leveraging partial information at inference time is more effective within a taxon than across
+taxa, and that our novel R-Tran model generally outperforms baselines. Our work offers avenues
+for combining data from different citizen science databases for joint prediction of species encounter
+4Tackling Climate Change with Machine Learning workshop at ICLR 2024
+Table 2: Evaluation across taxa (SatBird and SatButterfly): Arefers to bird species, Brefers to but-
+terflies. Results are evaluated on the subset of locations with both bird and butterfly data available.
+Model MAE[ 1−2]MSE[ 1−2] Top-10 % Top-30 % Top-k %
+Evaluation on classes A: Birds
+ResNet18 2.07 0.62 48.02±0.2 65.9±0.15 73.17±0.15
+Feedback-prop (A|B) 2.06 0.62 48.11±0.16 66.18±0.19 73.24±0.1
+R-Tran (A|B) 2.04 0.6 50.34±0.3 67.24±0.4 73.85±0.18
+Evaluation on classes B: Butterflies
+ResNet18 3.81 1.55 52.35±0.43 83.74±0.43 35.69±0.85
+Feedback-prop (B|A) 3.81 1.54 52.51±0.283.97±0.37 35.83±0.95
+R-Tran (B|A) 3.6 1.56 52.82±0.78 84.21±0.63 36.31±0.8
+rates across taxa, in particular for cases where some species are less systematically surveyed than
+others. In future work, we hope to extend this approach to presence-only data, which represents the
+majority of citizen science observations, such as those from the iNaturalist platform.
+REFERENCES
+Census Bureau of USA. https://www.census.gov/geographies/mapping-files/
+time-series/geo/carto-boundary-file.html . Accessed: 2023-06-06.
+Hugo Alejandro ´Alvarez, Emma Walker, Mario Mingarro, Guim Ursul, Juan Pablo Cancela, Lee
+Bassett, and Robert J Wilson. Heterogeneity in habitat and microclimate delay butterfly commu-
+nity tracking of climate change over an elevation gradient. Biological Conservation , 289:110389,
+2024.
+Alexandre Antonelli, Kiran L Dhanjal-Adams, and Daniele Silvestro. Integrating machine learning,
+remote sensing and citizen science to create an early warning system for biodiversity. Plants,
+people, planet , 5(3):307–316, 2023.
+Sara Beery, Elijah Cole, Joseph Parker, Pietro Perona, and Kevin Winner. Species distribution
+modeling for machine learning practitioners: A review. In ACM SIGCAS conference on computing
+and sustainable societies , pp. 329–348, 2021.
+Elijah Cole, Benjamin Deneu, Titouan Lorieul, Maximilien Servajean, Christophe Botella, Dan
+Morris, Nebojsa Jojic, Pierre Bonnet, and Alexis Joly. The GeoLifeCLEF 2020 dataset. Preprint
+arXiv:2004.04192 , 2020.
+Diane M Debinski, Ron E VanNimwegen, and Mark E Jakubauskas. Quantifying relationships
+between bird and butterfly community shifts and environmental change. Ecological Applications ,
+16(1):380–393, 2006.
+Sarah M Eglington, Tom M Brereton, Catherine M Tayleur, David Noble, Kate Risely, David B Roy,
+and James W Pearce-Higgins. Patterns and causes of covariation in bird and butterfly community
+structure. Landscape ecology , 30:1461–1472, 2015.
+Martin Ester, Hans-Peter Kriegel, J ¨org Sander, and Xiaowei Xu. A density-based algorithm for
+discovering clusters in large spatial databases with noise. In Proceedings of the Second Inter-
+national Conference on Knowledge Discovery and Data Mining , KDD’96, pp. 226–231. AAAI
+Press, 1996.
+Joaquim Estopinan, Maximilien Servajean, Pierre Bonnet, Franc ¸ois Munoz, and Alexis Joly. Deep
+species distribution modeling from sentinel-2 image time-series: a global scale analysis on the
+orchid family. Frontiers in Plant Science , 13:839327, 2022.
+Lawrence E Gilbert and Michael C Singer. Butterfly ecology. Annual review of ecology and system-
+atics , 6(1):365–395, 1975.
+5Tackling Climate Change with Machine Learning workshop at ICLR 2024
+Kaiming He, Xiangyu Zhang, Shaoqing Ren, and Jian Sun. Deep residual learning for image recog-
+nition. In Proceedings of the IEEE conference on computer vision and pattern recognition , pp.
+770–778, 2016.
+Tomislav Hengl, Jorge Mendes de Jesus, Gerard BM Heuvelink, Maria Ruiperez Gonzalez, Milan
+Kilibarda, Aleksandar Blagoti ´c, Wei Shangguan, Marvin N Wright, Xiaoyuan Geng, Bernhard
+Bauer-Marschallinger, et al. Soilgrids250m: Global gridded soil information based on machine
+learning. PLoS one , 12(2):e0169748, 2017.
+Hijmans and al. Worldclim 1.4 (historical climate conditions). International journal of climatology ,
+25, 2005.
+Jane K Hill, CD Thomas, Richard Fox, MG Telfer, SG Willis, J Asher, and B Huntley. Responses
+of butterflies to twentieth century climate warming: implications for future ranges. Proceedings
+of the Royal Society of London. Series B: Biological Sciences , 269(1505):2163–2171, 2002.
+Alexis Joly, Herv ´e Go ¨eau, Stefan Kahl, Luk ´aˇs Picek, Titouan Lorieul, Elijah Cole, Benjamin Deneu,
+Maximilien Servajean, Andrew Durso, Herv ´e Glotin, et al. Overview of lifeclef 2022: an eval-
+uation of machine-learning based species identification and species distribution prediction. In
+International Conference of the Cross-Language Evaluation Forum for European Languages , pp.
+257–285. Springer, 2022.
+Steve Kelling, Jeff Gerbracht, Daniel Fink, Carl Lagoze, Weng-Keen Wong, Jun Yu, Theo
+Damoulas, and Carla Gomes. eBird: A human/computer learning network for biodiversity con-
+servation and research. AI Magazine , 34, 03 2013.
+Diederik P Kingma and Jimmy Ba. Adam: A method for stochastic optimization. arXiv preprint
+arXiv:1412.6980 , 2014.
+Jack Lanchantin, Tianlu Wang, Vicente Ordonez, and Yanjun Qi. General multi-label image classi-
+fication with transformers. In Proceedings of the IEEE/CVF Conference on Computer Vision and
+Pattern Recognition (CVPR) , pp. 16478–16488, June 2021.
+Ilya Loshchilov and Frank Hutter. Decoupled weight decay regularization. In International Confer-
+ence on Learning Representations , 2019. URL https://openreview.net/forum?id=
+Bkg6RiCqY7 .
+Maryam Lotfian, Jens Ingensand, and Maria Antonia Brovelli. The partnership of citizen science
+and machine learning: benefits, risks, and future challenges for engagement, data collection, and
+data quality. Sustainability , 13(14):8087, 2021.
+Hans-Otto P ¨ortner, Robert J Scholes, John Agard, Emma Archer, A Arneth, Xuemei Bai, David
+Barnes, Michael Burrows, Lena Chan, WL Cheung, et al. Ipbes-ipcc co-sponsored workshop
+report on biodiversity and climate change. IPBES and IPCC , 10, 2021.
+Kathleen L Prudic, Kent P McFarland, Jeffrey C Oliver, Rebecca A Hutchinson, Elizabeth C Long,
+Jeremy T Kerr, and Maxim Larriv ´ee. ebutterfly: leveraging massive online citizen science for
+butterfly conservation. Insects , 8(2):53, 2017.
+C Sudhakar Reddy. Remote sensing of biodiversity: what to measure and monitor from space to
+species? Biodiversity and Conservation , 30(10):2617–2631, 2021.
+Dennis R ¨odder, Thomas Schmitt, Patrick Gros, Werner Ulrich, and Jan Christian Habel. Climate
+change drives mountain butterflies towards the summits. Scientific Reports , 11(1):14382, 2021.
+M´elisande Teng, Amna Elmustafa, Benjamin Akera, Yoshua Bengio, Hager Radi, Hugo Larochelle,
+and David Rolnick. Satbird: a dataset for bird species distribution modeling using remote sensing
+and citizen science data. In Thirty-seventh Conference on Neural Information Processing Systems
+Datasets and Benchmarks Track , 2023. URL https://openreview.net/forum?id=
+Vn5qZGxGj3 .
+Kai Wang, Steven E Franklin, Xulin Guo, and Marc Cattet. Remote sensing of ecology, biodiversity
+and conservation: a review from the perspective of remote sensing specialists. Sensors , 10(11):
+9647–9667, 2010.
+6Tackling Climate Change with Machine Learning workshop at ICLR 2024
+Tianlu Wang, Kota Yamaguchi, and Vicente Ordonez. Feedback-prop: Convolutional neural net-
+work inference under partial evidence. In IEEE Conference on Computer Vision and Pattern
+Recognition (CVPR) , June 2018.
+7Tackling Climate Change with Machine Learning workshop at ICLR 2024
+Table 3: Number of samples in each split for the two versions of SatButterfly.
+SatButterfly-v1 SatButterfly-v2
+train 5316 4677
+validation 1147 1002
+test 1145 1005
+A A PPENDIX A: D ATASET
+In this section, we provide more details about SatButterfly dataset preparation. For the final hotspots,
+we excluded locations in the sea using the 5-meter resolution US nation cartographic boundaries pro-
+vided by the Census Bureau’s MAF/TIGER Cen. We collected satellite images and environmental
+data for each location where butterfly species are observed. For Sentinel-2, we collected 10-meter
+resolution RGB and NIR reflectance data and RGB true color images, focusing on a 5km2area
+centered on each hotspot. Our criteria for image selection included a maximum cloud cover of 10%,
+opting for the clearest image within specific time frames: January 1 - December 31, 2022. We as-
+signed one image to each hotspot, based on the assumption that more recent satellite images better
+reflect our species data, considering the higher frequency of checklists in recent years as compared
+to earlier periods.
+From WorldClim 1.4 (Hijmans & al., 2005), we retrieved 19bioclimatic variables as rasters with a
+size of 50×50and a spatial resolution of approximately 1km, centered on each hotspot. These
+variables include annual trends in temperature, precipitation, solar radiation, wind speed, and water
+vapor pressure. In addition, we obtained 8soil-related (pedologic) variables from SoilGrids (Hengl
+et al., 2017) at a finer resolution of 250meters. SoilGrids offers global maps of various soil prop-
+erties, such as pH, organic carbon content, and stocks, which are generated using machine learning
+techniques trained on soil profile data and environmental covariates from remote sensing sources.
+As mentioned earlier, SatButterfly-v2 data is designed to share locations with SatBird, for both
+birds and butterflies data to be observed. To prepare the data, we perform BallTree-based clustering
+where SatBird locations are used as centriods. We then search within 1km for neighbour butterfly
+observations using haversine distance. Finally, butterfly targets are aggregated and recorded for
+SatBird hotspots wherever available. We end up with available butterfly targets in a small subset of
+SatBird’s train/validation/test splits.
+Table 3 describes the number of hotspots present in each split for the two versions of SatButterfly
+dataset. Dataset is split similarily to SatBird using scikit-learn DBSCAN (Ester et al., 1996)
+clustering algorithm. Figures A and A shows distribution of data samples in train/val/test splits.
+SatButterfly dataset is publicly available through this link.
+B A PPENDIX B
+B.1 E XPERIMENTAL DETAILS
+For all models, we use the cross entropy loss: LCE =1
+NhP
+hLh =
+1
+NhP
+hP
+s(species)−ys
+hlog(ˆys
+h)−(1−ys
+h) log(1 −ˆys
+h). For locations where not all classes
+of species are observed (when combining SatBird & SatButterfly), we define a masked loss. If
+we have the loss L(y,ˆy), where yis the true value and ˆyis the predicted value, and a mask M
+(a binary vector or tensor of the same shape as yandˆy), the masked loss function is defined as
+Lmasked (y,ˆy, M) =P
+iMi·L(yi,ˆyi)P
+iMi, where Miis the i-th element of the mask M. The loss is
+calculated only for the unmasked elements where Mi= 1, and is averaged over the number of
+unmasked elements.
+All models use same input, RGB+ENV , where we concatenate environmental data (bioclimatic,
+pedologic) and RGB satellite images into different channels resulting in 30channels. This is re-
+ported in SatBird (Teng et al., 2023) to be the best performing compared to using RGBNIR. We
+8Tackling Climate Change with Machine Learning workshop at ICLR 2024
+train
+valid
+test
+Figure 2: Distribution of hotspots across the training, validation, and test sets for SatButterfly-v1
+train
+valid
+test
+Figure 3: Distribution of hotspots across the training, validation, and test sets for SatButterfly-v2
+9Tackling Climate Change with Machine Learning workshop at ICLR 2024
+consider a region of interest of 640 m2, center-cropping the satellite patches to size 64×64around
+the hotspot and normalizing the bands with our training set statistics. ResNet18 is adapted to take
+30channels as inputs instead of 3channels. ResNet18 and R-Tran are trained for 50epochs using
+Adam (Kingma & Ba, 2014) and AdamW (Loshchilov & Hutter, 2019) optimizers respectively.
+For target embeddings Tin R-Tran, we train an embedding layer of all possible classes
+{c1, c2, . . . , c m}that can exist in a target y. In our experiments, we used textual species names
+from our datasets to train embeddings. Figure 4 shows embeddings of R-Tran after training the
+model on SatBird. A 2D TSNE Visualization shows clear discrimination between bird families. In
+state embeddings S, which are essential to mark class labels as known or unknown in a feedforward,
+each class is given a state si, where sitakes a value of −1if a class label is unknown, 0if known to
+be absent, or a positive value ( 0.25,0.5,0.75,1.0) if the true probability yof a class >0. This 4-bin
+quantization is an adaptation to the regression problem, instead of using a single value of 1for all
+present classes. This is a hyper-parameter that can be further finetuned depending on the distribution
+of targets, but we found 4to be performing best in our experiments. During inference, the model
+is still flexible to use information about presence 1or absence 0of species, rather than the exact
+encounter rate.
+FeedbackProp uses the already-trained ResNet18 model to do inference with partial labels. It com-
+putes partial loss only with respect to a set of known labels Afor input sample I. Then, it back-
+propagates this partially observed loss through the model, and iteratively update the input Iin order
+to re-compute the predictions on the set of unknown classes B.
+B.2 E VALUATION
+We report metrics regression metrics, MSE and MAE. Furthermore, we report the top- 10, top- 30
+and top- kaccuracies, representing the number of species present in the top kpredicted species and
+the top kobserved species. In Tables 1 and 2, all metrics reported are masked for the set of classes
+indicated whether it is set Aor set B, using a binary mask.
+10Tackling Climate Change with Machine Learning workshop at ICLR 2024
+Figure 4: Visualization of trained R-Tran’s target embeddings over bird species (SatBird).
+11

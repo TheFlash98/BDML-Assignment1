@@ -1,0 +1,335 @@
+Published as a workshop paper at ”Tackling Climate Change with Machine Learning”, ICLR 2024
+FORECASTING REGIONAL PV POWER IN GREAT
+BRITAIN WITH A MULTI -MODAL LATE FUSION NET -
+WORK
+D. James Fulton, Jacob Bieker, Peter Dudfield, Solomon Cotton, Zakari Watts & Jack Kelly
+Open Climate Fix
+james@openclimatfix.org
+ABSTRACT
+The ability to forecast solar photovoltaic (PV) power is important for grid balancing
+and reducing the CO2 intensity of electricity globally. The use of multi-modal
+data such as numerical weather predictions (NWPs) and satellite imagery can
+be harnessed to make more accurate PV forecasts. In this work, we propose a
+late fusion model which integrates two different NWP sources alongside satellite
+images to make 0-8 hour lead time forecasts for grid regions across Great Britain.
+We limit the model inputs to be reflective of those available in a live production
+system. We show how the different input data sources contribute to average error
+at each time horizon and compare against a simple baseline.
+1 I NTRODUCTION
+In order to limit global warming to well below 2◦C, rapid and deep reductions in energy system
+carbon intensity are required (Clarke et al., 2022). A decarbonised electricity grid must incorporate
+renewable but intermittent energy sources, of which photovoltaic (PV) solar power has the greatest
+potential globally (Dupont et al., 2020).
+This makes it very important to be able to forecast PV power input to national grids, as trusting
+inaccurate forecasts can lead to imbalance and power outages, or surges. A lack of accurate forecasts
+means that grid operators must keep significant control reserves (Jost et al., 2015) provided by
+spinning coal and gas reserve, and diesel generation (Huxley et al., 2022). This has a monetary and
+carbon cost (Gandhi et al., 2024), and is a promising area for machine learning (ML) based forecasts
+(Donti & Kolter, 2021).
+In this paper, we introduce a multi-modal late fusion network to forecast regional PV power outputs
+across Great Britain (GB) from 30 minutes to 8 hours ahead using satellite data, and multiple sources
+of numerical weather prediction (NWP) inputs.
+Other similar work has trained machine learning models to predict solar PV power. V oyant et al.
+(2017) and Sobri et al. (2018) offer reviews of ML and traditional statistical prediction methods in
+this area. However, these reviews only include ML systems that use point-like rather than spatially
+resolved inputs. More recent work, such as Mathe et al. (2019), explore the use of spatially resolved
+NWP inputs and use more modern network architectures. Other work such as Si et al. (2021) instead
+uses spatially resolved satellite imagery as inputs.
+Here we show the benefit of using both satellite and multiple NWP input sources within a single
+network. We show the influence of these data sources on the forecast accuracy at various time
+horizons and set a baseline for accuracy on this dataset predicting regional PV across Great Britain.
+2 GB REGIONAL PHOTOVOLTAIC POWER
+The GB national electricity grid is subdivided into 317 Grid Service Points (GSPs) (National Grid
+ESO) (shown in appendix figure 2), which represent the approximate geographical areas served by
+discrete parts of the electricity distribution network. These GSPs vary substantially in both spatial
+1Published as a workshop paper at ”Tackling Climate Change with Machine Learning”, ICLR 2024
+size, ranging from 1km2to 7000km2, and in total capacity of installed PV systems, ranging from
+<1MW to nearly 500MW. The spatial size and PV capacity of these GSPs are relatively uncorrelated.
+There are numerous solar farms and individual consumer PV systems within each GSP. Many of these
+systems do not report their outturn or only report outturn with a significant delay. They feed power
+into the grid blindly, and cannot be monitored by grid operators in real time. Since these systems lie
+on the distribution network they appear to National Grid ESO (GB’s grid operator) as a reduction in
+demand rather than as generation.
+Despite these difficulties, estimates of the regional PV power outturn can be made (Huxley et al.,
+2022). These estimates are made by upscaling from a representative sample of PV systems that do
+report outturns to the total PV outturn of all known systems within the region (e.g. Lorenz et al.
+(2011)). In GB such estimates are available from PVLive (Sheffield Solar PVLive) at 30-minute
+intervals.
+3 I NPUT DATA SOURCES
+We use 11 spectral channels of satellite data from the EUMETSAT SEVIRI rapid scanning service
+(EUMETSAT; Google Datasets) which scans GB (amidst a much wider area) every 5 minutes. In GB
+the resolution of these images is approximately 4.6 ×7.1km per pixel.
+We also use NWP data from the Met Office UKV model and from the ECMWF IFS model. The
+UKV data was downloaded from the CEDA archive (Met Office, Centre for Environmental Data
+Analysis), is at resolution 2 ×2km, and consists on 8 forecast initialisation-times (init-times) per
+day. The IFS data was downloaded directly from the ECMWF data portal and comes from the
+HRES configuration (ECMWF). It is at a resolution of 0.05 ×0.05◦(approx. 3.2 ×5.6km in GB) and
+consists of 2 forecast init-times per day. We use 6 channels from each NWP corresponding to 2-metre
+temperature; downward shortwave, and longwave radiation flux; and high, medium, and low cloud
+cover fraction. This choice of variables was informed by previous studies (e.g. De Giorgi et al.
+(2014)) and some early experimentation.
+As additional inputs, we calculate the solar coordinates expressed as solar elevation and azimuth at
+each forecast horizon.
+3.1 P RODUCTION -LIKE DELAYS TO INPUTS
+We train and validate our model with data equivalent to what would be available in a production
+system. To construct a single training or validation sample, we first select a forecast initialisation
+timet0. We treat t0as if it were the time we were making a prediction live, so we only use input data
+from before this.
+When selecting the NWP data for a sample, we select the most recent NWP initialisation which is at
+least 3 hours before t0. This is a realistic but conservative estimate of the delay between the NWP
+init-times and time of delivery from operational weather services. The UKV data has a fresh forecast
+init-time every 3 hours, so at every forecast time t0we use an initialisation between 3 and 5.5 hours
+old. The IFS data available for this study consists of two init-times per day and so will be between 3
+and 14.5 hours old at time t0. Both NWPs output hourly estimates of our chosen weather variables.
+From each NWP, we select forecast steps valid from t0- 2 hours until t0+ 8 hours inclusive (i.e. a
+total of 11 steps).
+A single model is trained across all GSPs, so for each generated sample, we randomly select one of
+the 317s GSP IDs. We slice a spatial window from the NWP data centred on the GSP. For the UKV
+data we used 24 ×24 pixels, and for the IFS data we used 12 ×12 pixels. Due to the difference in
+spatial resolution, these window sizes cover roughly equivalent areas on the ground.
+The area of each GSPs varies greatly. Therefore, the windows we select can be too large compared to
+the GSP, covering a much wider area, or too small, not extending over the entire GSP region. This is
+demonstrated in appendix figure 3. The windows we use were chosen as a compromise in size across
+GSPs. We also ran tests where we doubled the window sizes and found very similar results to those
+presented here.
+2Published as a workshop paper at ”Tackling Climate Change with Machine Learning”, ICLR 2024
+When selecting satellite data, we assume a delay to delivery of 60 minutes. For a sample with init-time
+t0, we select satellite data from the open interval [ t0-90 minutes, t0-60 minutes]. The satellite data is
+5-minutely and so this equates to 7 time steps. We also select a spatial window of size 24 ×24 pixels
+centred on the GSP.
+PVLive data is available in production with a short delay of 5 minutes. However, these live estimates
+are inaccurate and often biased compared to the updated values produced the following day when
+more PV systems have reported their recent outturns and therefore, a better representative sample can
+be selected for upscaling. We do not use these as an input feature to the model due to their limitations
+in a live production system. We use the finalised updated estimates from PVLive as targets.
+We train our model to predict the PV outturn divided by the effective capacity. The effective capacities
+for each GSP region are time series and vary as new PV systems are installed, or old systems silently
+go offline, or their performance degrades with time (Dhimish et al., 2020). These capacities are
+estimated by PVLive also. Normalising by effective capacity ensures that the target for each GSP is
+always in the range [0, 1].
+We trained on 1.6 million samples randomly selected from the period 2020-01-01 until 2022-05-07.
+We validated our model on 32000 samples randomly selected from the period 2022-05-08 until
+2023-05-07.
+4 N ETWORK ARCHITECTURE
+Our model uses multi-modal late fusion (Baltru ˇsaitis et al., 2018) of satellite imagery, NWP forecasts,
+and calculated solar coordinates. A diagram of the model is shown in appendix figure 4. The NWP
+and satellite encoders are both comprised of multiple blocks of 3 ×3×3 3D convolutional filters
+and ELU activation functions (Clevert et al., 2015), followed by two fully connected layers. The
+convolutional layers used (1,0,0) padding and a stride of 1 so that the inputs shrink spatially at
+each of these layers but remain the same size in the time dimension. Before being fed into the 3D
+convolutional layers, the satellite and two NWP inputs were appended with an additional channel to
+hold a learned embedding for the GSP ID. This was motivated to allow the network to pick out which
+areas of the image were important to focus on for different GSPs. For example, for small GSPs the
+network might learn only to focus on the very centre of the images. The UKV (IFS, EUMETSAT)
+embedding was of shape 24 ×24 (12×12, 24×24) and was repeated identically at each time step of
+the inputs.
+Once the NWP and satellite data have been encoded into 1D vectors, they are concatenated along with
+the calculated solar coordinates, and another embedding of the GSP ID. This concatenated vector is
+then fed through several blocks of fully connected layers with residual connections (He et al., 2016).
+There is a final dense layer and Leaky ReLU function (He et al., 2015). We chose the Leaky ReLU as
+PV power is always positive and we found in early experiments that using a regular ReLU function in
+the final layer often lead to dead neurons within this layer.
+For grid system operators it is desirable to have estimates of the uncertainty of a prediction as well as
+a central value. Therefore, the final layer of the network was configured to output the 10%, 50%, and
+90% for each forecast horizon, and the network was trained via quantile regression. The network was
+trained end-to-end to minimise quantile loss. We used a batch size of 128 and the Adam optimiser
+with a learning rate of 1e-4 and a high weight decay of 0.25 to avoid overfitting. We used early
+stopping and trained for up to 20 epochs before ending the training loop. The network that performed
+best on the validation set was generally achieved after 4-6 epochs.
+5 E XPERIMENTS AND RESULTS
+We trained our model several times whilst including different sets of input modalities. Figure 1
+shows the accuracy of the 50% quantile prediction of the model on the validation set at all forecast
+horizons. In the figure, the accuracy is measured via the normalised mean absolute error (NMAE).
+This is simply the the mean absolute error after the GSP outturns have been normalised by the GSP
+capacities.
+3Published as a workshop paper at ”Tackling Climate Change with Machine Learning”, ICLR 2024
+Figure 1: A graph showing the accuracy measured at different time horizons by the normalised mean
+absolute error (NMAE). The graph shows the horizon accuracy of seven multi-modal networks which
+include differing input sources. In addition to the input sources listed in the figure legend, each model
+also used solar coordinates and GSP ID as inputs. Lines of the same colour indicate models that
+included identical NWP inputs. Solid lines indicate models which included satellite data, whilst
+dashed lines indicate models which did not.
+The results of the figure demonstrate the usefulness of satellite data at short forecast horizons. Using
+satellite as the sole model input outperformed using either or both NWP sources for the first 30
+minutes. However, the NMAE of the satellite-only model quickly grew to 0.044 at a lead time of
+8 hours (this line was allowed to run off the edge of the figure). Further, using satellite data plus
+a single NWP source was more accurate than using two NWP sources up to a horizon of around 2
+hours. Even with two NWP sources, adding satellite as an input improved the accuracy up to a lead
+time of 3 hours. Finally, we see that using two NWP sources substantially outperformed using only
+one source.
+From these results, we see that our late fusion model was able to integrate information from multiple
+input modalities to make more accurate predictions. As a baseline, we also trained an extreme
+gradient boosting (XGBoost) model (Chen & Guestrin, 2016) on the same task. This model was
+trained with all the same inputs as our late fusion model except that we selected only the central pixel
+for each GSP rather than giving the model the resolved spatial area for the NWP and satellite inputs.
+This model class does not natively handle spatial information. The best performing XGBoost model
+we trained, which used all input sources, achieved accuracies between 0.028 and 0.031 for 0.5 to 8
+hour lead time. This baseline is not shown in the figure, but had inputs equivalent to the solid purple
+line. Our late fusion model significantly outperformed this baseline given equivalent input sources.
+The results in the figure may suggest that UKV inputs were more valuable for forecasting GB regional
+PV than the IFS inputs. We note that the IFS data had around half the resolution of the UKV data.
+We also note that the IFS forecasts were only available at 2 init-times per day, whereas the UKV data
+was generally available with 8 init-times per day. This means the UKV inputs were generally fresher
+and had integrated more recent observations than the IFS inputs used. These differences mean that
+we cannot say if one NWP model is better than the other more generally.
+We evaluated how well calibrated the 10%, 50% and 90% predictions were for all models displayed
+in the figure. We tested this by measuring what fraction of targets in the validation set were below
+the predictions for each quantile. We found that all quantiles across all model were reasonably well
+calibrated when run on the validation set (see appendix table 1).
+4Published as a workshop paper at ”Tackling Climate Change with Machine Learning”, ICLR 2024
+6 C ONCLUSIONS AND FURTHER WORK
+In this study, we introduced a late fusion network using multi-modal input data to forecast solar PV
+power outputs across 317 regions of the electricity grid in Great Britain for 0-8 hours. We propose
+a relatively simple architecture for a neural network which combines calculated solar coordinates,
+satellite imagery, and two different sources of numerical weather prediction inputs.
+We set a benchmark for how accurately these predictions can be made using the constrained data
+which would be available in a production forecast system. We found that including both satellite and
+numerical weather prediction inputs to the model was helpful in making these forecasts. We found
+that satellite data was the most effective input in the first 30 minutes but was still valuable over NWP
+inputs alone out to a lead time of 3 hours.
+Much more work could be done to improve the performance of this network. From including more
+numerical weather prediction inputs from different providers, to more aggressive hyperparameter
+tuning, to modifying the network architecture to include more complete fusion rather than late fusion.
+These areas were beyond the scope of this study, but a more accurate and reliable model will always
+be welcomed by grid operators and these may be promising directions for future work.
+ACKNOWLEDGMENTS ,CODE &DATA
+The authors would like to thank Open Climate Fix https://openclimatefix.org for sup-
+porting this work, and thank Sheffield Solar for providing PVLive data.
+The code used to train the models is available at https://github.com/openclimatefix/
+PVNet .
+The PVLive (Sheffield Solar PVLive), Met Office (Met Office, Centre for Environmental Data
+Analysis), EUMETSAT data (Google Datasets) used for this study are freely available online. The
+ECMWF data is currently available free under a research license (see ECMWF).
+REFERENCES
+Tadas Baltru ˇsaitis, Chaitanya Ahuja, and Louis-Philippe Morency. Multimodal machine learning:
+A survey and taxonomy. IEEE transactions on pattern analysis and machine intelligence , 41(2):
+423–443, 2018.
+Tianqi Chen and Carlos Guestrin. Xgboost: A scalable tree boosting system. In Proceedings of the
+22nd acm sigkdd international conference on knowledge discovery and data mining , pp. 785–794,
+2016.
+L. Clarke, Y .-M. Wei, A. De La Vega Navarro, A. Garg, A.N. Hahmann, S. Khennas, I.M.L. Azevedo,
+A. L ¨oschel, A.K. Singh, L. Steg, G. Strbac, and K. Wada. 2022: Energy systems. In P.R. Shukla,
+J. Skea, R. Slade, A. Al Khourdajie, R. van Diemen, M. Pathak D. McCollum, S. Some, P. Vyas,
+R. Fradera, M. Belkacemi, A. Hasija, G. Lisboa, S. Luz, and J. Malley (eds.), Climate Change
+2022: Mitigation of Climate Change. Contribution of Working Group III to the Sixth Assessment
+Report of the Intergovernmental Panel on Climate Change , chapter 6. IPCC, Cambridge University
+Press, Cambridge, 2022.
+Djork-Arn ´e Clevert, Thomas Unterthiner, and Sepp Hochreiter. Fast and accurate deep network
+learning by exponential linear units (elus). arXiv preprint arXiv:1511.07289 , 2015.
+Maria Grazia De Giorgi, Paolo Maria Congedo, and Maria Malvoni. Photovoltaic power forecasting
+using statistical methods: impact of weather data. IET Science, Measurement & Technology , 8(3):
+90–97, 2014.
+Mahmoud Dhimish, Nigel Schofield, and Ayman Attya. Insights on the degradation and performance
+of 3000 photovoltaic installations of various technologies across the united kingdom. IEEE
+Transactions on Industrial Informatics , 17(9):5919–5926, 2020.
+Priya L Donti and J Zico Kolter. Machine learning for sustainable energy systems. Annual Review of
+Environment and Resources , 46:719–747, 2021.
+5Published as a workshop paper at ”Tackling Climate Change with Machine Learning”, ICLR 2024
+Elise Dupont, Rembrandt Koppelaar, and Herv ´e Jeanmart. Global available solar energy under
+physical and energy return on investment constraints. Applied Energy , 257:113968, 2020.
+ECMWF. https://www.ecmwf.int/en/forecasts/datasets/set-i . Accessed:
+2024-01-23.
+EUMETSAT. https://navigator.eumetsat.int/product/EO:EUM:DAT:MSG:
+MSG15-RSS . Accessed: 2024-01-23.
+Oktoviano Gandhi, Wenjie Zhang, Dhivya Sampath Kumar, Carlos D Rodr ´ıguez-Gallegos,
+Gokhan Mert Yagli, Dazhi Yang, Thomas Reindl, and Dipti Srinivasan. The value of solar
+forecasts and the cost of their errors: A review. Renewable and Sustainable Energy Reviews , 189:
+113915, 2024.
+Open Climate Fix Google Datasets. EUMETSAT Satellite Imagery over Europe and
+North Africa. https://console.cloud.google.com/marketplace/product/
+bigquery-public-data/eumetsat-seviri-rss . Accessed: 2024-01-23.
+Kaiming He, Xiangyu Zhang, Shaoqing Ren, and Jian Sun. Delving deep into rectifiers: Surpassing
+human-level performance on imagenet classification. In Proceedings of the IEEE international
+conference on computer vision , pp. 1026–1034, 2015.
+Kaiming He, Xiangyu Zhang, Shaoqing Ren, and Jian Sun. Deep residual learning for image
+recognition. In Proceedings of the IEEE conference on computer vision and pattern recognition ,
+pp. 770–778, 2016.
+OT Huxley, J Taylor, A Everard, J Briggs, K Tilley, J Harwood, and A Buckley. The uncertainties
+involved in measuring national solar photovoltaic electricity generation. Renewable and Sustainable
+Energy Reviews , 156:112000, 2022.
+D Jost, M Speckmann, F Sandau, and R Schwinn. A new method for day-ahead sizing of control
+reserve in germany under a 100% renewable energy sources scenario. Electric Power Systems
+Research , 119:485–491, 2015.
+Elke Lorenz, Thomas Scheidsteger, Johannes Hurka, Detlev Heinemann, and Christian Kurz. Regional
+pv power prediction for improved grid integration. Progress in Photovoltaics: Research and
+Applications , 19(7):757–771, 2011.
+Johan Mathe, Nina Miolane, Nicolas Sebastien, and Jeremie Lequeux. Pvnet: A lrcn architecture for
+spatio-temporal photovoltaic powerforecasting from numerical weather prediction. arXiv preprint
+arXiv:1902.01453 , 2019.
+Met Office, Centre for Environmental Data Analysis. NWP-UKV: Operational Nu-
+merical Weather Prediction (NWP) output from the UK Met Office UK Atmospheric
+High Resolution Unified Model (UM). http://catalogue.ceda.ac.uk/uuid/
+78f23c539d304591b137cf986b69a525 . Accessed: 2024-01-23.
+National Grid ESO. https://www.nationalgrideso.com/data-portal/
+gis-boundaries-gb-grid-supply-points/gsp_regions_20220314_
+geojson . Accessed: 2024-01-23.
+Sheffield Solar PVLive. https://www.solar.sheffield.ac.uk/pvlive . Accessed:
+2024-01-23.
+Zhiyuan Si, Ming Yang, Yixiao Yu, and Tingting Ding. Photovoltaic power forecast based on satellite
+images considering effects of solar position. Applied Energy , 302:117514, 2021.
+Sobrina Sobri, Sam Koohi-Kamali, and Nasrudin Abd Rahim. Solar photovoltaic generation forecast-
+ing methods: A review. Energy conversion and management , 156:459–497, 2018.
+Cyril V oyant, Gilles Notton, Soteris Kalogirou, Marie-Laure Nivet, Christophe Paoli, Fabrice Motte,
+and Alexis Fouilloy. Machine learning methods for solar radiation forecasting: A review. Renew-
+able energy , 105:569–582, 2017.
+6Published as a workshop paper at ”Tackling Climate Change with Machine Learning”, ICLR 2024
+A A PPENDIX
+A.1 ABBREVIATIONS
+ECMWF European Centre for Medium-Range Weather Forecasts
+init-time Initialisation time
+GSP Grid Service Point
+GB Great Britain
+ML Machine Learning
+NMAE Normalised Mean Absolute Error
+NWP Numerical Weather Prediction
+PV Photovoltaic
+A.2 A DDITIONAL FIGURES AND TABLES
+Table 1: A table showing the fraction [0-1] of true values from the validation set which were below
+the predicted value for each of the 10th, 50th and 90th percentiles for each model.
+Data sources Fraction of values under percentile prediction
+10% 50% 90 %
+UKV+IFS+EUMETSAT 0.0818 0.4462 0.8666
+UKV+IFS 0.0879 0.4872 0.9060
+UKV+EUMETSAT 0.0777 0.4602 0.8831
+UKV 0.0754 0.4490 0.8751
+IFS+EUMETSAT 0.0852 0.4639 0.8801
+IFS 0.0874 0.4483 0.8725
+EUMETSAT 0.0924 0.5066 0.9167
+The results in table 1 were calculated by measuring the fraction of targets in the validation set which
+were below the predicted values for each quantile.
+Because there is no PV production during the night, approximately half of the target values are
+zero. We filter out the timestamps and horizons where the target value is zero before calculating the
+fractions in the table. This may account for the frcations in the table being lower than expected. We
+don’t consider points where the true value is zero, but we do consider values where the predicted
+value is zero. This may bias the measured fraction around dawn and dusk.
+In equation form, we calculate the fractions in the table using
+fq=1
+NX
+i,h
+y(ti
+0+h)>0Jˆyi
+q(h)> y(ti
+0+h)K. (1)
+In the equation, fqis the fraction as displayed in table 1 for one of the models for quantile q(e.g
+q= 90% ). The value y(t)is the target PV outturn at time t.ti
+0is the init-time for sample i, andhis
+the forecast horizon of interest. The value ˆyi
+q(h)is the model prediction for quantile qand for sample
+iat horizon h. The brackets J.Krepresent the Iverson bracket or indicator function, which equals 1 if
+the condition inside is true and 0 otherwise. The sum is taken over all samples and horizons, where
+the target value y(ti
+0+h)is greater than zero. Nis the number of terms in this sum.
+7Published as a workshop paper at ”Tackling Climate Change with Machine Learning”, ICLR 2024
+Figure 2: A map of all the GSP regions and their solar PV capacities as of May 2022. The capacities
+shown are the effective capacities as estimated by PVLive and are in units of megawatts (MW).
+8Published as a workshop paper at ”Tackling Climate Change with Machine Learning”, ICLR 2024
+Figure 3: Some examples of different sized GSPs and the spatial windows used for different data
+sources. The green, orange, and blue boxes show the spatial extent of the EUMETSAT, IFS, and
+UKV inputs.
+9Published as a workshop paper at ”Tackling Climate Change with Machine Learning”, ICLR 2024
+Figure 4: A diagram of the model architecture. Each input data source and its dimensions is shown in
+white boxes. Embedding layers and their output shapes are shown in blue boxes. 3D convolutional
+layers and their output channels are shown in yellow boxes. Fully connected layers and their output
+features are shown in pink boxes. Repeated units are contained in dashed boxes and labelled with
+their number of repetitions.
+10

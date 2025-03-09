@@ -1,0 +1,786 @@
+Safe Reinforcement Learning for Remote Microgrid
+Optimization with Industrial Constraints
+Hadi Nekoei
+Mila, Université de MontréalAlexandre Blondin-Massé & Rachid Hassani
+IREQ - Hydro-Québec Research Institute
+Sarath Chandar
+Mila, Polytechnique MontréalVincent Mai
+IREQ - Hydro-Québec Research Institute
+Abstract
+In remote microgrids, the power must be autonomously dispatched between fuel
+generators, renewable energy sources, and batteries, to fulfill the demand. These
+decisions must aim to reduce the consumption of fossil fuel and battery degradation
+while accounting for the complex dynamics of generators, and uncertainty in
+the demand and renewable production forecasts. Such an optimization could
+significantly reduce fuel consumption, potentially saving millions of liters of diesel
+per year. Traditional optimization techniques struggle with scaling in problem
+complexity and handling uncertainty. On the other hand, reinforcement learning
+algorithms often lacks the industry constraints guarantees needed for real-world
+deployment. In this project, we provide a realistic shielded microgrid environment
+designed to ensure safe control given real-world industry standards. Then, we train
+a deep reinforcement learning agents to control fuel generators and batteries to
+minimize the fuel consumption and battery degradation. Our agents outperform
+heuristics baselines and exhibit a Pareto frontier pattern.
+1 Introduction
+Remote microgrids are small power systems disconnected from the main grid, typically powered
+by fossil fuel generators, also called gensets . In Canada, these grids consume up to 265 millions of
+litres of diesel annually ( 13). To reduce CO2 emissions, utilities are considering wind turbines for
+fossil-free energy. However, due to the uncontrollable nature of wind power, large capacity batteries
+are needed for flexibility, while gensets remain essential to reliably meet power demand. Utilities must
+manage the unit commitment of these energy sources to ensure reliable, low-emission, and sustainable
+microgrid operations, while considering battery degradation. This complex, constrained sequential
+decision-making problem involves long-term planning with uncertain exogenous variables such as
+power demand and wind availability. Traditional optimization techniques struggle with this due to
+the mix of discrete and continuous variables and non-linear dynamics. Approaches such as mixed-
+integer programming have been used with some success ( 7;14;9), but often simplify constraints,
+overlook battery depletion, or use time steps too long for real time control to reduce the problem’s
+dimensionality. A more realistic model proposed in ( 13) enables real-time control for gensets but
+excludes batteries and wind turbines, and assumes perfect demand prediction. Reinforcement learning
+(RL) approaches have shown promising results in these settings ( 4;5;2;16;15), effectively handling
+the problem’s characteristics. However, these studies often fall short in representing industrial
+environments, lacking short time steps, realistic device dynamics and costs, and strong guarantees
+towards safety constraints.
+In this paper, we propose a single-agent RL-based system for optimizing remote microgrids, designed
+for real-world industrial deployment. Key features include: (1)one-minute time scale control, (2)
+Tackling Climate Change with Machine Learning: workshop at NeurIPS 2022.Figure 1: Safe microgrid RL environment. The agent outputs a command which is checked and
+extended by the shield to ensure that power balance is always respected.
+precise modelling of device dynamics ( 13;8) and real-world demand data, (3)adherence to industry
+standards like ISO 8528-1 for generators, (4)compatibility with current management systems for
+possible fallback to a trusted, though non-optimal, policy, and crucially, (5)a low-complexity shielded
+approach ( 1) guaranteeing constraint compliance and prevention of power outage. Our agent’s
+performance is demonstrated through improved fuel consumption and reduced battery degradation
+compared to baseline control algorithms. This work represents a significant step towards safely
+deploying RL models in industrial settings, aiming at a more efficient wind turbine integration in
+remote microgrids and a significant reduction of fuel usage and CO2 emissions.
+2 Shielded microgrid environment
+2.1 Simulating the microgrid dynamics
+The environment, modeled as an observable Markov decision process (MDP) with exogenous
+variables, simulates a microgrid with industrial operational constraints. A detailed MDP formulation
+and a formal description of the environment dynamics are available in Appendix A. This section only
+highlights key concepts. The microgrid simulates four elements: power demand, a genset orchestrator,
+a wind turbine, and a battery.
+Genset orchestrator The genset orchestrator manages multiple fuel gensets to ensure reliable
+power. We implemented industry-level dynamics and constraints from ( 13) in an MDP formulation.
+Each genset has its own dynamics. When turned on, a genset produces power within a fixed range of
+minimum loading and maximum capacity, and must adhere to warmup, cooldown, and minimum
+runtime durations. To meet ISO 8528-1 standards ( 11), the average power over the last 48 hours of
+running is capped at 70% of maximum capacity. Fuel consumption is proportional to power output,
+plus a constant when running. The orchestrator divides the power setpoints of each genset based on
+its own setpoint, ensuring each provides the same percentage of its maximum power. It also controls
+the genset states, maintaining a priority order where generator icannot be turned on if generator i−1
+is turned off, and vice versa, to ensure compatibility with existing heuristic-based systems, allowing
+them to take over if necessary.
+Battery The battery stores energy as chemical energy and can absorb or release electrical power
+on demand. We model its behavior precisely according to ( 8). Its state of charge (SoC) indicates
+the accumulated energy, limited by its capacity. Charging and discharging are inefficient processes,
+leading to energy loss. The battery degrades over charging/discharging cycles. The rainflow analysis
+is difficult to represent in an MDP, we thus approximate it linearly in half-cycle equivalent (3).
+Load Power demand from consumer’s loads is an exogenous variable beyond the agent’s control.
+We use a full year of minute-by-minute true demand data from a remote microgrid. The agent
+observes current demand and predictions for 30 points spread over a future period Tpred. Currently,
+the prediction is the true future demand. Future work will simulate specialized demand prediction
+models with uncertainty for a more realistic environment.
+2Wind turbine The wind turbine generates renewable electric power for the microgrid by harnessing
+wind energy. The available wind power, an exogenous variable, is modeled using Perlin noise for
+a realistic signal ( 12). If the grid cannot absorb all the generated power, it is curtailed without
+constraints. The agent receives 30 exact predictions of available wind power, over period Tpred.
+Future work will incorporate real wind turbine data, realistic curtailment constraints, and prediction
+uncertainty.
+2.2 Control, constraints, and shield design
+Many operational constraints in the microgrid pertain to individual elements and can be directly
+implemented in the simulator. For instance, a cooling generator will ignore a command to be turned
+on. However, a critical constraint is maintaining the balance between supply and demand at the
+microgrid level. As seen in Figure 1, we implement a shield to ensure this balance. The shield has
+two parts. First, a single-step shield automatically controls each element based on the agent’s actions.
+The agent provides two commands: the power to be provided or absorbed by the battery (battery
+power) and whether to turn a genset on or off (status change). The single-step shield then calculates
+the necessary adjustments to maintain balance, including wind power curtailment, actual battery
+power, generator group power setpoint, and genset status change. This process aims at respecting the
+agent’s commands but will adjust them if needed, prioritizing genset status over battery power.
+The agent might make decisions leading to non-recoverable states where a single-step shield cannot
+maintain a 0-balance. For instance, turning off a genset when the battery can cover its power might
+cause an later outage if the battery is nearly empty, as the genset cannot be turned on again during its
+cooldown period, and must warm up. To prevent this, a recovery shield checks recoverability at each
+time step. This involves simulating the balance over a trajectory where the signal to turn on a genset
+is sent for the maximum duration gensets can be blocked (cooldown + warmup). If the check fails,
+the command to change the generator’s status is corrected to prevent turning off a genset or to start a
+new one. The shield is described in more details in appendix A.3.
+This shield guarantees that the balance is never negative , but it relies on exact short term demand
+and wind power predictions. Future work will incorporate noisy predictions and implement industry-
+standard available power reserves. A positive balance could occur if the minimal power produced by
+all gensets exceeded demand. This scenario is however unlikely due to the microgrid’s configuration
+and the agent’s incentives to reduce fuel consumption, and was not seen in our evaluations. Further-
+more, excess power is easier to manage than a shortage, as it can be dissipated with a resistance.
+2.3 Reward
+The reward at each time step is formulated as a negative cost combining the gensets fuel consumption
+Fo,t(in l) and the battery degradation db,t. Weight αcan be adjusted based on the utility’s objective.
+rt=−(Fo,t+αdb,t)
+3 Experiments
+We used the Soft-Actor Critic (SAC) RL algorithm ( 6), known to perform well in continuous domains,
+to train our agents. To process the available wind power and demand prediction time series, the
+agent’s architecture integrates LSTMs. Details about the agent’s architecture can be found in appendix
+B. The agents were trained on 106one-minute environment steps divided in one-day episodes. The
+episodes initialization involved sampling a random time during the year and the gensets and battery
+initial states. We explored two seeds, two learning rates, four prediction periods Tpred, and four
+values of α. The trained agents were then tested on a fixed test environment consisting of four days
+in January, April, July and October to represent varying conditions. The best-performing agent
+for a given αwas selected based on the average reward across these four days. The results of our
+experiments are summarized in Figure 2.
+Baselines We compare our RL agents with four simple control algorithms. Note that the shield
+is applied on these baselines too. The random agent performs poorly but shows that the shield is
+not enough to garantee good performance. The fuel-greedy agent, which always attempts to turn
+the gensets OFF and discharge the battery, consumes little fuel but highly degrades the battery. The
+3800 1000 1200 1400 1600 1800 2000
+Fuel Consumption (liter)0
+1
+2
+3
+4
+5Battery Degradation Cost (half cycle eq.):0
+:20
+:60
+:200
+Random
+Battery-greedy
+Fuel-greedy
+Balanced Heuristics(a) Including the baselines
+700 750 800 850 900 950 1000
+Fuel Consumption (liter)0.0
+0.5
+1.0
+1.5
+2.0
+2.5
+3.0Battery Degradation Cost (half cycle eq.):0
+:20
+:60
+:200
+Balanced Heuristics (b) Zoomed in
+Figure 2: The RL agent seeks to strike a balance between fuel consumption and battery degradation
+costs. Changing their respective importance in the reward function with αseems to exhibit the Pareto
+frontier. In contrast, all other baselines (except balanced heuristics) exhibit suboptimal performance
+in one or both metrics.
+battery-greedy agent lets the shield not change the genset status and keeps the battery idle. The
+battery does not degrade but fuel consumption is not optimal. The balanced heuristic is a bit more
+complex: it always tries to turn OFF a genset, but on the battery side, it maximally charges when
+available wind power exceeds demand, and greedily discharges the battery otherwise. This baseline
+shows good average performance. However, it cannot adapt to the utility preference α, and is not
+reliable for every condition, as discussed further.
+RL agents The RL agents perform significantly better than simple control algorithms. Modifying
+parameter αto balance battery degradation cost and fuel consumption in the reward function seems
+to exhibit a Pareto frontier. This allows the electric utility to choose its preference between battery
+lifetime and fuel efficiency. If similar performance than baselines can be had for high α(low battery
+degradation, high fuel consumption), the agents can reduce the daily fuel consumption by 25% while
+keeping battery degradation acceptable, for lower α’s - striking the high gain zone for utilities looking
+to reduce their remote microgrid CO2 emissions. We also provide a study of the impact of Tpred
+showing that predictions help the agent in finding better policies in appendix C.1, and explore training
+with shield infraction penalties in C.2. We note that, during all our experiments including training, no
+power shortage was experienced, showing shield efficiency.
+Seasonal results The results presented in Figures 2 are averaged over four days sampled from
+different seasons. Figure 3 illustrates the agents’ performance across each of the four seasons. When
+the demand is high and the wind power low, as in January or April, the agents all exhibit a similar
+performance as the battery is not very useful. However, when the available wind power is high
+compared to the demand, the agents not only use less fuel, but they can also use the battery to further
+reduce the fuel consumption, for example by using the battery to turn off a generator during some
+time and save on the constant fuel cost. However, this increases battery degradation, leading to
+different behaviors among agents with different αvalues, as seen in Figure 3e and 3g. The Balanced
+Heuristics is programmed to discharge the battery at all time except when the available wind power is
+higher than the demand, as is the case in our October example. It is clear in Figure 3g that this leads
+to low fuel consumption, however the battery degradation is high. Our RL agents instead manage to
+keep low battery degradation compared to the Balanced Heuristics while using less fuel. In remote
+microgrids, heating systems are not electric, which means that the demand does not have strong
+seasonal variations. Still, customers have different behaviors leading to different patterns, as can
+be seen with the lower consumption in July. In addition, the available wind power profile can also
+change significantly across different days. This is not an effect of seasonality as Perlin noise does not
+account for it. However, it is interesting to see the agents’ performance on the different profiles.
+4 Conclusions and Future Work
+In this paper, we introduced a shielded microgrid RL agent designed for real-world industrial
+applications. The results demonstrate that our RL agents significantly improve fuel consumption and
+4400 600 800 1000 1200
+Fuel Consumption (liter)0
+1
+2
+3
+4
+5
+6Battery Degradation Cost (half cycle eq.):0
+:20
+:60
+:200
+Balanced Heuristics(a) January Pareto frontier
+0 200 400 600 800 1000 1200 1400
+time (minutes)0.00.20.40.60.81.0Normalized power
+January load data
+January wind power data (b) January load profile
+400 600 800 1000 1200
+Fuel Consumption (liter)0
+1
+2
+3
+4
+5
+6Battery Degradation Cost (half cycle eq.):0
+:20
+:60
+:200
+Balanced Heuristics (c) April Pareto frontier
+0 200 400 600 800 1000 1200 1400
+time (minutes)0.00.20.40.60.81.0Normalized powerApril load data
+April wind power data (d) April load profile
+400 600 800 1000 1200
+Fuel Consumption (liter)0
+1
+2
+3
+4
+5
+6Battery Degradation Cost (half cycle eq.):0
+:20
+:60
+:200
+Balanced Heuristics
+(e) July Pareto frontier
+0 200 400 600 800 1000 1200 1400
+time (minutes)0.00.20.40.60.81.0Normalized powerJuly load data
+July wind power data (f) July load profile
+400 600 800 1000 1200
+Fuel Consumption (liter)0
+1
+2
+3
+4
+5
+6Battery Degradation Cost (half cycle eq.):0
+:20
+:60
+:200
+Balanced Heuristics (g) October Pareto frontier
+0 200 400 600 800 1000 1200 1400
+time (minutes)0.00.20.40.60.81.0Normalized powerOctober load data
+October wind power data (h) October load profile
+Figure 3: Monthly pareto frontier results found by the RL agent and load/wind power profile.
+When wind power exceeds demand, the battery is charged, resulting in lower fuel consumption but
+increased battery degradation. For instance, plot (g) illustrates that the greedy agent has reduced
+fuel consumption at the cost of higher battery degradation, as wind power surpasses the load for a
+significant part of the day.
+reduce battery degradation compared to simple control algorithms. They show an important potential
+for the sustainable reduction of CO2 emissions due to remote microgrids. The next step towards
+deploying these agents in real remote microgrids are to improve the realism of the environment,
+investigate more specialized learning algorithms, and compare their performance with currently used
+advanced heuristics methods.
+References
+[1]ALSHIEKH , M., B LOEM , R., E HLERS , R., K ÖNIGHOFER , B., N IEKUM , S., AND TOPCU , U.
+Safe reinforcement learning via shielding. Proceedings of the AAAI Conference on Artificial
+Intelligence 32 , 1 (April 2018).
+[2]ARWA, E. O., AND FOLLY , K. A. Reinforcement learning techniques for optimal power control
+in grid-connected microgrids: A comprehensive review. IEEE Access 8 (2020), 208992–209007.
+[3]CAO, J., H ARROLD , D., F AN, Z., M ORSTYN , T., H EALEY , D., AND LI, K. Deep reinforce-
+ment learning-based energy storage arbitrage with accurate lithium-ion battery degradation
+model. IEEE Transactions on Smart Grid 11 , 5 (Sept. 2020), 4513–4521.
+[4]DIMEAS , A. L., AND HATZIARGYRIOU , N. D. Multi-agent reinforcement learning for
+microgrids. In IEEE PES General Meeting (July 2010), pp. 1–8.
+[5]FORUZAN , E., S OH, L.-K., AND ASGARPOOR , S. Reinforcement learning approach for
+optimal distributed energy management in a microgrid. IEEE Transactions on Power Systems
+33, 5 (September 2018), 5749–5758.
+[6]HAARNOJA , T., Z HOU , A., A BBEEL , P., AND LEVINE , S. Soft actor-critic: Off-policy
+maximum entropy deep reinforcement learning with a stochastic actor. In Proceedings of the
+35th International Conference on Machine Learning (10–15 Jul 2018), J. Dy and A. Krause,
+Eds., vol. 80 of Proceedings of Machine Learning Research , PMLR, pp. 1861–1870.
+5[7]HAJIMIRAGHA , A. H., AND ZADEH , M. R. D. Research and development of a microgrid
+control and monitoring system for the remote community of bella coola: Challenges, solutions,
+achievements and lessons learned. In 2013 IEEE International Conference on Smart Energy
+Grid Engineering (SEGE) (August 2013), pp. 1–6.
+[8]HASSANI , R., AND LAMBERT , M. Real-time battery optimization for remote microgrids. Les
+Cahiers du GERAD G-2024-49, Groupe d’études et de recherche en analyse des décisions,
+GERAD, Montréal QC H3T 2A7, Canada, August 2024.
+[9]HIRWA , J., O GUNMODEDE , O., Z OLAN , A., AND NEWMAN , A. M. Optimizing design
+and dispatch of a renewable energy system with combined heat and power. Optimization and
+Engineering 23 , 3 (September 2022), 1–31.
+[10] HUANG , Y., R OLFE , A., V ORUSHYLO LYTVYN , I., K EATLEY , P., B YRNE , R., M ACARTAIN ,
+P., F LYNN , D., AND HEWITT , N. Integration of compressed air energy storage with wind
+generation into the electricity grid. IOP Conference Series: Earth and Environmental Science
+188(Oct 2018), 012075.
+[11] INTERNATIONAL ORGANIZATION FOR STANDARDIZATION (ISO) . Reciprocating internal
+combustion engine driven alternating current generating sets — part 1: Application, ratings and
+performance, 2018. Edition 3.
+[12] LAGAE , A., L EFEBVRE , S., AND COOK, R.A survey of procedural noise functions. Computer
+Graphics Forum 28 , 1 (2009), 257–270.
+[13] LAMBERT , M., AND HASSANI , R. Diesel genset optimization in remote microgrids. Applied
+Energy 340 (June 2023), 121036.
+[14] SILVENTE , J., K OPANOS , G. M., P ISTIKOPOULOS , E. N., AND ESPUÑA , A. A rolling
+horizon optimization framework for the simultaneous energy supply and demand planning in
+microgrids. Applied Energy 155 (October 2015), 485–501.
+[15] WANG, Y., X IAO, M., Y OU, Y., AND POOR, H. V. Optimized energy dispatch for microgrids
+with distributed reinforcement learning. IEEE Transactions on Smart Grid (2024), 1–1.
+[16] YANG , T., Z HAO, L., L I, W., AND ZOMAYA , A. Y. Dynamic energy dispatch strategy
+for integrated energy system based on improved deep reinforcement learning. Energy 235
+(November 2021), 121377.
+A Environment details
+A.1 MDP formulation
+The RL agent interacts with the environment using the MDP framework. An MDP is defined by
+tuple (S,A, D, R, γ ), where Sis the state space observed by the agent, Athe action space, Dthe
+environment dynamics, Rthe reward function, and γthe discount factor.
+We describe the environment dynamics Din details in the following sections: Section A.2 describes
+the microgrid modelling while Section A.3 describes the shield. From the point of view of the RL
+agent, the shield is part of the environment, as seen in Figure 1.
+The action space Adescribes the space of possible actions at. Here, atis composed of the
+agent’s battery power setpoint Pa
+b,t∈Rand the agent’s genset status change command ca
+o,t∈
+(stop,none,start).
+The state space observed by the agent includes the time-dependent state of the genset
+orchestrator, the battery, the wind turbine, the demand, the current microgrid bal-
+ance, plus the demand prediction and wind available power predictions. Formally,
+statest= (So,t, Sb,t, Sw,t,Dl,t,Bl,t,(Pavail
+w,τ)τ=t+δt,t+2δt,...,t+30δt,(DM,τ)τ=t+δt,t+2δt,...,t+30δt),
+where δt=Tpred/30. These variables are defined in section A.2.
+The reward function is defined in section 2.3, and the discount factor γis set to 0 when evaluating the
+performance on an average day.
+6A.2 Environment dynamics
+Gensets. The behavior of the gensets is managed by an orchestrator, which is in particular responsi-
+ble for balancing the load between them. The representation of each genset in an MDP formulation is
+adapted from the linear programming constraints described in (13).
+LetGbe the set of all gensets and g∈G. Then the time-independent state Sgofgand the
+time-dependent state Sg,tofgat time step tare given by the tuples
+Sg= (Pmax
+g, Pmin
+g, Pwarm
+g, twmax
+g, tcmax
+g, trmax
+g,Wg, αF
+g, βF
+g) (1)
+Sg,t= (Ag,t,Pset
+g,t,Pg,t,Pavail
+g,t,twarm
+g,t,tcool
+g,t,trun
+g,t,Fg,t,Pavg
+g,t) (2)
+where Pmax
+g (resp. Pmin
+g,Pwarm
+g ) is the maximum (resp. minimum, warmup) power of the genset
+(in kW); twmax
+g (resp. tcmax
+g ,trmax
+g) is the warmup (resp. cooldown, minimum running) time of the
+genset (in minutes); Wgis the time window over which the average active power of gis monitored
+(in minutes); αf
+gandβf
+gare the fuel consumption coefficients (in l/kWh); Ag,tis the running status
+ofgat time step t(in{stopped ,running ,warmup ,cooldown });Pg,t(resp.Pavail
+g,t) is the active
+power (resp. available power) of gat time step t(in kW); twarm
+g,t (resp. tcool
+g,t,trun
+g,t) is the elapsed
+time since the warmup (resp. cooldown, normal running) of gwas initiated at time step t(in minutes);
+Fg,tis the fuel consumption of gat time step t(in l/min) and Pavg
+g,tis the average active power of g
+for the last Wgminutes at time step t(in kW).
+The orchestrator omanages a set of ngensets {g1, g2, ..., g n}. Its time-independent state Soand
+time-dependent state So,tare given by the tuples:
+So= (Sg1, Sg2, ..., S gn) (3)
+So,t= (Sg1,t,Sg2,t, ...,Sgn,t,Po,t,Fo,t), (4)
+where Po,tis the total power generated by o’s gensets at time step t[in kW] and Fo,tis the total
+fuel consumption observed by oat time step t[in l/kWh].
+At time t, the orchestrator oreceives a command Co,t= (co,t,Pset
+o,t), where co,t∈
+{none,start -next,stop-last}is the desired status changes and Pset
+o,t∈R+is the desired total
+power setpoint. Then it proceeds as follows.
+1.First, the command Co,tis translated to individual desired status changes cg,t∈
+{none,start,stop}for each genset ggiven by
+cg,t←
+
+start ifco,t=start -next ,Ag,t−1=stopped
+andAprev( g),t−1∈ {running ,warmup }
+stop ifco,t=stop-last,Ag,t−1=running ,trun
+g,t−1> trmax
+g
+andAnext( g),t−1∈ {stopped ,cooldown }
+none otherwise,(5)
+where prev( g)(resp. next( g)) is the previous (resp. next) genset in the priority order with
+respect to g. An important consequence of Equation (5) is that at most one genset can
+change desired status, i.e. cg,t̸=none , at each time step.
+2.Ifcg,t=none for each genset gthe process can halt here, by setting So,t←So,t−1and
+St,g←Sg,t−1for each g∈G.
+3.Otherwise, the state of each individual genset is updated. First, the running state is updated
+taking into account the state transitions and the effect of the dispatched command:
+A′
+g,t←
+
+running ,ifAg,t−1=warmup andtwarm
+g,t−1> twmax
+g ;
+stopped ,ifAg,t−1=cooldown andtcool
+g,t−1> tcmax
+g ;
+Ag,t−1 otherwise.(6)
+Ag,t←
+
+warmup ,ifA′
+g,t=stopped andcg,t=start ;
+cooldown ,ifA′
+g,t=running andcg,t=stop;
+A′
+g,t otherwise.(7)
+74.Finally, the setpoint, average, available and active powers, as well as the fuel consumption
+can be updated:
+Pwarm
+t←X
+g∈GI(Ag,t=warmup )Pwarm
+g (8)
+Pmax
+t←X
+g∈GI(Ag,t=running )Pmax
+g (9)
+wg,t←Pmax
+g/Pmax
+t (10)
+Pset
+g,t←wg,t(Pset
+o,t−Pwarm) (11)
+Pavail
+g,t←computed from Pavg
+g,t−1andPmax
+g (12)
+Pg,t←
+
+0, ifAg,t∈ {stopped ,cooldown }
+Pwarm
+g, ifAg,t=warmup ;
+clamp( Pset
+g,t,[Pmin
+g,Pavail
+g,t])ifAg,t=running .(13)
+Pavg
+g,t←(Wg−δt)Pavg
+g,t−1+δtPg,t (14)
+Fg,t←αf
+gPg,t+βf
+gI(Ag,t̸=stopped ) (15)
+Po,t←X
+g∈GPg,t (16)
+Fo,t←X
+g∈GFg,t (17)
+where I(p) = 1 ifpis true, 0otherwise, clamp( x,[x1, x2]) = max(min( x, x2), x1)is the
+function that clamps a value xonto an interval [x1, x2]andδtis the duration of time step t
+(in minutes).
+Batteries. The batteries’ dynamics are modeled according to ( 8), adapting the linear programming
+constraints to an MDP formulation. Let bbe a battery. Then the time-independent state Sbofband
+the time-dependent state Sb,tofbat time step tare given by the tuples
+Sb= (SoCmin
+b,SoCmax
+b, Inom
+b, Qmax
+b, ηb, Rb, Aoc
+b, Boc
+b, Pnom
+b) (18)
+Sb,t= (SoC b,t,Voc
+b,t,Pb,t,Pcell
+b,t,Ib,t,Vb,t,db,t) (19)
+where SoCmin
+bandSoCmax
+bare the minimum and the maximum state of charge of b(in[0,1]);Inom
+b
+is the nominal current circulating in b(in A); Qmax
+bis the maximal capacity of b(in Ah); ηbis the
+battery efficiency (in [0,1]);Rbis the internal resistance of b(in ohm); Aoc
+bandBoc
+bare coefficients
+of the linearization Voc
+b,t=Aoc
+bSoC b,t+Boc
+bof the open circuit voltage of bwith respect to SoC b
+(in V); Pnom
+b is the nominal, or maximum, power of b(in kW); SoC b,tis the state of charge of bat
+time step t(in[0,1]);Voc
+b,tis the open circuit voltage of bat time step t(in V); Pb,tis the power
+consumed from/injected into the microgrid by bat time step t(in kW); Pcell
+b,tis the power consumed
+from/injected into the battery cells by bat time step t(in kW); Ib,tis the current circulating through
+bat time step t(in A); Vb,tis the voltage of bat time step t(in V) and db,tis the degradation of b
+(in half-cycle equivalent).
+At time step t, the battery receives a command Cb,tconsisting of a power setpoint Pset
+b,t∈R. The
+sign of Pset
+b,tindicates if the battery should be charged (negative), discharged (positive) or remain idle
+(zero). The state is updated as follows.
+•The power limits Pmin
+b,tandPmax
+b,t are computed based on Pnom
+b as well as the current state
+of charge SoC b,tand its limits SoCmin
+bandSoCmax
+busing the battery model from (8);
+• The power injected into the microgrid is computed: Pb,t←clamp( Pset
+b,t,[Pmin
+b,t, Pmax
+b,t]);
+•Next, the power Pcell
+b,tconsumed from or injected into the battery cells is computed, taking
+into account the battery efficiency factor ηb;
+•The state of charge SoC b,tis computed with respect to Pcell
+b,tfollowing the model from ( 8)
+• Finally, the degradation db,tis updated using the linear approximation described in (3).
+8(a) A day of Perlin simulated wind production
+ (b) A day of real wind turbine power, from (10)
+Figure 4: Perlin noise generates realistic available wind power profiles.
+Wind Turbine. In this project, we model the wind turbine available power using Perlin noise ( 12).
+Perlin noise is a procedural generation algorithm which generates realistic variation patterns. We
+tuned the Perlin noise parameters to produce a signal approximating the available wind production
+from a real wind turbine, as can be seen in Figure 4. Note however that this simulation does not
+account for seasonal or daily effects, which could be seen in real available wind power data.
+Letwbe a wind turbine. The time independent Swand the time-dependent state Sw,tofwat time
+steptare given by the tuples
+Sw= (Θp
+w, Pmean
+w, Pamp
+w, Tpred) (20)
+Sw,t= (Pavail
+w,t,Pw,t) (21)
+where Θp
+wis a set parameters, including number of octaves op
+w, number of octave steps Np
+w, period
+Pp
+w, persistence pp
+wand lacunarity lp
+w.Pmean
+w (resp. Pamp
+w) is the mean available power (resp. power
+variation amplitude) of the wind turbine (in kW); Tpred is the prediction period (in minutes); Pavail
+w,t
+is the available power for wat time step t(in kW) and Pw,tis the power injected into the microgrid
+bywat time step t(in kW);
+At time step t, the wind turbine receives a command Cw,tconsisting of a power setpoint Pset
+w,t∈R+.
+The state of wis then updated by
+Pavail
+w,t←max( Pamp
+wPerlin(Θp
+w, t) +Pmean
+w,0) (22)
+Pw,t←min(Pavail
+w,t,Pset
+w,t) (23)
+where Perlin(Θp
+w, t)∈[−1,1]is a generated Perlin noise from parameters Θp
+wand the date and
+time associated with t. Note that Perlin noise is deterministic, i.e. given the same Θp
+wandt, it
+returns the same value. In addition, the available wind power prediction time series is computed as
+(Pavail
+w,τ)τ=t+δt,t+2δt,...,t+30δt, where δt=Tpred/30.
+Microgrid LetMbe the microgrid. It is composed of four elements simulated as defined above:
+a genset orchestrator omanaging two single gensets g1andg2, a battery band a wind turbine w.
+We also attach to Mthe expected load DM,tat each time step t, by replaying it from the true
+minute-by-minute demand measured on a remote microgrid during a year. The demand prediction
+time series is given as (DM,τ)τ=t+δt,t+2δt,...,t+30δt, where δt=Tpred/30.
+At each time t, the microgrid Mreceives the command CM,tcomposed of commands for the genset
+orchestrator ( Co,t), the battery ( Cb,t) and the wind turbine ( Cw,t), and transmits it to its elements.
+Then, it computes the balance
+BM,t=Po,t+Pb,t+Pw,t−DM,t (24)
+A.3 Shield
+Shield objective At every time step t, the shield receives action atfrom the agent, which contains
+the agent’s battery power setpoint Pa
+b,tand the agent’s genset status change command ca
+o,t. The shield
+9objective is to turn atinto a safe command CM,t= (Co,t, Cb,t, Cw,t), ensuring that the power supply
+and demand are always equal. In other words, it aims to ensure the constraint:
+BM,t= 0 (25)
+More specifically, our shield guarantees that BM,tis never negative – which would indicate a shortage
+– and prevents the balance to be positive in most cases. The shield is composed of two parts. The first
+part, the single-step shield, greedily ensures that the balance is equal to 0 by controlling the power
+attribution at step t. The second part, the recovery shield, ensures that the microgrid never reaches a
+non-recoverable state by controlling the genset group’s status change.
+Single-step shield The single-step shield adjusts all power attributions at step t, aiming at BM,t= 0.
+It first computes wind and genset power setpoints without modifying Pa
+b,t. Because wind power
+Pw,tis free in terms for fossil fuel, the choice was made that the shield should always prioritize
+wind power over genset power Po,t. As the demand DM,tis exogenous, combining Constraint (25)
+and wind power priority over gensets leaves a single solution to determine Pw,tandPo,tgivenPa
+b,t.
+However, if Pa
+b,tdoes not allow for BM,t= 0 because of the current configuration, then Pb,tis
+adjusted to compensate for the difference, if possible.
+Recovery shield The second part of the shield is called the recovery shield. It controls the genset
+status change command co,tby checking that the agent’s command ca
+o,tdoes not lead into a non-
+recoverable state. A non-recoverable state is a state that leads to a failure state in which not enough
+generator, battery and wind power are available to cover the demand. This can happen, for example,
+ifg1is set to cooldown , preventing g1andg2to be turned on. If the energy stored in the battery,
+together with the wind turbine, cannot provide enough power to cover the demand until the cooldown
+and the warmup periods are over, the single-step shield will not be able to prevent BM,t<0.
+To prevent this from happening, the recovery shield simulates the full microgrid, including the
+single-step shield, for Trecov time steps, where Trecov = max ntwmax
+gn+ max ntcmax
+gnis the minimum
+amount of time a gensets must wait after being turned off before it is fully running again. At the
+first time step t, the agent’s action atis simulated. Then, the shield assumes a very conservative
+agent which will always ensure the safest behavior regarding the gensets. For simulated actions
+at+1, at+2, ..., a t+Trecov, the agent’s command to the genset orchestrator is ca
+o,t=start . However,
+because the recovery shield does not control the battery, it must assume the worst-case agent action
+regarding recoverability, which is to maximally discharge the battery at every time step. Thus,
+for simulated actions at+1, at+2, ..., a t+Trecov, the agent’s command to the single-step shield is
+Pa
+b,t=∞, which will then be filtered by the single-step shield to prevent positive balance. If the
+balance is never negative over the prediction period, i.e., BM,τ≥0∀τ∈[t, t+ 1, ..., t +Trecov],ca
+o,t
+is considered recoverable and not modified. However, if at any time step τ,BM,τ<0, the balance
+action atis considered as non-recoverable, and the shield modifies co,t. Ifca
+o,t=stop,co,tis set to
+none and the recovery check is done once more as if ca
+o,t=none . Ifca
+o,t=none ,co,tis set to start .
+Discussion. An important advantage of the recovery shield is that it does not require to simulate
+several trajectories in the environment. As the recovery genset status change action and the worst case
+battery setpoint for recoverability are predetermined, only one trajectory is enough to guarantee that
+the balance will never be negative. A slight disadvantage is that it is possible that a valid trajectory
+where the agent would not apply the worst case battery setpoint is blocked by the shield.
+Another element to be noted is that the recovery shield does not prevent non-recoverability regarding
+positive balance, which is only controlled through the single-step shield. This would be possible, but
+would entail a second simulation where the recovery action is to stop a generator, on a significant
+longer period including the gensets minimum runtime. As explained in the main text, a positive
+balance can only happen if the minimal power produced by all on gensets exceed demand, which is
+unlikely to happen both due to the demand levels and the agent’s incentives to reduce unnecessary
+fuel consumption. The impact of a positive balance is also easier to manage than a shortage.
+It is also worth mentioning that the recovery shield guarantee relies on both the exact demand and
+the wind available power predictions at every time step for period Trecov. To comply with industry
+standards regarding prediction uncertainty, a stronger shield would ensure a minimal reserve of
+available power over the demand prediction. It could however account for the gensets ability to
+temporarily produce more than their maximal power, using the overload mode (13).
+10Gensets ( g1andg2are identical)
+Power Pmax
+g, Pmin
+g, Pwarm
+g 400, 120, 100 (kW)
+Minimum durations twmax
+g, tcmax
+g, trmax
+g 3, 6, 30 (min)
+Average power window Wg 48 (h)
+Fuel consumption αf
+g, βf
+g 0.25 (l/kWh), 10 l/h
+Battery
+Nominal power Pnom
+b 600 (kW)
+State of charge SoCmin
+b,SoCmax
+b 0.1, 0.9 (ratio)
+Efficiency η 0.95 (ratio)
+Electrical characteristics Inom
+b, Qmax
+b 670 (A), 670 (Ah)
+Electrical characteristics (2) Rb, Aoc
+b, Boc
+b 0.04 (Ohm), 40 (V), 930 (V)
+Wind turbine
+Perlin noise Θp
+w: (op
+w, Np
+w, Pp
+w, pp
+w, lp
+w) (5, 4, 1440 (min), 0.8, 2.5)
+Available wind power Pmean
+w, Pamp
+w 200, 300 (kW)
+Prediction Tpred 0 or 30 or 150 or 600 (min)
+Demand
+Prediction Tpred 0 or 30 or 150 or 600 (min)
+Table 1: Environment configuration parameters
+A.4 Environment Configuration Parameters
+We have described the environment dynamics in section A.2. They are based on environment
+configuration parameters, which are included in the different elements’ time-independent states.
+In Table 1, we provide the values we used to model each of these variables.
+11SAC agent
+Observation encoder MLP 2 layers (128, 32)
+Hidden dimension size H 3×32
+Optimization
+Learning Rate lr 0.001 or 0.0003
+Batch size B 32
+Table 2: Learning Hyper-parameters
+B Agent architecture and learning hyper-parameters
+All RL agents use SAC for decision making. Both the actor and the critic use the same architecture
+(See Figure 5). The state is formatted as a vector and fed into a multi-layer perceptron (MLP). To
+take into account the predicted future demand and wind power, we added two LSTM modules which
+takes the demand and wind power predictions and concatenate their hidden representations with
+the encoded representation of the state. The final representation is passed through another MLP to
+compute the action probabilities and state values.
+In Table 2, we provide the values for the learning agent and the optimization hyper-parameters.
+C Additional results
+In these section, we report ablation studies and analysis to study the role of prediction time step
+on the learned policy by the RL agent (Section C.1), the effect of load/wind-power profile on the
+agent’s behavior (Section ??), and the impact of adding a shield penalty to the objective function
+(Section C.2).
+C.1 The effect of prediction period
+The agent receives 30 exact predictions of available wind power and load for 30 points distributed
+over a future period Tpred, as part of its observation. We vary the timestep between these points (1, 5,
+and 20 minutes), to adjust the future interval the agent can access during training from 30 minutes to
+10 hours. We also evaluated the agent without access to future demand and wind power predictions
+(Tpred = 0). As shown in Figure 6, particularly in Subfigure (a) without the shield penalty, increasing
+the agent’s horizon leads to better performance. This is to be expected as optimizing the decisions
+requires planning in the future. As such, conditioning the policy over the predictions allows the agent
+to achieve higher rewards.
+Figure 5: The agent architecture
+12700 750 800 850 900 950 1000
+Fuel Consumption (liter)0.25
+0.50
+0.75
+1.00
+1.25
+1.50
+1.75
+2.00Battery Degradation Cost (half cycle eq.)Tpred=0 min
+Tpred=30 min
+Tpred=150 min
+Tpred=600 min
+Balanced HeuristicsFigure 6: The effect of prediction period ( Tpred)
+800 1000 1200 1400 1600 1800 2000
+Fuel Consumption (liter)0
+1
+2
+3
+4
+5Battery Degradation Cost (half cycle eq.):0
+:20
+:60
+:200
+Random
+Battery-greedy
+Fuel-greedy
+Balanced Heuristics
+(a) Including the baselines
+850 900 950 1000 1050 1100
+Fuel Consumption (liter)0.0
+0.5
+1.0
+1.5
+2.0
+2.5
+3.0
+3.5Battery Degradation Cost (half cycle eq.):0
+:20
+:60
+:200
+Balanced Heuristics (b) Zoomed in
+Figure 7: With shield penalty
+C.2 Adding a shield penalty
+We tested adding a penalty for the agent when the battery power and status change in shield command
+CM,tare different from the agent action at- meaning that the shield has modified the agent’s
+action. Comparing Figure 2 and Figure 7, we can observe that adding this penalty does not help
+the agent to converge to a better policy. This was surprising a priori, because the optimal behavior
+for both penalties should be the same. Our hypothesis is that, since our agent is based on function
+approximation, penalizing shield usage could cause interference and affect the critic/actor function
+even in safe regions. Optimal policies may require actions close to the shield’s threshold, which
+could be considered as risky by an penalized agent especially under stochastic policies such as with
+SAC. Developing a deeper understanding the reason behind this phenomenon and addressing it lead
+to interesting research questions, which we leave for future work.
+13

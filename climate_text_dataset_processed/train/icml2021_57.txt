@@ -1,0 +1,617 @@
+A Set-Theoretic Approach to Safe Reinforcement Learning in Power Systems
+Daniel Tabas1Baosen Zhang1
+Abstract
+Reducing the carbon footprint of the energy sec-
+tor will be a vital part of the ﬁght against climate
+change, and doing so will require the widespread
+adoption of renewable energy resources. Op-
+timally integrating a large number of these re-
+sources requires new control techniques that can
+both compensate for the variability of renewables
+and satisfy hard engineering constraints. Rein-
+forcement learning (RL) is a promising approach
+to data-driven control, but it is difﬁcult to verify
+that the policies derived from data will be safe.
+In this paper, we combine RL with set-theoretic
+control to propose a computationally efﬁcient ap-
+proach to safe RL. We demonstrate the method
+on a simpliﬁed power system model and compare
+it with other RL techniques.
+1. Introduction
+Distributed energy resources (DERs) such as wind, solar,
+and energy storage systems are emerging as a crucial means
+to achieve greenhouse gas emissions reductions (Steinberg
+et al., 2017). However, integrating DERs into existing power
+infrastructure while maintaining reliability proves to be chal-
+lenging (Kroposki et al., 2017). For example, as DERs come
+to dominate the energy supply, the uncertainty in wind and
+solar generation will narrow the transient stability margins
+of electric generators (Kundur et al., 1994). As a result,
+the electric grid will be more prone to failures under large
+disturbances such as line outages.
+The ﬂexibility and speed of electronically-controlled DERs
+can be leveraged for control algorithms that achieve higher
+efﬁciency in maintaining system stability. However, when
+DERs are integrated at large scale, it is challenging to ﬁnd
+or implement the optimal strategy. Further, power systems
+are a quintessential example of safety-critical infrastructure,
+1Department of Electrical and Computer Engineering, Univer-
+sity of Washington, Seattle, WA, United States. Correspondence
+to: Daniel Tabas <dtabas@uw.edu >, Baosen Zhang <zhang-
+bao@uw.edu >.
+Tackling Climate Change with Machine Learning workshop at
+ICML 2021.in which the violation of operational constraints can lead to
+large blackouts with high economic and human cost. Safe
+reinforcement learning (safe RL) offers the possibility to
+design efﬁcient controllers for safety-critical applications
+without the need for detailed power system models (Chen
+et al., 2021; Glavic, 2019; Cao et al., 2020; Cui & Zhang,
+2021). Safe RL can take several perspectives (Garc ´ıa &
+Fern ´andez, 2015), but in this paper, we are concerned with
+the ability to guarantee satisfaction of hard state and action
+constraints during both exploration and execution of a pol-
+icy. Since guaranteeing constraint satisfaction is impossible
+without some degree of knowledge about the system (Wachi
+& Sui, 2020), we assume that the system model is at least ap-
+proximately known. Even with this model, the task at hand
+may be too complex for traditional model-based control.
+Contributions. We propose a safe and computationally ef-
+ﬁcient reinforcement learning paradigm using results from
+set-theoretic control. Our method exploits the geometry of
+polytopic robust controlled-invariant sets (RCIs), obtained
+either from models (Blanchini & Miani, 2015) or directly
+from data (Chen et al., 2019). We design a policy neural
+network with an output layer that uses iterative linear pro-
+jections to guarantee satisfaction of hard state constraints
+during exploration and execution. Our method applies to
+safety-critical control tasks which require computationally
+efﬁcient decision-making on short timescales. We apply the
+technique to a transient stability problem in a small power
+system model.
+Approaches to safe RL that use weaker notions of safety
+include restricting actions to those with Lyapunov stability
+guarantees (Perkins & Barto, 2002; Berkenkamp et al., 2017;
+Cui & Zhang, 2021) or robustness guarantees (Kretchmar
+et al., 2001; Donti et al., 2021). However, stability does not
+always translate to constraint satisfaction. Other approaches
+use optimization-based “safety ﬁlters” to project an action
+recommended by a policy network into a set of safe control
+actions (Cheng et al., 2019; Wabersich & Zeilinger, 2021).
+However, it may not be possible to solve optimization prob-
+lems in real time. The work in (Zheng et al., 2020) takes a
+geometric approach in order to guarantee safe exploration
+without solving an optimization problem, but the resulting
+“one-step” safety guarantee can still lead a system into states
+from which no action is safe. Our work extends this one-
+step safety guarantee to an inﬁnite-horizon guarantee for aA Set-Theoretic Approach to Safe RL in Power Systems
+class of systems with bounded uncertainty.
+2. Problem Model
+Consider the discrete-time, discounted, inﬁnite-horizon,
+constrained robust optimal control problem given by
+min
+x();u()Ed()¥
+å
+t=1gtJ(xt;ut) (1a)
+subject to,8t:xt+1=f(xt;ut;dt) (1b)
+xt+12X8dt2D (1c)
+ut2U (1d)
+where xt2Rn,ut2Rm, and dt2Rdare the system state,
+control input, and exogenous disturbance, respectively, at
+time t;Jis a cost based on xtandut;g2(0;1)is a discount
+factor; and fdescribes the discrete-time evolution of the
+system. The sets XRnandURmrepresent constraints
+on the state and action, respectively. We assume the distri-
+bution of the disturbances is not known, as this is the case
+for most power systems with multiple renewable energy
+resources. Instead, we assume that dtlies in a bounded set
+Dand require that xt+1must land in Xfor any dt2D.
+In general, simple constraint sets Xthat may make engi-
+neering sense could lead to (1c)becoming infeasible. This
+requires the introduction of invariant sets as deﬁned next.
+Deﬁnition 1 (Robust controlled-invariant set (Blanchini &
+Miani, 2015)) .The set Sis arobust controlled-invariant
+set(RCI) for the system with dynamics (1b) and constraint
+(1d) if there exists a feedback controller ut=p(xt)such that
+ifx02S;then for all t0and all disturbance sequences
+dt2D, it holds that xt2S.
+IfSX;it is easy to see that ensuring safe operation
+amounts to ensuring that if xt2S;then xt+12S. By deﬁni-
+tion, each state in the RCI can be associated with a nonempty
+set of control actions that guarantee this property. This set
+is called the regulation map :
+Deﬁnition 2 (Regulation map (Blanchini & Miani, 2015)) .
+The regulation map W:Rn!Rmfor a system with dy-
+namics (1b), constraints (1c) and(1d), and RCI SXis
+a set-valued map from states to control actions deﬁned as
+follows.
+W(xt) =fut2U:f(xt;ut;dt)2S;8dt2Dg (2)
+=fut2U:f(xt;ut;0)2TSg (3)
+where TSis the target set, equal to the RCI “eroded” by
+the set of possible disturbances.
+RCIs are typically described by polytopes, ellipsoids, or
+zonotopes, a special class of polytopes (Maidens et al., 2013;Zhang et al., 2020). Our approach is agnostic to the algo-
+rithm used to devise the RCI, but we do require that it can
+be represented as a polytope.
+LetSXbe an RCI for a system with dynamics f, and let
+pq:Rn!Rmbe a function parameterized by qthat maps
+states to actions. Then a feasible safe control problem is:
+min
+qEd()¥
+å
+t=1gtJ(xt;ut) (4a)
+subject to: xt+1=f(xt;ut;dt);8t;x02S (4b)
+ut=pq(xt)2W(xt);8xt2S;8t: (4c)
+where Xin(1)is replaced by S. Once Sis computed from
+either a conservative model or from data, the goal is to ﬁnd
+the controller pq.
+The key question is how to address (4c)in a way that can
+be seamlessly integrated with standard RL techniques. To
+this end, we pose two questions: First, what is an appropri-
+ate function class for pq? Second, how can we constrain
+pq(x)to the set W(x)for all x2Sin a manner that is com-
+putationally efﬁcient and differentiable? To answer the ﬁrst
+question, we choose neural networks with a custom output
+layer. The design of this custom layer, which is the answer
+to the second question, is the focus of the remainder of this
+paper.
+3. RCI Policy Network
+We propose a policy network architecture that guarantees
+safe operation by selecting actions from the regulation map.
+In (Zheng et al., 2020), the authors propose a policy net-
+work that selects actions by choosing convex combina-
+tions of the vertices of the “one-step admissible” action
+setfu2U:f(x;u)2Xg. When Xis replaced by S, the
+one-step safety guarantee is replaced by an inﬁnite-horizon
+safety guarantee, but the geometry of the regulation map
+(feasible set of control actions) becomes more complex. Our
+contribution is to accommodate sets described by arbitrary
+polytopes into the policy network architecture.
+3.1. RCI Policy Network Architecture
+The design of the policy network relies on several loose
+assumptions about the dynamics and constraints of the sys-
+tem.
+Assumption 1. The dynamics of the system can be de-
+scribed by the inclusion f(xt;ut;dt) =Axt+But+Edt;dt2
+Dwhere dtis a noise term that can include (bounded) lin-
+earization error if the true system is nonlinear (Boyd et al.,
+1994).
+The case of uncertainty in A;B, and Eis readily handled,
+and is not considered here (Blanchini & Miani, 2015).A Set-Theoretic Approach to Safe RL in Power Systems
+Assumption 2. The target set TSand action set Uare
+polytopes given by T=fx2Rn:FxggandU=fu2
+Rm:Hu¯ug.
+Under these assumptions, the regulation map W(x)is a poly-
+tope described as
+W(x) =fu2Rm:F(Ax+Bu)g;u2Ug (5)
+=
+u2Rm:
+FB
+H
+u
+g FAx
+¯u
+: (6)
+As stated earlier, the set W(x)is nonempty for all x2S.
+While it is possible to add a projection layer in a neural
+network (Agrawal et al., 2019), we seek a faster implemen-
+tation. Moreover, methods that project directly onto W(x)
+run the risk of over-exploring the boundary of the set.
+We generate a safe control action by taking a safe combi-
+nation of base control actions, as follows. All x2Scan
+be described as a convex combination of the vertices of S.
+That same convex combination can be used to generate a
+safe control action when the weights are applied to a set
+of carefully chosen base control actions. The base control
+actions must be safe actions associated with each vertex of
+S, as described in Proposition 1.
+Proposition 1. Suppose x2S. Letfsigq
+i=1be the set of ver-
+tices of S, and let Vi2Rmpibe the matrix whose columns
+correspond to the pivertices of W(si). Let Yi2Rnpi
+be the matrix whose picolumns are identically si. Let
+V=
+V1 Vq
+,Y=
+Y1 Yq
+, and p=åq
+i=1pi:
+Deﬁne the afﬁne set a(x) =fa2Rp:Ya=xgand its in-
+tersection with the unit simplex DpasA(x) =fa2a(x):
+a0;åp
+i=1ai=1g. Then the set V(x) =fVa:a2A(x)g
+is contained in the regulation map W(x).
+Although V(x)is not, in general, equal to the entirety of
+W(x), we demonstrate through simulations that the set V(x)
+provides an adequate set of control actions. The proof of
+Proposition 1 is straightforward and is provided in Appendix
+A. Figure 1 displays examples of XandSand illustrates
+the relationship between W(xi)andV(xi)for some sample
+points xi2S.
+3.2. Cyclic projections algorithm
+What should be the outputs of a policy parameterized by a
+neural network? The policy should output a, an element
+ofA(x), which provides a safe combination of base control
+actions. This takes a difﬁcult problem (map the outputs of
+a neural network’s last hidden layer to the set W(x)) and
+reduces it to an easier problem (map the outputs of a neural
+network’s last hidden layer to the set A(x)). The set A(x)
+has a simple geometry: it is the (nonempty) intersection of
+an afﬁne set with the unit simplex. We need a differentiable
+and efﬁcient way to ﬁnd a point in this intersection, since
+Figure 1. Left: Safe set Xand RCI set Sfor an example system
+and the positions of four points inside S.Right: the set of safe
+actions W(xi)atxiand the subset V(xi)W(xi)that is used by our
+algorithm, as well as the full action set U.
+the mapping is attached to the output of a neural network
+and must be implemented in real time. Since A(x)is an
+intersection of convex sets, we can efﬁciently ﬁnd a point
+in the intersection of these sets using cyclic projections
+(Bregman, 1967) as described in Algorithm 1.
+We initialize from b2Rp;which is the output from the last
+hidden layer of pqand which represents a set of weights
+that may be infeasible ( Yb6=xorb62Dp). Projection onto
+each of the convex sets is computationally efﬁcient and
+differentiable. Solving this problem in the output layer of
+the policy network allows the network to choose a safe
+action u=Va;a2A(x), just by specifying b.
+Algorithm 1 Efﬁcient cyclic projections to A(xt)
+Require: State x;initial weights b;tolerance e>0
+Ensure: a2A(x)
+1:a0 softmax (b)fInitialize in Dpg
+2:fork=0 :kmaxdo
+3: Iteratively project: Dp!a(x)!Rp
++!Dpuntil con-
+vergence
+4:end for
+The cyclic projections algorithm will converge since all sets
+are convex (Bregman, 1967). When the initial distance
+kP(Ya0 x)k2is small, Algorithm 1 converges in a few ( <
+10) iterations. In order to incentivize efﬁciency, this distance
+is added as a penalty in the reward function. Simulation
+results show that this penalty is effective in encouraging
+efﬁciency.
+Since each projection step is differentiable and can be per-
+formed quickly, Algorithm 1 can be integrated seamlessly
+into the output layer of the policy network. During training,
+it is possible to back-propagate through Algorithm 1 in order
+to tune not just the choice of initial weights bbut also the
+choice of ﬁnal weights awith respect to the policy parame-
+tersq. Details of this algorithm are provided in Appendix
+B.A Set-Theoretic Approach to Safe RL in Power Systems
+Figure 2. Illustration of the policy network architecture and its
+relationship to the environment.
+4. Simulations
+4.1. Power System Example
+Because of space constraints, we consider a simpliﬁed single
+machine-inﬁnite bus power system (Machowski et al., 2008)
+where the generator bus includes a synchronous electric
+generator, a DER, and a ﬂuctuating net load comprising a
+load and/or variable renewable energy supply (Fig. 3). The
+rotor angle dynamics of the generator are given by the swing
+equations in discrete time, where Dtis the time step:
+dt+1=dt+wt+1Dt (7a)
+Mwt+1=Mwt (Ksindt+Dwt ut+dt)Dt (7b)
+where dis the rotor phase angle measured relative to the
+inﬁnite bus, wis the deviation of the generator frequency
+from 60 Hz, uis the control input (real power injection from
+DER), and dis an exogenous disturbance in the form of
+ﬂuctuating net real power demand. The parameters M,D,
+andKare the inertia, damping, and synchronizing power
+coefﬁcients, respectively. The internal dynamics of the DER
+occur on much faster timescales and are not modeled.
+The objective of the DER is to modulate its real power
+output utto balance transient stability enhancement with
+control effort, subject to the constraints of the system. Tran-
+sient stability is aided by keeping dandwclose to their
+nominal values (taken to be zero without loss of generality).
+The state at time tisxt=
+dtwtT. The constraint xt2X
+is a box constraint which includes an interval constraint
+ondtto enforce transient stability margins and an interval
+constraint on wtto protect generators and other equipment.
+The interval constraints ut2Uanddt2Drepresent the
+power capacity limits of the DER and net load variations,
+Figure 3. Illustration of the single machine-inﬁnite bus power sys-
+tem under consideration.
+Figure 4. Training results per episode over 20 training trials
+(min/avg/max). Left: Episode reward. Middle: Maximum ab-
+solute rotor angle. Right: Average absolute rotor angle.
+respectively. The sets XandSfor the system are shown in
+the left pane of Figure 1.
+4.2. RL Algorithm
+To train the policy network, we use the Deep Deterministic
+Policy Gradient (DDPG) algorithm (Lillicrap et al., 2016).
+Implementation details are provided in Appendix C. For
+comparison, we also train a policy network that does not
+have built-in safety guarantees. Instead, the cost function
+for training this policy network includes a penalty term for
+state constraint violations. The results show that even with
+a soft penalty, constraint violations persist throughout both
+training and testing. Figure 4 compares the training perfor-
+mance of the two networks in terms of rewards, maximum
+rotor angle per episode, and average rotor angle per episode.
+Figure 5 compares some time-domain test trajectories re-
+sulting from the control policies of the RCI and generic
+policy networks. We found that the average number of Al-
+gorithm 1 iterations decreased from 10 to 7 over the course
+of training, demonstrating (increasing) efﬁciency through-
+out. All code used to generate these results is available at
+github.com/dtabas/safe-rl .
+5. Conclusions and future work
+Safe RL applied to power system operations has the poten-
+tial to contribute to the widespread adoption of low-carbon
+energy sources. In this paper, we propose a novel policy
+network architecture for computationally efﬁcient safe RL
+in power systems. Our approach leverages set-theoretic
+techniques to provide an efﬁcient and differentiable meansA Set-Theoretic Approach to Safe RL in Power Systems
+Figure 5. Test results. Left: rotor angle trajectories, min/avg/max
+over 20 trained networks. Right: Control actions for a single
+trained RCI policy network, along with the safe control set W(xt)
+and subset V(xt)for each state visited along the trajectory.
+of guaranteeing that state trajectories will satisfy hard con-
+straints. We demonstrate the proposed method on a simple
+power system model, and show that safe operation is main-
+tained throughout training. The proposed policy network
+architecture outperforms conventional RL methods in terms
+of safety. In future work, we will investigate the robustness
+of the policies to topology changes. We will also propose
+an alternative closed-form safe output layer.
+Acknowledgements
+The authors would like to thank Liyuan Zheng for guidance,
+Sarah H.Q. Li for helpful discussions, and the reviewers for
+their useful comments. This work is partially supported by
+the National Science Foundation Graduate Research Fel-
+lowship Program under Grant No. DGE-1762114 and NSF
+grant ECCS-1930605. Any opinions, ﬁndings, conclusions,
+or recommendations expressed in this material are those of
+the authors and do not necessarily reﬂect the views of the
+National Science Foundation.
+References
+Agrawal, A., Amos, B., Barratt, S., Boyd, S., Diamond,
+S., and Zico Kolter, J. Differentiable convex optimiza-
+tion layers. Advances in Neural Information Processing
+Systems , 32(NeurIPS), 2019.
+Berkenkamp, F., Turchetta, M., Schoellig, A. P., and Krause,
+A. Safe model-based reinforcement learning with sta-
+bility guarantees. In Advances in Neural Information
+Processing Systems , volume 2017-Decem, pp. 909–919,
+2017.
+Blanchini, F. and Miani, S. Set-theoretic methods in control .
+Birkhauser, 2015.
+Boyd, S., El Ghaoui, L., Feron, E., and Balakrishnan, V .
+Linear Matrix Inequalities in System and Control Theory ,volume 15. Society for Industrial and Applied Mathemat-
+ics, Philadelphia, 1994.
+Bregman, L. M. The relaxation method of ﬁnding the com-
+mon point of convex sets and its application to the solu-
+tion of problems in convex programming. USSR Com-
+putational Mathematics and Mathematical Physics , 7(3):
+200–217, 1967.
+Cao, D., Hu, W., Zhao, J., Zhang, G., Zhang, B., Liu, Z.,
+Chen, Z., and Blaabjerg, F. Reinforcement Learning and
+Its Applications in Modern Power and Energy Systems:
+A Review. Journal of Modern Power Systems and Clean
+Energy , 8(6):1029–1042, 2020.
+Chen, X., Qu, G., Tang, Y ., Low, S., and Li, N. Rein-
+forcement Learning for Decision-Making and Control
+in Power Systems: Tutorial, Review, and Vision. arXiv
+preprint: arXiv 2102.01168 , 2021.
+Chen, Y ., Peng, H., Grizzle, J., and Ozay, N. Data-Driven
+Computation of Minimal Robust Control Invariant Set. In
+2018 IEEE Conference on Decision and Control , volume
+2018-Decem, pp. 4052–4058. IEEE, 2019.
+Cheng, R., Orosz, G., Murray, R. M., and Burdick, J. W.
+End-to-end safe reinforcement learning through barrier
+functions for safety-critical continuous control tasks. In
+33rd AAAI Conference on Artiﬁcial Intelligence , pp. 3387–
+3395, 2019.
+Cui, W. and Zhang, B. Reinforcement Learning for Opti-
+mal Frequency Control: A Lyapunov Approach. arXiv
+preprint: 2009.05654v3 , 2021.
+Donti, P. L., Roderick, M., Fazlyab, M., and Kolter, J. Z.
+Enforcing robust control guarantees within neural net-
+work policies. In International Conference on Learning
+Representations , pp. 1–26, 2021.
+Garc ´ıa, J. and Fern ´andez, F. A Comprehensive Survey
+on Safe Reinforcement Learning. Journal of Machine
+Learning Research , 16:1437–1480, 2015.
+Glavic, M. (Deep) Reinforcement learning for electric
+power system control and related problems: A short re-
+view and perspectives. Annual Reviews in Control , 48:
+22–35, 2019.
+Kretchmar, R. M., Young, P. M., Anderson, C. W., Hittle,
+D. C., Anderson, M. L., and Delnero, C. C. Robust
+reinforcement learning control with static and dynamic
+stability. International Journal of Robust and Nonlinear
+Control , 11(15):1469–1500, 2001.
+Kroposki, B., Johnson, B., Zhang, Y ., Gevorgian, V ., Den-
+holm, P., Hodge, B. M., and Hannegan, B. AchievingA Set-Theoretic Approach to Safe RL in Power Systems
+a 100% Renewable Grid: Operating Electric Power Sys-
+tems with Extremely High Levels of Variable Renewable
+Energy. IEEE Power and Energy Magazine , 15(2):61–73,
+2017.
+Kundur, P., Balu, N., and Lauby, M. Power system stability
+and control . McGraw-Hill, New York, 7 edition, 1994.
+Lillicrap, T. P., Hunt, J. J., Pritzel, A., Heess, N., Erez, T.,
+Tassa, Y ., Silver, D., and Wierstra, D. Continuous con-
+trol with deep reinforcement learning. 4th International
+Conference on Learning Representations, ICLR 2016 -
+Conference Track Proceedings , 2016.
+Machowski, J., Bialek, J. W., and Bumby, J. R. Power
+System Dynamics: Stability and Control . Wiley, 2 edition,
+2008.
+Maidens, J. N., Kaynama, S., Mitchell, I. M., Oishi, M. M.,
+and Dumont, G. A. Lagrangian methods for approxi-
+mating the viability kernel in high-dimensional systems.
+Automatica , 49(7):2017–2029, 2013.
+Perkins, T. J. and Barto, A. G. Lyapunov design for safe rein-
+forcement learning control. Journal of Machine Learning
+Research , 3(4-5):803–832, 2002.
+Steinberg, D., Bielen, D., Eichman, J., Eurek, K., Logan,
+J., Mai, T., McMillan, C., Parker, A., Vimmerstedt, L.,
+and Wilson, E. Electriﬁcation and Decarbonization: Ex-
+ploring U.S. Energy Use and Greenhouse Gas Emissions
+in Scenarios with Widespread Electriﬁcation and Power
+Sector Decarbonization. Technical Report July, National
+Renewable Energy Laboratory, 2017.
+Wabersich, K. P. and Zeilinger, M. N. A predictive safety
+ﬁlter for learning-based control of constrained nonlinear
+dynamical systems. Automatica , 129:109597, 2021.
+Wachi, A. and Sui, Y . Safe reinforcement learning in con-
+strained markov decision processes. 37th International
+Conference on Machine Learning, ICML 2020 , 2020.
+Zhang, Y ., Li, Y ., Tomsovic, K., Djouadi, S., and Yue, M.
+Review on Set-Theoretic Methods for Safety Veriﬁca-
+tion and Control of Power System. IET Energy Systems
+Integration , pp. 2–12, 2020.
+Zheng, L., Shi, Y ., Ratliff, L. J., and Zhang, B. Safe rein-
+forcement learning of control-afﬁne systems with vertex
+networks. arXiv preprint: arXiv 2003.09488v1 , 2020.
+Appendix
+A. Proof of Proposition 1
+First, we restate the deﬁnition of regulation map. The regu-
+lation map at a state x2Sis given byW(x) =
+u2Rm:
+FB
+H
+u
+g FAx
+¯u
+(8)
+where Ais the state transition matrix, Bis the input-to-
+state matrix, Fandgdeﬁne the target set TS:T=fx2
+Rn:Fxgg, and Hand ¯udeﬁne the control set U:=
+fu2Rm:Hu¯ug. As stated earlier, the case of bounded
+uncertainty in AandBarising from noise or nonlinearities
+in the dynamics is readily handled as an extension and not
+considered here (Blanchini & Miani, 2015). The proof of
+Proposition 1 is stated next.
+Proof. Fixx2Sandu2V(x):=fVa:a2A(x)g;so that
+u=åp
+i=1aivi, where viis the ithcolumn of V, for some
+a2A(x). We will show that u2W(x):Evaluating the left-
+hand side of (8) yields
+
+FB
+H
+u=
+FB
+Hp
+å
+i=1aivi (9)
+=p
+å
+i=1ai
+FB
+H
+vi (10)
+p
+å
+i=1ai
+g FAs i
+¯u
+(11)
+where (11) follows from the fact that for each i=1;:::; p,
+(8)holds with u=viandx=si, since viis a vertex of (and
+therefore an element of) W(si);the set of safe actions at si,
+a vertex of S. Continuing from (11), we have
+p
+å
+i=1ai
+g FAs i
+¯u
+=
+åp
+i=1ai(g FAs i)
+åp
+i=1ai¯u
+(12)
+=
+g FAåp
+i=1aisi
+¯u
+(13)
+=
+g FAx
+¯u
+(14)
+where (13) follows from the fact that åp
+i=1ai=1, and (14)
+follows from the fact that for a2A(x),åp
+i=1aisi=x. By
+the deﬁnition (8), we conclude u2W(x):Since uwas arbi-
+trary, we conclude that V(x)W(x)for any x2S.
+B. Cyclic projections algorithm
+Algorithm 2 describes in more detail the cyclic projections
+algorithm that is employed at the output layer of the policy
+network. Step 4 is the Euclidean projection onto the afﬁne
+seta(xt):For efﬁciency, we divide the projection onto the
+simplex into two steps. Step 5 is the Euclidean projection
+onto the nonnegative orthant Rp
++;while step 6 is the pro-
+jection from Rp
++to the unit simplex Dpwith respect to the
+relative entropy function D(x;y) =åp
+i=1(yi xi+xilnxi
+yi)A Set-Theoretic Approach to Safe RL in Power Systems
+Algorithm 2 Efﬁcient cyclic projections to A(xt)
+Require: State xt, initial infeasible weights bt;tolerance
+e>0
+Ensure: at2A(xt)
+1:P:=YT(YYT) 1fProjection matrixg
+2:a0 softmax (bt)fInitialize in Dpg
+3:fork=0 :kmaxdo
+4: xk (I PY)ak
+t+PxtfProject onto a(xt)g
+5: hk max (xk;0)fProject onto Rp
++g
+6: ak+1
+t hk
+khkk1fProject from Rp
++toDp(Bregman,
+1967)g
+7: ifkak+1
+t xkk<ethen
+8: Return ak+1
+t
+9: end if
+10:end for
+(Bregman, 1967). The reason for this approach is that steps
+5 and 6 are each computationally efﬁcient, whereas projec-
+tion from all of Rpto the unit simplex is a more difﬁcult
+problem. Using the softmax operation in place of steps 5
+and 6 displayed worse convergence in simulations, but the
+softmax is still used to generate an initial point inside one
+of the target sets (the unit simplex).
+C. RL algorithm implementation details
+The policy network architecture consists of 2 hidden layers
+each with 256 nodes, and an output layer generating safe
+actions as described in Section 3. We train the policy net-
+work for 200 episodes, where each episode consists of 100
+time steps (5 second duration). Each episode is initailized
+to a random starting point in the interior of the invariant
+set, and during each episode, the system is subjected to
+persistent, randomly generated disturbances. To generate
+the range of results displayed, we perform 20 “trials” train-
+ing the network from scratch. Simulations were built upon
+an existing DDPG implementation from the GitHub repo
+github.com/higgsfield/RL-Adventure-2 , and
+the power system model was built upon the OpenAI gym
+environment pendulum-v0 .
+The reward function is given by J(xt;ut) =xT
+tQxt+uT
+tRut+
+ct;where QandRare diagonal matrices representing costs
+on states and actions and ctis a penalty term. For the RCI
+network, ctincentivizes the network to produce intial points
+a0
+tin Algorithm 1 that are close to the target afﬁne set a(xt),
+in order to speed up convergence of the cyclic projection
+algorithm. This penalty is given by the Euclidean distance
+to the afﬁne set, ct=kP(Ya0
+t xt)k2;where Pis deﬁned in
+Algorithm 2.
+We compare the performance of the RCI policy network to
+that of a policy network with a soft penalty on constraintviolations in place of the set-based safety guarantee. For this
+baseline method, the penalty term is given by ct=0ifxt2X
+andct=m(xt)else, where m(xt)is constant or increasing
+with respect to the extent of the constraint violation.

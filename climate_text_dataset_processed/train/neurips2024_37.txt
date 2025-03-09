@@ -1,0 +1,251 @@
+Methane SatMapper: Methane Detection from
+Satellite Imagery Using Hyperspectral Transformer
+Satish Kumar1
+satishkumar@ucsb.eduA S M Iftekhar1
+iftekhar@ucsb.eduBowen Zhang1
+bowen68@ucsb.edu
+Richard Sserunjogi2
+sserurich@gmail.comMehan Jayasuriya3
+mehan@mozillafoundation.org
+1University of California Santa Barbara,2Makerere University,3Mozilla Foundation
+Abstract
+Methane (CH 4) plays a critical role in accelerating global climate change, and
+recent advancements using Sentinel-2 satellite imagery have demonstrated potential
+in detecting and quantifying significant methane emissions. However, existing
+approaches often rely on temporal analysis of shortwave-infrared spectra, assuming
+consistent ground conditions and prior knowledge of methane-free periods, which
+can lead to errors and limit scalability. To overcome these challenges, we present
+Methane SatMapper, an innovative end-to-end spectral transformer model specif-
+ically designed to accurately identify and quantify methane plumes. Our model
+introduces two novel modules: one that identifies potential methane emission sites
+by analyzing solar radiation absorption in the spectral domain and another that
+localizes and quantifies methane plumes without the need for temporal data. By
+utilizing all 12 spectral channels of Sentinel-2 imagery, our architecture effectively
+estimates ground terrain and detects methane emissions, providing enhanced ro-
+bustness to variable ground conditions and increased computational efficiency by
+eliminating the need for historical time-series data. Primary evaluations confirm
+that Methane SatMapper delivers precise and reliable methane detection, addressing
+key limitations in scalability and temporal dependence.
+1 Introduction
+The increases in atmospheric CH 4have prompted governments to enact regulations and action plans
+such as the ‘U.S. Methane Emissions Reduction Action Plan’ in 2021 and the ‘Global Methane Pledge
+Energy Pathway’ in 2022 to curb CH 4emission [ 2,19]. Accurately identifying and tracking the
+contribution of various sources to the methane budget will be paramount to enforce these regulations.
+Given the strong potential of satellite-based instruments for data collection at high-frequency (multiple
+times a month) on global scales and even remote and hard-to-access regions, recent research has
+depicted the potential of deploying methane emissions analysis on public, global-mapping, multi-
+spectral instruments like the ESA Sentinel-2 mission [ 25,3,7,20,3]. With two polar-orbiting, sun-
+synchronous satellites, the Multispectral Instrument (MSI) onboard the Sentinel-2 satellites measures
+the reflected radiance from Earth in multiple bands covering various areas of the electromagnetic
+spectrum [ 21]. Among these bands, band 11 ( ∼1500nm−1660nm) and band 12 ( ∼2090nm−
+2290nm) are able to capture methane’s SWIR (Short Wave InfraRed) absorption features at a spatial
+resolution of 20m2, leading to a large breadth of work and studies on using Sentinel-2 data to
+detect and quantify methane emissions [ 25,29,11,6]. Most previous Sentinel-2-based methane
+Tackling Climate Change with Machine Learning: workshop at NeurIPS 2024.analysis approaches are based on the methane column retrieval method in [ 25]. While this method,
+and variations of it [ 6] have revolutionized capabilities of detecting methane emissions with public
+satellite data, the strong dependency on time-series analysis of spectral reflectance data expose the
+approaches to the risky assumptions of (a) knowing when emissions did not exist and (b) temporal
+albedo stability of the background. Consequently, these assumptions lead to high amounts of false
+positives, especially in areas with heterogeneous, temporally deviating land cover [25, 29].
+To overcome shortcomings of time-series based methane analytics methods, we propose a deeper
+exploitation of signals from other non-methane-sensitive spectral bands of Sentinel-2 multi-spectral
+data. We use Beer-Lambert law to model the drop in intensity of light as it passes through a
+medium [ 5,25]. Building on the recent advancements in signal processing techniques and the
+successful application of Machine Learning models for methane emissions analysis [ 16], we propose
+a two-step methodology: (1) the generation of potential methane candidates using a Spectral Feature
+Generator (SFG), and (2) the integration of SFG into a Transformer-based Convolutional Neural
+Network architecture [ 4,9], as illustrated in Figure 1. Using the full spectral response captured
+by Sentinel-2 instruments, we expect the SFG to support Signal to Noise separation by classifying
+confusing and hard-to-detect land cover types, artifacts and temporal deviations, such as water bodies,
+dark green vegetation, calcite, and white painted roofs which are never considered in methods.
+2 Related Work
+Over the past decade, several satellites such as GOSAT [ 28], OCO-2, and TROPOMI [ 27] have
+been launched to detect and quantify greenhouse gas (GHG) emissions from fossil fuel activities,
+enabling continuous monitoring of carbon dioxide and methane levels. The Sentinel-5P (TROPOMI)
+mission [ 27], for example, provides hyperspectral imagery in the shortwave infrared (SWIR) spectrum,
+where methane ( CH4) strongly absorbs light. This satellite offers daily measurements of CH4column
+mole fractions across the globe, although at a relatively low spatial resolution of 5−7km [20,23,1].
+Standard retrieval algorithms estimate vertical column concentrations of atmospheric methane by
+fitting a radiative transfer model to remotely sensed SWIR spectra. These algorithms typically analyze
+highly resolved spectra with full-width at half-maximum ranging from 0.1 to 10 nm and involving
+tens to thousands of spectral samples [ 11,3]. However, methane column concentrations can, in
+principle, be retrieved with just two spectral measurements [ 25,5]: one with methane absorption
+and one without. This can be achieved within a single spectral band by comparing observations of
+the same scene with and without a methane plume, or by using two adjacent spectral bands that
+differ in their methane absorption properties but are close enough to have similar surface and aerosol
+reflectance properties. Techniques like these have previously been employed to retrieve methane
+column concentrations using ground-based [ 10] and airborne [ 18,22] remote sensing instruments.
+But these methods are highly prone to false positives due to assumptions mentioned earlier.
+The Sentinel-2 mission, although not specifically designed for methane detection, provides persistent
+multi-spectral imagery in the SWIR range with a revisit time of two to ten days. By leveraging
+its bands that are sensitive to methane, it is possible to detect and quantify large CH4emissions.
+In this context, our proposed SatelliteMapper advances methane plume detection by integrating
+both spectral and spatial correlations, providing a more robust and accurate delineation of CH4
+plumes. SatelliteMapper’s approach effectively mitigates the issues of false positives and enhances
+the reliability of methane detection in complex environments, addressing the limitations of previous
+methods while utilizing the strengths of advanced spectral analysis techniques.
+3 Methane SatMapper Architecture
+The proposed approach is a transformer [ 26,12,15] based neural network architecture with a SFG
+guidance. The input to the network is B1-B12 bands from Sentinel-2 Level 1C data [ 21]. The output
+is a segmentation mask that is used with a radiative transfer model for methane emissions analysis.
+The overall architecture (Figure 1) presents 2 feature extraction blocks (ResNet [ 8,14,13]) as shown
+in Figure 1, that will extract useful features from the input, the RGB channels of the image and a
+stack of B1-B12 bands from Sentinel-2 Level 1C data [ 21]. While the singled-out RGB image will
+provide information about land cover (e.g. Urban areas), the full B1-B12 stack provides additional
+land cover feature extraction (e.g. water bodies) while also capturing information about methane
+2Figure 1: Overview of Methane SatelliteMapper (MSM) architecture. Given a multispectral image,
+our RGB (B1, B2, B3) is passed to Feature Extractor. Parallely, all channels (B1-B12) of the
+multispectral input as passed to Spectral Feature Generator (SFG). The SFG module generates
+methane candidates features. Next these candidates are sent to Query Refiner (QR) to refine queries.
+Then these queries are decoded using encoded feature from Transformer Encoder. Finally, each
+decoded query is used to predict a plume mask via Mask Prediction and, bounding box and class via
+FFNs (Feed Forward Network)
+presence. Extracted features will be projected in a common subspace via a MLP [ 24] and passed
+on to the transformer encoder network along with positional information of each pixel in the image
+as shown in Figure 1. The output attention map [ 26,17] from the transformer encoder along with
+project features are passed onto the transformer decoder. The decoder network uses SFG to generate
+a query of the potential methane emission sites.
+3.1 Spectral Feature Generator (SFG)
+The SFG is designed to generator potential methane candidates. These candidates are generated using
+the Beer-Lambert model.
+Beer-Lambert (Channel Ratio) : We use a simple absorption model to characterize the attenuation
+due to the presence of methane. The Beer-Lambert law states that for a light source with intensity I0
+and a wavelength λ.
+I=I0e−ΣN
+i=0Ai(λ)li(1)
+where the light goes through Ngases defined by their absorption Ai(λ)and equivalent optical path
+length lidefined as the product of the actual optical path and the concentration of the ithgas. In our
+case, the Ngases correspond to the atmosphere and I0is the sunlight in the SWIR spectrum. We can
+also reasonably assume I0to be constant for all wavelengths λin each band respectively. Taking into
+account that the sensor of a satellite integrates over a band of wavelengths described by a sensitivity
+function s, the intensity of the light seen by a space-borne sensor becomes
+I=I0Z
+s(λ)α(λ)e−γΣN
+i=0Ai(λ)lidλ (2)
+where the two passes through the atmosphere are taken into account in γ(which is a function of
+both the sun azimuth angle and the satellite view angle). The reflection coefficient of the ground is
+represented in the formula by the surface albedo α(λ).
+In the presence of a methane emission, characterized by lleak, the intensity of the light seen by the
+sensors becomes
+Ileak =I0Z
+s(λ)α(λ)e−γΣN
+i=0Ai(λ)lie−ACH4(λ)lleakdλ (3)
+To estimate the methane column enhancement, we exploit the correlation between SWIR bands,
+similar to multiple-band-multiple-pass (MBMP) [ 25]. We take ratio of Ileak(represents the target
+date of leakage) and I(reference day when there was no leak). This enhancement map is fed to
+feature extractor as input.
+We utilize knowledge distillation to train the proposed network using 1200 data samples. Due to
+space constraint, we have put the training and inference details in the supplementary section.
+3Figure 2: Methane emissions were detected at the Oil and Gas operator sites where the pilot was
+conducted. The images display a concentration mask overlaid on RGB imagery from Sentinel-2
+satellite, covering an area of 10 km ×10 km. The red pin marks the location of interest, with
+increasing red intensity indicating higher methane concentrations. Out of 11 total detection, we
+present two from site 1 and one from site 2. Notably, site 2 reveals an unexpected detection in a
+neighboring area with a concentration of approximately 1200 kg/hr, highlighted by the red arrow.
+4 Results
+In this section, we present the qualitative results from a pilot test conducted in collaboration with an
+Oil and Gas operator based in Los Angeles. For the test, we focused on two sites of interest, using
+Sentinel-2 satellite data collected between 2016 and 2022. Our analysis on these sites revealed 11
+instances of methane emissions at Site 1, while no emissions were detected at Site 2. Few sample
+visualizations are shown in Fig. 2. The relatively low number of detection instances can be attributed
+to the stringent regulations in Los Angeles, which likely result in fewer large emissions exceeding the
+1000 kg/hr detection threshold of the Sentinel-2 satellite. It’s important to note that there may have
+been additional emission events that were not detected by our model. These undetected instances
+likely involved smaller concentrations of methane that were below the sensitivity threshold of the
+satellite sensor. Despite this, the preliminary results are encouraging and highlight the potential for
+further refinement and validation of our model in future studies.
+5 Conclusion
+This paper presents Methane SatelliteMapper – a hyperspectral Transformer specifically designed for
+methane plume detection. Methane SatelliteMapper effectively leverages both spectral and spatial
+correlations through an advanced spectral feature generator and a query refiner to accurately delineate
+CH4plumes. We demonstrate promising results from an ongoing pilot test conducted over six years
+of data from an oil and gas site in Los Angeles. Future work will focus on enhancing this model by
+collecting additional ground truth data samples and adapting the MethaneHotSpot dataset for use
+with Sentinel-2 satellite imagery.
+References
+[1]Jérôme Barré, Ilse Aben, Anna Agustí-Panareda, Gianpaolo Balsamo, Nicolas Bousserez, Peter Dueben,
+Richard Engelen, Antje Inness, Alba Lorente, Joe McNorton, et al. Systematic detection of local ch 4
+anomalies by combining satellite measurements with high-resolution forecasts. Atmospheric Chemistry
+and Physics , 21(6):5117–5136, 2021.
+[2] Mary Crowell. President biden announces new methane emissions reduction strategy, 2022.
+4[3]Daniel H Cusworth, Daniel J Jacob, Daniel J Varon, Christopher Chan Miller, Xiong Liu, Kelly Chance,
+Andrew K Thorpe, Riley M Duren, Charles E Miller, David R Thompson, et al. Potential of next-generation
+imaging spectrometers to detect and quantify methane point sources from space. Atmospheric Measurement
+Techniques , 12(10):5655–5668, 2019.
+[4]Alexey Dosovitskiy, Lucas Beyer, Alexander Kolesnikov, Dirk Weissenborn, Xiaohua Zhai, Thomas
+Unterthiner, Mostafa Dehghani, Matthias Minderer, Georg Heigold, Sylvain Gelly, et al. An image is worth
+16x16 words: Transformers for image recognition at scale. arXiv preprint arXiv:2010.11929 , 2020.
+[5]Thibaud Ehret, Aurélien De Truchis, Matthieu Mazzolini, Jean-Michel Morel, Alexandre d’Aspremont,
+Thomas Lauvaux, Riley Duren, Daniel Cusworth, and Gabriele Facciolo. Global tracking and quantification
+of oil and gas methane emissions from recurrent sentinel-2 imagery. Environmental science & technology ,
+56(14):10517–10529, 2022.
+[6]Thibaud Ehret, Aurélien De Truchis, Matthieu Mazzolini, Jean-Michel Morel, A. d’Aspremont, Thomas
+Lauvaux, Riley M. Duren, Daniel H. Cusworth, and Gabriele Facciolo. Global tracking and quantification
+of oil and gas methane emissions from recurrent sentinel-2 imagery. Environmental science & technology ,
+2022.
+[7]Takashi Hamazaki, Yutaka Kaneko, Akihiko Kuze, and Kayoko Kondo. Fourier transform spectrometer for
+greenhouse gases observing satellite (gosat). In Enabling sensor and platform technologies for spaceborne
+remote sensing , volume 5659, pages 73–80. SPIE, 2005.
+[8]Kaiming He, Xiangyu Zhang, Shaoqing Ren, and Jian Sun. Deep residual learning for image recognition.
+InProceedings of the IEEE conference on computer vision and pattern recognition , pages 770–778, 2016.
+[9]ASM Iftekhar, Satish Kumar, R Austin McEver, Suya You, and BS Manjunath. Gtnet: Guided transformer
+network for detecting human-object interactions. arXiv preprint arXiv:2108.00596 , 2021.
+[10] Fabrizio Innocenti, Rod Robinson, Tom Gardiner, Andrew Finlayson, and Andy Connor. Differential
+absorption lidar (dial) measurements of landfill methane emissions. Remote sensing , 9(9):953, 2017.
+[11] Daniel J Jacob, Alexander J Turner, Joannes D Maasakkers, Jianxiong Sheng, Kang Sun, Xiong Liu,
+Kelly Chance, Ilse Aben, Jason McKeever, and Christian Frankenberg. Satellite observations of atmo-
+spheric methane and their value for quantifying methane emissions. Atmospheric Chemistry and Physics ,
+16(22):14371–14396, 2016.
+[12] Satish Kumar, Ivan Arevalo, ASM Iftekhar, and BS Manjunath. Methanemapper: Spectral absorption
+aware hyperspectral transformer for methane detection. In Proceedings of the IEEE/CVF Conference on
+Computer Vision and Pattern Recognition , pages 17609–17618, 2023.
+[13] Satish Kumar, ASM Iftekhar, Michael Goebel, Tom Bullock, Mary H MacLean, Michael B Miller, Tyler
+Santander, Barry Giesbrecht, Scott T Grafton, and BS Manjunath. Stressnet: detecting stress in thermal
+videos. In Proceedings of the IEEE/CVF Winter Conference on Applications of Computer Vision , pages
+999–1009, 2021.
+[14] Satish Kumar, ASM Iftekhar, Ekta Prashnani, and BS Manjunath. Locl: Learning object-attribute composi-
+tion using localization. arXiv preprint arXiv:2210.03780 , 2022.
+[15] Satish Kumar, William Kingwill, Rozanne Mouton, Wojciech Adamczyk, Robert Huppertz, and Evan D
+Sherwin. Guided transformer network for detecting methane emissions in sentinel-2 satellite imagery. In
+NeurIPS 2022 Workshop on Tackling Climate Change with Machine Learning , 2022.
+[16] Satish Kumar, Carlos Torres, Oytun Ulutan, Alana Ayasse, Dar Roberts, and BS Manjunath. Deep remote
+sensing methods for methane detection in overhead hyperspectral imagery. In Proceedings of the IEEE/CVF
+Winter Conference on Applications of Computer Vision , pages 1776–1785, 2020.
+[17] Satish Kumar, Bowen Zhang, Chandrakanth Gudavalli, Connor Levenson, Lacey Hughey, Jared A Stabach,
+Irene Amoke, Gordon Ojwang, Joseph Mukeka, Stephen Mwiu, et al. Wildlifemapper: Aerial image
+analysis for multi-species detection and identification. In Proceedings of the IEEE/CVF Conference on
+Computer Vision and Pattern Recognition , pages 12594–12604, 2024.
+[18] Ira Leifer, Dar Roberts, Jack Margolis, and Frank Kinnaman. In situ sensing of methane emissions from
+natural marine hydrocarbon seeps: A potential remote sensing technology. Earth and Planetary Science
+Letters , 245(3-4):509–522, 2006.
+[19] US Department of State. U.s.-eu joint press release on the global methane pledge energy pathway, 2022.
+5[20] Sudhanshu Pandey, Ritesh Gautam, Sander Houweling, Hugo Denier Van Der Gon, Pankaj Sadavarte,
+Tobias Borsdorff, Otto Hasekamp, Jochen Landgraf, Paul Tol, Tim Van Kempen, et al. Satellite observations
+reveal extreme methane leakage from a natural gas well blowout. Proceedings of the National Academy of
+Sciences , 116(52):26376–26381, 2019.
+[21] Darius Phiri, Matamyo Simwanda, Serajis Salekin, Vincent R Nyirenda, Yuji Murayama, and Manjula
+Ranagalage. Sentinel-2 data for land cover/use mapping: a review. Remote Sensing , 12(14):2291, 2020.
+[22] Dar A Roberts, Eliza S Bradley, Ross Cheung, Ira Leifer, Philip E Dennison, and Jack S Margolis. Mapping
+methane emissions from a marine geological seep source using imaging spectrometry. Remote Sensing of
+Environment , 114(3):592–606, 2010.
+[23] Oliver Schneising, Michael Buchwitz, Maximilian Reuter, Steffen Vanselow, Heinrich Bovensmann, and
+John P Burrows. Remote sensing of methane leakage from natural gas and petroleum systems revisited.
+Atmospheric Chemistry and Physics , 20(15):9169–9182, 2020.
+[24] Hind Taud and JF Mas. Multilayer perceptron (mlp). In Geomatic approaches for modeling land change
+scenarios , pages 451–455. Springer, 2018.
+[25] Daniel J Varon, Dylan Jervis, Jason McKeever, Ian Spence, David Gains, and Daniel J Jacob. High-
+frequency monitoring of anomalous methane point sources with multispectral sentinel-2 satellite observa-
+tions. Atmospheric Measurement Techniques , 14(4):2771–2785, 2021.
+[26] Ashish Vaswani, Noam Shazeer, Niki Parmar, Jakob Uszkoreit, Llion Jones, Aidan N Gomez, Łukasz
+Kaiser, and Illia Polosukhin. Attention is all you need. Advances in neural information processing systems ,
+30, 2017.
+[27] J Pepijn Veefkind, I Aben, K McMullan, H Förster, J De Vries, G Otter, Jacques Claas, HJ Eskes,
+JF De Haan, Q Kleipool, et al. Tropomi on the esa sentinel-5 precursor: A gmes mission for global
+observations of the atmospheric composition for climate, air quality and ozone layer applications. Remote
+sensing of environment , 120:70–83, 2012.
+[28] T Yokota, Y Yoshida, N Eguchi, Y Ota, T Tanaka, H Watanabe, and S Maksyutov. Global concentrations
+of co2 and ch4 retrieved from gosat: First preliminary results. Sola, 5:160–163, 2009.
+[29] Zhan Zhang, Evan D Sherwin, Daniel J Varon, and Adam R Brandt. Detecting and quantifying methane
+emissions from oil and gas production: algorithm development with ground-truth calibration based on
+sentinel-2 satellite imagery. EGUsphere , pages 1–23, 2022.
+6

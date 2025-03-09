@@ -1,0 +1,285 @@
+Multi-Source Temporal Attention Network for
+Precipitation Nowcasting
+Rafael Pablos Sarabia
+Aarhus University
+Cordulus
+rpablos@cs.au.dkJoachim Nyborg
+Cordulus
+jn@cordulus.comMorten Birk
+Cordulus
+mb@cordulus.com
+Jeppe Liborius Sjørup
+Cordulus
+jls@cordulus.comAnders Lillevang Vesterholt
+Cordulus
+alv@cordulus.comIra Assent
+Aarhus University
+ira@cs.au.dk
+Abstract
+Precipitation nowcasting is crucial across various industries and plays a significant
+role in mitigating and adapting to climate change. We introduce an efficient deep
+learning model for precipitation nowcasting, capable of predicting rainfall up to
+8 hours in advance with greater accuracy than existing operational physics-based
+and extrapolation-based models. Our model leverages multi-source meteorological
+data and physics-based forecasts to deliver high-resolution predictions in both
+time and space. It captures complex spatio-temporal dynamics through temporal
+attention networks and is optimized using data quality maps and dynamic thresholds.
+Experiments demonstrate that our model outperforms state-of-the-art, and highlight
+its potential for fast reliable responses to evolving weather conditions.
+1 Introduction
+Precipitation nowcasting can play a vital role in adapting to the impacts of climate change by
+providing accurate, high-resolution forecasts of rainfall intensity over a short period of up to 24 hours.
+This is a challenging task due to the sparse and non-Gaussian nature of precipitation. Additionally,
+climate change is making heavy precipitation events more frequent and altering their nature [1],
+increasing the uncertainty in predicting such rainfall. Since the 1870s, Denmark has experienced
+a 20% increase in annual precipitation [2]. More intense rainfall increases the risk of flooding,
+which can disrupt energy supplies by damaging infrastructure or prompting power outages for safety.
+Denmark’s Climate Status and Outlook 2022 [3] notes that changes in precipitation, temperature, and
+wind have previously caused significant fluctuations in carbon dioxide equivalent (CO2e) emissions
+from electricity and heating sectors, varying by up to +/- 5 million tonnes of CO2e, mainly due to
+weather conditions like cold winters and fluctuating precipitation. This emphasizes the need for
+effective precipitation nowcasting to improve planning, prevention, and adaptation to the effects of
+climate change.
+In agriculture, the main focus of Cordulus, precipitation nowcasting can contribute to combating
+climate change by reducing fuel consumption for unsuccessful trips to fields during unfavorable
+weather, optimizing timing of grain harvesting and drying to reduce energy use and dry matter loss,
+enhancing spray efficiency by dosage of products for weather conditions, and preventing product
+waste by scheduling plant protection treatments at optimal times.
+Current operational methods for precipitation nowcasting include Numerical Weather Prediction
+(NWP) models and optical flow models like PySteps [4] and RainyMotion [5]. NWP models solve
+Tackling Climate Change with Machine Learning: workshop at NeurIPS 2024.mathematical equations [6] wrt. initial and boundary conditions. To improve forecast accuracy,
+ensemble NWP systems use multiple simulations with varying conditions [7]. Optical flow tracks
+radar echoes and projects their movement, assuming constant intensity. Both approaches have
+limitations. NWP models demand significant compute, especially for ensembles, which restricts their
+spatial and temporal resolution. Their long convergence time makes them ill-suited for short-term
+precipitation nowcasting, where accurate forecasts are needed for the initial hours. On the other hand,
+optical flow methods may overestimate precipitation and may not accurately cover all areas [8].
+Deep learning models demonstrate enhanced forecasting accuracy, particularly in per-grid-cell metrics,
+by optimizing directly with fewer biases. These models leverage advanced GPUs to produce forecasts
+within seconds [9] and excel at capturing complex, non-linear precipitation patterns due to their ability
+to analyze high-dimensional data. However, forecasting rain remains challenging due to the rapidly
+changing nature of atmospheric conditions and the variability in precipitation over short distances and
+times. Research has mainly focused on short-term forecasts (1 to 3 hours) using e.g. convolutional
+LSTMs [9], spatio-temporal memory flows [10], adversarial training [8], latent diffusion models
+[11, 12], physical evolution schemes [13], recurrent residual gates [14], and transformers [15]. In
+operational settings, MetNet-3 [16] and Pangu-Weather [17] are leading deep learning models in
+the US and Europe, respectively. MetNet-3 is a transformer-based model providing high-resolution
+precipitation forecasts for up to 24 hours. Pangu-Weather, also transformer-based with hierarchical
+temporal aggregation, offers forecasts of multiple variables for up to 168 hours but relies on ERA5
+data, which has known biases for precipitation and much lower resolution [18].
+We introduce the first deep learning model for precipitation nowcasting for up to 8 hours that
+outperforms existing operational physics-based and extrapolation-based models in Denmark. Our
+model leverages multiple data sources of atmospheric conditions and physics-based forecasts, captures
+spatio-temporal dynamics, and is optimized via quality maps and dynamic thresholds.
+2 Approach: multi-source temporal attention
+The Danish Meteorological Institute (DMI) provides radar composite data that captures rainfall
+intensities at 10-minute intervals with a resolution of 500 meters per pixel1. Still, its range is
+limited due to its ground-based nature (cf. Fig. A.1). To provide a more comprehensive view of the
+atmospheric state, we propose to complement the radar data with additional data from geostationary
+EUMETSAT satellites2covering broader regions, but with lower resolution. We obtain physical
+properties from GFS satellite imagery3, which provides forecasts with a spatial resolution of 0.25
+degrees and hourly temporal resolution for the first five days of the forecast in addition to the current
+state of the atmosphere with derived physical measurements. We process this data, spanning from
+January 2022 to May 2024, to generate sequences of patches of size, resolution, and context optimized
+for each source to fit GPU memory, and use a sliding window with blackout periods to prevent data
+leakage (details in Appendix B).
+Architecture Recurrent networks suffer from poor computational efficiency, motivating us to leverage
+the Temporal Attention Unit (TAU) [19] which features a spatial encoder and a decoder for intra-
+frame features, with temporal modules stacked in between to extract time-dependent features. A
+residual connection between the encoder and decoder preserves spatial information. The temporal
+module, built for parallel processing, uses depth-wise convolutions, dilated depth-wise convolutions,
+and 1 ×1 convolutions to address long-range dependencies. Pooling across the spatial dimension
+and fully-connected layers across the temporal dimension allow to learn temporal variations. The
+architecture in [19] has fixed number of timesteps and channels. To handle data sources with different
+timesteps, sizes, and resolutions, our encoder standardizes all inputs independently to the same
+resolution and size before feeding them into the temporal module. Additionally, our decoder includes
+a residual connection for each resolution and produces a single timestep for the specified lead time
+with channels to represent various rain intensities (Fig. 1). Instead of a continuous map, we predict
+probabilities in intensity bins to highlight both common light and rare heavy rainfall.
+1https://opendatadocs.dmi.govcloud.dk/Data/Radar_Data
+2European Organisation for the Exploitation of Meteorological Satellites https://user.eumetsat.int/
+data/satellites/meteosat-second-generation
+3Global Forecast System managed by National Oceanic and Atmospheric Administration (NOAA), United
+States https://www.emc.ncep.noaa.gov/emc/pages/numerical_forecast_systems/gfs.php
+2Figure 1: Proposed architecture, capable of simultaneously processing multiple data sources.
+Conditioning lead time To forecast sequences and prevent errors in intermediate forecasts from
+accumulating and affecting future predictions like in autoregressive approaches, we use conditioning
+lead time as in MetNet [20]. With conditioning lead time, the model predicts a single lead time
+(specified as input) during each forward pass (cf. Fig. 1). Our model does not use predictions as
+inputs, allowing it to generate forecasts for the desired lead times independently and simultaneously.
+Loss function We employ cross-entropy loss for probabilistic forecasts to capture comprehensive
+information [20, 9, 16]. We design classes of different rain intensities to have narrower ranges for
+lower precipitation values more frequently observed, while still encompassing rarer instances of
+heavy rain. Cross-entropy loss treats mispredictions equally, regardless of class. We instead propose
+weighing per-pixel loss by the difference between the indices of the target class and of the predicted
+class.
+Quality map Averaging measured precipitation per pixel on radar maps from DMI reveals bias
+wrt. position of radar towers (detailed in Fig. A.1). We give greater weight to areas with reliable
+measurements by transforming these biases into a quality weight map. We still include lower-quality
+regions in the loss computation (with a lower weight) due to limited radar coverage available, unlike
+for MetNet [20] and MetNet-2 [9], where sufficient high-quality data is assumed.
+Dynamic thresholds Probabilistic outputs capture uncertainty, but some metrics and visualizations
+assume forecast intensities. An intensity value can be derived from the probability distribution over
+the rain classes as mean of the highest activated class. However, class activations are noisy, especially
+for highly unbalanced classes. To capture high precipitation events that are less likely and thus have
+lower predicted probability mass, we compute dynamic thresholds for each class and lead time after
+training, and consider a class activated when the predicted probability mass exceeds this threshold.
+Thresholds for rain intensities from probabilities are used in [9] but without specifying details.
+3 Experiments and results
+Our model has 15.2 million parameters, is trained for up to 50 epochs with 2,000 steps per epoch
+with random samples, using static learning rate of 3e-4, Adam optimizer with weight decay of
+1e-3, and a batch size of 28 using PyTorch Lightning. The model with the lowest validation loss
+is selected. Training is conducted on an NVIDIA A10 Tensor Core 24 GB GPU and takes 24
+hours to converge. We compare with state-of-the-art operational NWP models (Harmonie[21] and
+GFS) and an extrapolation-based method (PySTEPS). NWP forecasts are spatially and temporally
+interpolated to match the target resolution of 2km per pixel and 10-minute intervals. Assessment
+uses the Critical Success Index (CSI) metric at different thresholds, which primarily measures the
+accuracy of precipitation detection [22], as commonly used in precipitation nowcasting [9, 16, 11, 8].
+Figure 2 shows results across rainfall intensities and lead times. Our model consistently outperforms
+extrapolation methods, which are constrained by their assumption of constant motion and intensity.
+Compared to NWP, our model exhibits a particularly large skill gap in the initial hours because of
+3long NWP convergence time. Overall, our model achieves superior performance across lead times
+up to eight hours and for all thresholds. Our model uses as input NWP forecasts, specifically GFS
+forecasts, that are up to 3 hours old, but has higher temporal resolution of 10 minutes, compared to
+the hourly forecasts of NWP models, and can generate forecasts in minutes instead of in hours.
+Figure 2: Critical Success Index (CSI) for various models across lead times.
+A sample forecast, ground truth, GFS, Harmonie, and PySTEPS forecasts is shown in Figure 3. As
+lead time increases, uncertainty grows, resulting in more blurry precipitation patterns. Still, our model
+identifies the high precipitation forming in later lead times, unlike GFS. While our forecast appears
+more blurred than Harmonie, it actually improves accuracy by accounting for inherent uncertainty in
+predicting up to 8 hours ahead. Harmonie is noticeably shifted, which results in worse performance.
+PySTEPS accurately predicts the earlier lead times but quickly becomes ineffective due to the constant
+motion and intensity assumption.
+Figure 3: Sample ground truth, model prediction, GFS, Harmonie, and PySTEPS forecasts. Even
+though our model provides predictions at 10-minute intervals, hourly intervals are shown.
+4 Discussion and conclusion
+We present a precipitation nowcasting model for Denmark that surpasses existing operational systems
+for up to 8 hours by leveraging multiple data sources, an advanced spatio-temporal architecture, opti-
+mized training with quality maps, and dynamic thresholds. Future work primarily involves expanding
+coverage to Europe radar from OPERA. Incorporating sparse observations from Cordulus’ >4,000
+European weather stations may correct radar observations with surface rain gauge measurements.
+Acknowledgments and Disclosure of Funding
+This work is partly funded by the Innovation Fund Denmark (IFD) under File No. 2052-00064B.
+4References
+[1] Katrin M. Nissen and Uwe Ulbrich. “Increasing frequencies and changing characteristics of
+heavy precipitation events threatening infrastructure in Europe under climate change”. In:
+Natural Hazards and Earth System Sciences 17.7 (July 2017), pp. 1177–1190. DOI:10.5194/
+nhess-17-1177-2017 .
+[2] International Energy Agency. Denmark: Climate Resilience Policy Indicator . 2022. URL:
+https : / / www . iea . org / reports / denmark - climate - resilience - policy -
+indicator .
+[3] Danish Energy Agency. Denmark’s Climate Status and Outlook 2022 . Copenhagen, 2022.
+URL:https://ens.dk/sites/ens.dk/files/Forskning_og_udvikling/cso22_-
+_english_translation_of_kf22_hovedrapport.pdf .
+[4] Seppo Pulkkinen et al. “Pysteps: an open-source Python library for probabilistic precipitation
+nowcasting (v1.0)”. en. In: Geoscientific Model Development 12.10 (Oct. 2019), pp. 4185–4219.
+ISSN : 1991-9603. DOI:10.5194/gmd-12-4185-2019 .URL:https://gmd.copernicus.
+org/articles/12/4185/2019/ .
+[5] Georgy Ayzel, Maik Heistermann, and Tanja Winterrath. “Optical flow models as an open
+benchmark for radar-based precipitation nowcasting (rainymotion v0.1)”. en. In: Geoscientific
+Model Development 12.4 (Apr. 2019), pp. 1387–1402. ISSN : 1991-9603. DOI:10.5194/gmd-
+12-1387-2019 .URL:https://gmd.copernicus.org/articles/12/1387/2019/ .
+[6] K Mylne et al. Guidelines for Ensemble Prediction System . 2022.
+[7] Zoltan Toth and Eugenia Kalnay. “Ensemble Forecasting at NCEP and the Breeding Method”.
+en. In: Monthly Weather Review 125.12 (Dec. 1997), pp. 3297–3319. ISSN : 0027-0644, 1520-
+0493. DOI:10.1175/1520- 0493(1997)125<3297:EFANAT> 2.0.CO;2 .URL:http:
+//journals.ametsoc.org/doi/10.1175/1520-0493(1997)125%3C3297:EFANAT%
+3E2.0.CO;2 .
+[8] Suman Ravuri et al. “Skilful precipitation nowcasting using deep generative models of radar”.
+en. In: Nature 597.7878 (Sept. 2021), pp. 672–677. ISSN : 0028-0836, 1476-4687. DOI:10.
+1038/s41586-021-03854-z .URL:https://www.nature.com/articles/s41586-
+021-03854-z .
+[9] Lasse Espeholt et al. Skillful Twelve Hour Precipitation Forecasts using Large Context Neural
+Networks . en. arXiv:2111.07470 [physics]. Nov. 2021. URL:http://arxiv.org/abs/2111.
+07470 .
+[10] Yunbo Wang et al. PredRNN: A Recurrent Neural Network for Spatiotemporal Predictive
+Learning . Apr. 9, 2022. arXiv: 2103.09504[cs] .URL:http://arxiv.org/abs/2103.
+09504 .
+[11] Zhihan Gao et al. PreDiff: Precipitation Nowcasting with Latent Diffusion Models . 2023.
+arXiv: 2307.10422 [cs.LG] .
+[12] Jussi Leinonen et al. Latent diffusion models for generative precipitation nowcasting with
+accurate uncertainty quantification . Apr. 25, 2023. arXiv: 2304.12891[physics] .URL:
+http://arxiv.org/abs/2304.12891 .
+[13] Yuchen Zhang et al. “Skilful nowcasting of extreme precipitation with NowcastNet”. en. In:
+Nature 619.7970 (July 2023), pp. 526–532. ISSN : 0028-0836, 1476-4687. DOI:10.1038/
+s41586- 023- 06184- 4 .URL:https://www.nature.com/articles/s41586- 023-
+06184-4 .
+[14] Ça˘glar Küçük et al. Transformer-based nowcasting of radar composites from satellite images
+for severe weather . Oct. 30, 2023. arXiv: 2310.19515[physics] .URL:http://arxiv.
+org/abs/2310.19515 .
+[15] Youwei Tan et al. “Radar-Based Precipitation Nowcasting Based on Improved U-Net Model”.
+In:Remote Sensing 16.10 (2024). ISSN : 2072-4292. DOI:10 . 3390 / rs16101681 .URL:
+https://www.mdpi.com/2072-4292/16/10/1681 .
+[16] Marcin Andrychowicz et al. Deep Learning for Day Forecasts from Sparse Observations . en.
+arXiv:2306.06079 [physics]. July 2023. URL:http://arxiv.org/abs/2306.06079 .
+[17] Kaifeng Bi et al. Pangu-Weather: A 3D High-Resolution Model for Fast and Accurate Global
+Weather Forecast . en. arXiv:2211.02556 [physics]. Nov. 2022. URL:http://arxiv.org/
+abs/2211.02556 .
+5[18] Remi Lam et al. GraphCast: Learning skillful medium-range global weather forecasting .
+Aug. 4, 2023. arXiv: 2212.12794[physics] .URL:http://arxiv.org/abs/2212.
+12794 .
+[19] Cheng Tan et al. Temporal Attention Unit: Towards Efficient Spatiotemporal Predictive Learn-
+ing. Apr. 12, 2023. arXiv: 2206.12126[cs] .URL:http://arxiv.org/abs/2206.12126 .
+[20] Casper Kaae Sønderby et al. MetNet: A Neural Weather Model for Precipitation Forecasting . en.
+arXiv:2003.12140 [physics, stat]. Mar. 2020. URL:http://arxiv.org/abs/2003.12140 .
+[21] Lisa Bengtsson et al. “The HARMONIE–AROME Model Configuration in the AL-
+ADIN–HIRLAM NWP System”. In: Monthly Weather Review 145.5 (2017). Place: Boston MA,
+USA Publisher: American Meteorological Society, pp. 1919–1935. DOI:10.1175/MWR-D-16-
+0417.1 .URL:https://journals.ametsoc.org/view/journals/mwre/145/5/mwr-
+d-16-0417.1.xml .
+[22] Joseph T. Schaefer. “The Critical Success Index as an Indicator of Warning Skill”. In: Weather
+and Forecasting 5.4 (1990). Place: Boston MA, USA Publisher: American Meteorological
+Society, pp. 570–575. DOI:10.1175/1520-0434(1990)005<0570:TCSIAA>2.0.CO;2 .
+URL:https://journals.ametsoc.org/view/journals/wefo/5/4/1520- 0434_
+1990_005_0570_tcsiaa_2_0_co_2.xml .
+6A Quality map
+Figure A.1 shows that regions near the radar towers and those farthest from them tend to under-
+represent rainfall. Additionally, it highlights some bias in the central region of Denmark due to a
+radar station in Virring.
+Figure A.1: Estimated quality map over Denmark, created by averaging measurements per pixel over
+a 3-year period. The locations of the three active radar stations, as indicated by DMI, are also shown.
+B Data preparation
+Inputs and outputs All data sources have been processed to generate sequences of patches to
+train and evaluate the models in the GPU. The labels for the model are future radar maps covering a
+region of 128×128km2and the final forecast for Denmark is constructed by combining individual
+model predictions obtained with each forward pass for a designated region. The input dimensions are
+therefore determined based on the target dimensions and the additional context needed (60-80 km
+per hour of forecast if available [9]). For the Global Forecast System (GFS) data, 122 channels are
+selected, representing various measurements and pressure levels to capture the current atmospheric
+state. Additionally, the GFS hourly precipitation forecast at a much lower spatial resolution is
+also used as input. It is important to note that these forecasts are derived from physical models,
+and in addition to their lower spatial and temporal resolutions, they also carry uncertainties and
+limited accuracy. Overall, these inputs aim to replicate those used in the MetNet models [20, 9, 16],
+utilizing the data available for Denmark. Tables B.1 and B.2 specify the output for the model and the
+corresponding inputs from the different data sources.
+Table B.1: Outputs for the precipitation nowcasting model
+Variable SourceSize
+(px)Res.
+(km/px)Context
+(km)Timesteps
+(min)Channels
+target_2km DMI 64 2 N/A [10,20,...,480] 1
+Table B.2: Inputs for the precipitation nowcasting model
+Variable SourceSize
+(px)Res.
+(km/px)Context
+(km)Timesteps
+(min)Channels
+radar_2km DMI 288 2 112 [-90,-80,...,0] 1
+radar_4km DMI 288 4 512 [0] 1
+satellite_4km EUMETSAT 288 4 512 [-30,-15,0] 11
+gfs_8km GFS 144 8 512 [0] 122
+gfs_forecast_8km GFS 144 8 512 [60,120,...,480] 1
+xyz_2km - 288 2 112 N/A 3
+minute_2km - 288 2 112 N/A 1
+7Splits The data available for training and evaluating the model spans from January 2022 to May
+2024. The training, validation, and testing data are obtained based on cycles of multiple hours, where
+each split is assigned every 200 hours, with a 12-hour blackout period between them to prevent data
+leakage. Since baseline forecasts are only available from May 2023 onward, data collected before
+this period is exclusively used for training.
+Samples are created with a sliding window technique applied over the temporal dimension for
+a smaller patch or region, ensuring that the corresponding spatial dimensions match the model’s
+specifications. The training dataset is limited to 1 million sequences or samples, which are selected
+using importance sampling to prioritize instances with rainfall to improve training efficiency [8]. The
+validation set contains 5,000 randomly selected samples and the test set includes all 13,188 samples.
+8

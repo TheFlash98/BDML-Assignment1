@@ -1,0 +1,491 @@
+FIRO: A Deep-neural Network for Wildfire Forecast
+with Interpretable Hidden States
+Eduardo Rodrigues
+Microsoft Research
+BrazilCampbell D. Watson
+IBM Research
+USAGabrielle Nyirjesy
+Columbia University
+USAJuan Nathaniel
+Columbia University
+USA
+Bianca Zadrozny
+IBM Research
+Brazil
+Abstract
+Several wildfire danger systems have emerged from decades of research. One such
+system is the National Fire-Danger Rating System (NFDRS), which is used widely
+across the United States and is a key predictor in the Global ECMWF Fire Fore-
+casting (GEFF) model. The NFDRS is composed of over 100 equations relating
+wildfire risk to weather conditions, climate and land cover characteristics, and fuel.
+These equations and the corresponding 130+ parameters were developed via field
+and lab experiments. These parameters, which are fixed in the standard NFDRS and
+GEFF implementations, may not be the most appropriate for a climate-changing
+world. In order to adjust the NFDRS parameters to current climate conditions
+and specific geographical locations, we recast NFDRS in PyTorch to create a new
+deep learning-based Fire Index Risk Optimizer (FIRO). FIRO predicts the ignition
+component, or the probability a wildfire would require suppression in the presence
+of a firebrand, and calibrates the uncertain parameters for a specific region and
+climate conditions by training on observed fires. Given the rare occurrence of
+wildfires, we employed the extremal dependency index (EDI) as the loss function.
+Using ERA5 reanalysis and MODIS burned area data, we trained FIRO models
+for California, Texas, Italy, and Madagascar. Across these four geographies, the
+average EDI improvement was 175% above the standard NFDRS implementation.
+1 Introduction
+Wildfires have caused billion-dollar disasters [ 14] and taken the lives of many people [ 5]. The threat
+of wildfires has been exacerbated by climate change through more frequent droughts and longer
+wildfire seasons. An important tool in tackling this problem are wildfire risk index models. Such
+models are typically driven by atmospheric data (e.g., precipitation, wind, humidity) and are used as
+an early warning system for people to be evacuated and preventative action taken.
+Over the years, several fire index systems have been developed. Examples of index systems are the
+Canadian Forest Service Fire Weather Index Rating System (FWI) [ 16], the Australian McArthur
+rating systems (Mark 5) [ 13] and National Fire-Danger Rating System (NFDRS) [ 8]. These index
+systems are based on both physical and empirical conditions and, to this date, are used to generate
+risk maps which inform agencies, individuals and companies the risk in their particular areas (e.g.,
+[1], with source code in [11]).
+Internally, these fire index models compute intermediate variables which are combined to produce
+a set of fire danger indices. These internal variables are meaningful in that they correspond to
+Tackling Climate Change with Machine Learning: workshop at NeurIPS 2022.EDIobserved
+fire
+IC
+P(I)
+P(F/I)
+0.10
+CHI
+PNORM1
+PNORM2PNORM33.6
+100....Temp
+Fuel
+Wind
+speed
+Slope
+All
+other
+inputs***
+*
+-
+/*Figure 1: Head of the model. Yellow boxes are intermediate variables, pink boxes are parameters,
+light blue boxes are inputs, and operations are in grey. The Extremal Dependency Index (EDI) is the
+optimization criterion (loss function).
+(possibly) measurable quantities; e.g., the equilibrium moisture content, which represents the steady
+state moisture content of woody material, and the slope effect coefficient, among many others. The
+relations among the internal variables and the indices are established empirically, with parameters
+that have been estimated throughout the years. These parameters, however, may not be the most
+appropriate for all regions and future climate conditions. Our hypothesis in this short paper is that we
+can adjust the internal parameters to best fit the particular regions and current conditions in which
+one intends to use the wildfire risk indices. This approach has two major advantages: (1) one can
+train the index models using actual observed fire, but starting with an already proven index, and (2) it
+preserves the internal variables which are meaningful for wildfire specialists.
+In order to test our hypothesis, we implemented the ignition component (IC) index of the National
+Fire Danger Rating System (NFDRS) as a smooth function so that we can apply stochastic gradient
+descent (SGD) and optimize the internal parameters. This approach is the same as a regular neural
+network though with the difference that it is not a traditional architecture but a smooth version of a
+fire index model. In this paper, we present results comparing the unmodified model against a trained
+model (trained with observed fire from 2010 to 2015) for the period 2016 to 2020 in four separate
+regions.
+2 Model
+In order to produce the Ignition Component index, a number of input variables is used, such as
+temperature, relative humidity, vegetation stage, vegetation type, etc. From those, intermediate
+variables are computed. Most of these intermediate variables have concrete meaning and could be
+measured. For example, dead-fuels moisture, live-fuel moisture variables, reaction velocity, etc. The
+relations among inputs, intermediate variables, and the final IC index, were estimated in laboratory
+and field experiments and they are embedded through specific parameters in the NFDRS model. The
+head of the model can be seen in Figure 1 (all relations up to inputs can be found in [7]).
+Our hypothesis in this paper is that we can optimize the internal parameters of the IC index so that
+it better predicts fire danger for particular regions and climate conditions, but keeps the internal
+variables. The major benefit of this approach is that one can still interpret the internal variables and
+possibly measure them. In order optimize the internal parameters, we need an optimization criterion
+and procedure to adjust parameters.
+There are many possible optimization criteria (aka loss functions). All of them will compare the
+prediction (in our case the IC index) with a measure of fire danger and assign a score. However, it is
+not easy to obtain an accurate measure of fire danger. Therefore, one needs a proxy that may not be
+2perfect but correlates with wildfire risk. Observed fire is obviously the most appropriate proxy, but
+one needs to keep in mind that a region may experience a high risk of wildfire though no wildfire
+eventuates. Moreover, fire events are extremely rare compared to non-fire events in a large area over
+time. This leads to a very unbalanced scenario in which a trivial solution (that is, no-fire ever) will
+perform statistically very well depending on the optimization criterion. Consequently, a loss function
+needs to be less dependent on the base rate. We therefore use the extremal dependency index (EDI)
+[10].
+(129600)SWhereBackwardRoundBackwardMulBackward0MulBackward0ClampBackwardDivBackward0MulBackward0SubBackward0MulBackward0PowBackward0MaximumBackwardDivBackward0RsubBackward1CopyBackwardsAddBackward0SubBackward0MulBackward0SWhereBackward
+MulBackward0 MulBackward0
+MulBackward0CopyBackwards
+MulBackward0MulBackward0MulBackward0AccumulateGrad(1)
+MulBackward0AccumulateGrad(1)SWhereBackward
+MulBackward0SubBackward0AddBackward0AccumulateGrad
+AddBackward0 AddBackward0(1)MulBackward0AccumulateGrad
+MulBackward0 MulBackward0(1)
+MulBackward0
+MulBackward0MulBackward0 PowBackward0 MulBackward0 MulBackward0MvBackwardAccumulateGrad
+MvBackward MvBackward(4)
+MulBackward0AccumulateGrad
+MulBackward0 MulBackward0(1)
+AddBackward0
+MulBackward0 MulBackward0MvBackwardAccumulateGrad
+MvBackward MvBackward(4)
+SWhereBackwardSubBackward0AddBackward0AccumulateGrad
+AddBackward0 AddBackward0(1)AccumulateGrad
+MulBackward0 MulBackward0(1)
+AccumulateGrad
+MulBackward0 MulBackward0(1)
+SubBackward0SubBackward0AddBackward0AccumulateGrad
+AddBackward0 AddBackward0(1)
+MulBackward0AccumulateGrad
+MulBackward0 MulBackward0(1)AccumulateGrad
+MulBackward0 MulBackward0(1)
+AccumulateGrad
+MulBackward0 MulBackward0(1)
+AddBackward0MulBackward0RsubBackward1ExpBackward
+PowBackward0MulBackward0MinimumBackwardDivBackward0RoundBackwardDivBackward0MulBackward0MulBackward0MulBackward0
+MulBackward0MulBackward0MulBackward0DivBackward0PowBackward0AddBackward0
+PowBackward0 PowBackward0 PowBackward0 PowBackward0 MulBackward0 PowBackward0 MulBackward0
+PowBackward0MulBackward0DivBackward0
+MulBackward0MaximumBackward
+AddBackward0DivBackward0 DivBackward0 DivBackward0
+AddBackward0AddBackward0AddBackward0MulBackward0DivBackward0AddBackward0
+AddBackward0
+MulBackward0MaximumBackwardMvBackwardAccumulateGrad(21)
+MulBackward0SWhereBackward
+RsubBackward1ClampBackwardSubBackward0AccumulateGrad(1)
+MulBackward0AccumulateGrad(1)
+AddBackward0
+SWhereBackwardAccumulateGrad(1)
+MulBackward0SubBackward0ClampBackwardAddBackward0MvBackwardAccumulateGrad
+MvBackward(6)
+MulBackward0MvBackwardAccumulateGrad
+MvBackward(6)
+MaximumBackwardAddBackward0MulBackward0MulBackward0MulBackward0NegBackwardSWhereBackward
+MulBackward0
+MulBackward0MulBackward0
+MulBackward0
+MulBackward0 MulBackward0AddBackward0MulBackward0SubBackward0DivBackward0AddBackward0DivBackward0AddBackward0MulBackward0DivBackward0
+MulBackward0AddBackward0MulBackward0SWhereBackwardSubBackward0SWhereBackward
+MulBackward0PowBackward0MulBackward0
+AddBackward0
+MulBackward0
+SWhereBackwardSubBackward0
+SubBackward0SubBackward0
+MulBackward0SWhereBackwardSubBackward0SWhereBackward
+MulBackward0PowBackward0MulBackward0
+AddBackward0
+MulBackward0
+SWhereBackwardSubBackward0
+SubBackward0SubBackward0
+MulBackward0AddBackward0MulBackward0AccumulateGrad(1)
+AccumulateGrad(1)
+SubBackward0AccumulateGrad(1)
+MulBackward0AccumulateGrad(1)
+ExpBackwardAccumulateGrad(1)
+SubBackward0AccumulateGrad(1)
+MulBackward0AccumulateGrad(1)
+ExpBackwardNegBackwardAccumulateGrad(1)
+SWhereBackwardSWhereBackwardAddBackward0AccumulateGrad(1)
+AccumulateGrad(1)
+MulBackward0AccumulateGrad(1)
+AccumulateGrad(1)
+MaximumBackwardMvBackwardAccumulateGrad
+MvBackward MvBackward MvBackward(21)
+MvBackward
+MulBackward0CopyBackwards ReciprocalBackwardAccumulateGrad(21)
+MulBackward0DivBackward0MvBackward
+MulBackward0AccumulateGrad(21)MvBackward
+MulBackward0CopyBackwards ReciprocalBackwardAccumulateGrad(21)
+MulBackward0DivBackward0MvBackward
+AddBackward0 MulBackward0AccumulateGrad(21)MvBackward
+MulBackward0CopyBackwards ReciprocalBackwardAccumulateGrad(21)
+MaximumBackward
+DivBackward0DivBackward0 DivBackward0AddBackward0MulBackward0DivBackward0
+MvBackward
+MulBackward0ReciprocalBackwardAccumulateGrad(21)
+MulBackward0DivBackward0MvBackward
+AddBackward0 MulBackward0AccumulateGrad(21)
+MvBackward
+MulBackward0ReciprocalBackwardAccumulateGrad(21)
+AddBackward0AddBackward0MulBackward0 MulBackward0 MulBackward0 MulBackward0 MulBackward0 MulBackward0 MulBackward0 MulBackward0
+MulBackward0
+MulBackward0AddBackward0MulBackward0 MulBackward0 MulBackward0 MulBackward0 MulBackward0 MulBackward0
+AddBackward0MulBackward0
+PowBackward1DivBackward0DivBackward0
+DivBackward0 AddBackward0 MaximumBackward DivBackward0DivBackward0
+MulBackward0SubBackward0AddBackward0
+DivBackward0AddBackward0
+MulBackward0MvBackwardAccumulateGrad(21)
+MulBackward0MulBackward0MaximumBackward
+MaximumBackwardMvBackwardAccumulateGrad(21)
+MaximumBackwardAddBackward0
+MulBackward0
+MulBackward0
+MulBackward0
+ExpBackwardRsubBackward1
+AddBackward0MulBackward0MulBackward0MulBackward0AddBackward0AddBackward0MulBackward0CopyBackwards
+CopyBackwards
+MvBackwardAccumulateGrad(21)
+ClampBackwardSubBackward0AddBackward0RsubBackward1MulBackward0DivBackward0
+PowBackward0 PowBackward0AddBackward0AddBackward0SWhereBackward
+MulBackward0 MulBackward0MulBackward0AccumulateGrad(1)
+AccumulateGrad(1)
+AddBackward0
+MulBackward0 MulBackward0MulBackward0SubBackward0DivBackward0AddBackward0MulBackward0AddBackward0MulBackward0AccumulateGrad(1)
+AccumulateGrad(1)
+SubBackward0AccumulateGrad(1)
+MulBackward0AccumulateGrad(1)
+ExpBackwardAccumulateGrad(1)
+CopyBackwardsMvBackward
+DivBackward0AccumulateGrad
+MvBackward(21)
+MulBackward0
+MulBackward0
+MulBackward0MulBackward0MulBackward0AddBackward0AddBackward0MulBackward0
+MvBackwardAccumulateGrad(21)
+ClampBackwardSubBackward0AddBackward0RsubBackward1MulBackward0DivBackward0
+PowBackward0 PowBackward0AddBackward0SWhereBackward
+MulBackward0SWhereBackwardClampBackwardClampBackwardAddBackward0MvBackwardAccumulateGrad
+MvBackward MvBackward(6)
+MvBackwardAccumulateGrad
+MvBackward MvBackward(6)
+SWhereBackwardCopyBackwardsSWhereBackwardSWhereBackwardMinimumBackwardMaximumBackwardAddBackward0MvBackwardAccumulateGrad
+MvBackward(6)
+MulBackward0MvBackwardAccumulateGrad
+MvBackward(6)
+ClampBackwardAddBackward0MulBackward0
+ClampBackwardAddBackward0MulBackward0
+SWhereBackwardSWhereBackwardMinimumBackwardMaximumBackwardAddBackward0
+ClampBackwardAddBackward0
+SWhereBackward
+MulBackward0CopyBackwardsMvBackwardAccumulateGrad
+MvBackwardMvBackward MvBackward MvBackward MvBackward(6)
+SWhereBackwardAddBackward0MulBackward0SubBackward0MinimumBackwardMaximumBackwardAddBackward0MvBackwardAccumulateGrad
+MvBackward(6)
+MvBackwardAccumulateGrad
+MvBackward(6)
+SWhereBackwardMinimumBackwardMaximumBackwardAddBackward0
+SWhereBackwardCopyBackwards
+MaximumBackwardMulBackward0SubBackward0MulBackward0MulBackward0DivBackward0AddBackward0AddBackward0SWhereBackward
+AddBackward0ExpBackwardMulBackward0ReciprocalBackward
+SWhereBackwardMulBackward0ExpBackwardMulBackward0ReciprocalBackward
+SWhereBackward
+AddBackward0MulBackward0ExpBackwardMulBackward0ReciprocalBackward
+MaximumBackward
+RsubBackward1DivBackward0AddBackward0AddBackward0
+MulBackward0 MulBackward0
+DivBackward0ExpBackwardMulBackward0AddBackward0MulBackward0
+AddBackward0
+AddBackward0AddBackward0MulBackward0PowBackward0
+SWhereBackwardMulBackward0MulBackward0
+MulBackward0MulBackward0ExpBackwardMulBackward0
+PowBackward1NegBackwardMulBackward0ExpBackward
+PowBackward1MulBackward0
+PowBackward1MulBackward0MvBackwardAccumulateGrad(21)
+MaximumBackwardAddBackward0AddBackward0AddBackward0MulBackward0SWhereBackwardExpBackwardMulBackward0
+AddBackward0
+MulBackward0SWhereBackwardExpBackwardMulBackward0
+AddBackward0
+MulBackward0SWhereBackwardExpBackwardMulBackward0
+AddBackward0
+AddBackward0MulBackward0SWhereBackwardExpBackwardMulBackward0
+AddBackward0
+MulBackward0SWhereBackwardExpBackwardMulBackward0
+AddBackward0
+MvBackwardAccumulateGrad(21)
+Figure 2: Network architecture illustrating the depth of the model. Green box is the output (IC index),
+grey boxes are operations, and light blue boxes are inputs. Intermediate variables and parameters are
+not shown.
+As for the procedure to adjust parameters, we use gradient descent and use a validation procedure to
+avoid overfitting. In order to use gradient descent, we implemented the IC index as a differentiable
+function with PyTorch [ 15]. In addition to the sheer size of the model (see Figure 2 where blue
+boxes are inputs, gray boxes are operations and the green box is the IC index output), implementing
+the IC computations as a differentiable function poses a few challenges. All of them are related to
+hard-branches in the original code and infinite or undefined gradients. To tackle these, we make
+smoother versions of the branches, clip gradients and make constant the parameters which may cause
+the gradient to be undefined.
+3 Evaluation
+For the purpose of evaluating our model, we compared the original IC index with a trained model.
+The training data is daily and goes from November 2000 to 2015, and the testing data, also daily,
+from 2016 to 2020. We computed EDI for California, Texas, Madagascar and Italy in the testing set
+to make our comparison.
+Weather input data (temperature, RH, wind speed, cloud cover and precipitation) comes from the
+ERA5 reanalysis dataset. We did not use forecasted weather data so as to avoid errors in the forecast
+that would impact the performance of the index (both trained and original). Consequently these
+results represent the potential predictability of wildfire. Climatic zones were obtained from [ 6], the
+3USA fuel map from [ 2] and the Europe fuel map [ 11], slope was obtained from [ 3], vegetation cover
+is built from the GLCC dataset [ 12], and vegetation stage classes are derived from [ 4]. Finally, fire
+observations are obtained from the MODIS/Terra+Aqua Burned Area Monthly L3 product.
+All datasets were placed in the same resolution of 25km over the same grid points. This resolution
+is the same as the results presented in [ 9]. Continuous variables were interpolated linearly, while
+classes were interpolated by nearest neighbors.
+In order to evaluate the skill, the observed fire dataset was pooled into the same resolution as the
+input, i.e. if at least one fire event is observed in the original resolution, the resulting grid point in the
+target resolution will record a fire. In addition, a fire prediction in a neighboring grid point where fire
+did not occur counts as hit (using the "fuzzy" pixel strategy as has been done in [9]).
+A fire is forecast when the IC index value is above the median of the index distribution. The median
+of the index distribution has been previously computed from the training set. This forecast along with
+the observed fire dataset is fed into the EDI function for evaluation.
+Results can be seen in figs. 3 to 6 for California, Texas, Italy, and Madagascar respectively in the
+Appendix A. The first sub-figure in that sequence represents EDI for the untrained model (the original
+NFDRS IC index), the second sub-figure has EDI for the trained model (the optimized NFDRS IC
+index), and the last sub-figure is the difference between trained and untrained. EDI can take values
+from 1 to -1, and one representing perfect forecast and 0 for random forecast.
+Overall one can see improvements of the model skill over most of the areas in the testing set.
+Particularly, for California in Sierra Nevada and Central Valley, the skill improves compared to the
+baseline. At the extreme south, however, the trained model performs worst. This region, nevertheless,
+has few fire events in the testing set (now shown), so we hypothesize this is due to outliers. The Italy
+map shows similar behavior in which most places show improvements. Texas has more mixed results.
+The original (untrained) model is close to random, with just a few good places mainly in the Edwards
+plateau. The trained model improves skill in sparse areas in the north but at the cost of some other
+areas also in the north.
+One possible explanation for the mixed results over Texas is the input data. Fuel maps have a large
+impact on the IC index as well as vegetation stage. Our model can in principle be used to optimize
+input maps by using gradient descent all the way up to the inputs and adjusting them as if they were
+parameters. We are not exploring this idea in this paper however.
+4 Final remarks
+Fire indices have been used worldwide to tackle wildfire. These models have been developed over
+many years as a mixture of physical and empirical models. Internally, they have many meaningful
+variables which can be measured and interpreted by experts.
+In this paper, we presented a new approach for fire indices. Our hypothesis is that the parameters that
+relate internal variables and indices may not be the most appropriate as climate changes. Consequently,
+one can find better parameters in the space of all possible values.
+In order to search the space of parameters for specific regions, we propose to recast an existing model
+as a differentiable function, similar to a neural network. However, instead of a meaningless hidden
+layer, our model has the same internal variables as the original model we implemented. Consequently,
+our index preserves the meaning of the internal variables.
+To evaluate our model, we ran experiments over three separate regions: California, Texas, Italy and
+Madagascar. Skill improved in most places when using the trained model. In addition, the resulting
+parameters differ among the regions indicating they adjusted to the particularities of the specific
+location. We intend to evaluate with experts the meaning of the adjustments found by the optimization
+procedure. We also intend to explore constraints to the parameters, so that the range in which the
+internal parameters vary does not go beyond what is coherent. For this, however, we will also need
+expert knowledge. Altogether, our strategy is intended to be used in close partnership with experts,
+enhancing their ability to explore changes to the model, but relying on them to provide meaning.
+4A Appendix
+Comparison between the Extremal Dependence Indices (EDI) of the original untrained Ignition
+Component (IC) of the National Fire-danger Rating System (NFDRS) and IC trained with Fire Index
+Risk Optimizer (FIRO).
+124.5°W 123°W 121.5°W 120°W 118.5°W 117°W 115.5°W 114°W33°N34.5°N36°N37.5°N39°N40.5°N42°NCalifornia Baseline EDI
+1.00
+0.75
+0.50
+0.25
+0.000.250.500.751.00
+(a) Untrained model
+124.5°W 123°W 121.5°W 120°W 118.5°W 117°W 115.5°W 114°W33°N34.5°N36°N37.5°N39°N40.5°N42°NCalifornia Trained EDI
+1.00
+0.75
+0.50
+0.25
+0.000.250.500.751.00
+(b) Trained model
+124.5°W 123°W 121.5°W 120°W 118.5°W 117°W 115.5°W 114°W33°N34.5°N36°N37.5°N39°N40.5°N42°NCalifornia EDI Improvement
+1.5
+1.0
+0.5
+0.00.51.01.5
+(c) Difference between trained EDI and untrained EDI
+Figure 3: Evaluation of IC for California over the period from 2016 to 2020 (training set from 2000
+to 2015)
+5106°W 104°W 102°W 100°W 98°W 96°W 94°W25.5°N27°N28.5°N30°N31.5°N33°N34.5°N36°NTexas Baseline EDI
+1.00
+0.75
+0.50
+0.25
+0.000.250.500.751.00(a) Untrained model
+106°W 104°W 102°W 100°W 98°W 96°W 94°W25.5°N27°N28.5°N30°N31.5°N33°N34.5°N36°NTexas Trained EDI
+1.00
+0.75
+0.50
+0.25
+0.000.250.500.751.00
+(b) Trained model
+106°W 104°W 102°W 100°W 98°W 96°W 94°W25.5°N27°N28.5°N30°N31.5°N33°N34.5°N36°NTexas EDI Improvement
+1.5
+1.0
+0.5
+0.00.51.01.5
+(c) Difference between trained EDI and untrained EDI
+Figure 4: Evaluation of IC for Texas over the period from 2016 to 2020 (training set from 2000 to
+2015)
+68°E 10°E 12°E 14°E 16°E 18°E36°N37.5°N39°N40.5°N42°N43.5°N45°N46.5°NItaly Baseline EDI
+1.00
+0.75
+0.50
+0.25
+0.000.250.500.751.00(a) Untrained model
+8°E 10°E 12°E 14°E 16°E 18°E36°N37.5°N39°N40.5°N42°N43.5°N45°N46.5°NItaly Trained EDI
+1.00
+0.75
+0.50
+0.25
+0.000.250.500.751.00
+(b) Trained model
+8°E 10°E 12°E 14°E 16°E 18°E36°N37.5°N39°N40.5°N42°N43.5°N45°N46.5°NItaly EDI Improvement
+1.0
+0.5
+0.00.51.0
+(c) Difference between trained EDI and untrained EDI
+Figure 5: Evaluation of IC for Italy over the period from 2016 to 2020 (training set from 2000 to
+2015)
+725°S24°S23°S22°S21°S20°S19°S18°S17°S16°S15°S14°S13°S12°S
+43°E 44°E 45°E 46°E 47°E 48°E 49°E 50°EMadagascar Baseline EDI
+1.00
+0.75
+0.50
+0.25
+0.000.250.500.751.00(a) Untrained model
+25°S24°S23°S22°S21°S20°S19°S18°S17°S16°S15°S14°S13°S12°S
+43°E 44°E 45°E 46°E 47°E 48°E 49°E 50°EMadagascar Trained EDI
+1.00
+0.75
+0.50
+0.25
+0.000.250.500.751.00
+(b) Trained model
+25°S24°S23°S22°S21°S20°S19°S18°S17°S16°S15°S14°S13°S12°S
+43°E 44°E 45°E 46°E 47°E 48°E 49°E 50°EMadagascar EDI Improvement
+1.00
+0.75
+0.50
+0.25
+0.000.250.500.751.00 (c) Difference between trained EDI and untrained EDI
+Figure 6: Evaluation of IC for Madagascar over the period from 2016 to 2020 (training set from 2000
+to 2015)
+8References
+[1]European forest fire information system effis. https://effis.jrc.ec.europa.eu/. Accessed: 2021-09-
+17.
+[2]Nfdrs fuel model map. https://www.wfas.net/index.php/nfdrs-fuel-model-static-maps-44. Ac-
+cessed: 2021-09-17.
+[3]Usgs eros archive - digital elevation - global 30 arc-second elevation.
+https://www.usgs.gov/centers/eros/science/usgs-eros-archive-digital-elevation-global-
+30-arc-second-elevation-gtopo30. Accessed: 2021-09-17.
+[4]Usgs eros archive - digital elevation - global 30 arc-second elevation.
+https://daac.ornl.gov/VEGETATION/guides/Mean_Seasonal_LAI.html. Accessed: 2021-09-17.
+[5]Jessica Bateman and Gareth Davies. Greece wildfires a ’biblical disaster’: At least 74 killed
+near athens as tourists forced to flee into sea. The Telegaph .
+[6]Hans Chen and Deliang Chen. Köppen climate classification. http://hanschen.org/koppen.
+Accessed: 2021-09-17.
+[7]Jack D Cohen. The national fire-danger rating system: basic equations , volume 82. US
+Department of Agriculture, Forest Service, Pacific Southwest Forest and . . . , 1985.
+[8]John E Deeming, Robert E Burgan, and Jack D Cohen. The national fire-danger rating
+system, 1978 , volume 39. Department of Agriculture, Forest Service, Intermountain Forest and
+Range . . . , 1977.
+[9] Francesca Di Giuseppe, Florian Pappenberger, Fredrik Wetterhall, Blazej Krzeminski, Andrea
+Camia, Giorgio Libertá, and Jesus San Miguel. The potential predictability of fire danger
+provided by numerical weather prediction. Journal of Applied Meteorology and Climatology ,
+55(11):2469–2491, 2016.
+[10] Christopher AT Ferro and David B Stephenson. Extremal dependence indices: Improved
+verification measures for deterministic forecasts of rare binary events. Weather and Forecasting ,
+26(5):699–713, 2011.
+[11] Francesca Di Giuseppe and Pedro Maciel. Global ecmwf fire forecasting (geff) model.
+https://git.ecmwf.int/projects/CEMSF/repos/geff/browse. Accessed: 2021-09-17.
+[12] Thomas R Loveland, Bradley C Reed, Jesslyn F Brown, Donald O Ohlen, Zhiliang Zhu, LWMJ
+Yang, and James W Merchant. Development of a global land cover characteristics database and
+igbp discover from 1 km avhrr data. International journal of remote sensing , 21(6-7):1303–1330,
+2000.
+[13] AG McArthur. Weather and grassland fire behaviour. forestry and timber bureau, australia.
+Leaflet No. 100 , 1966.
+[14] NOAA NCEI. Noaa national centers for environmental information (ncei) us billion-dollar
+weather and climate disasters, 2020.
+[15] Adam Paszke, Sam Gross, Francisco Massa, Adam Lerer, James Bradbury, Gregory Chanan,
+Trevor Killeen, Zeming Lin, Natalia Gimelshein, Luca Antiga, et al. Pytorch: An imperative
+style, high-performance deep learning library. Advances in neural information processing
+systems , 32, 2019.
+[16] CE Van Wagner et al. Structure of the Canadian forest fire weather index , volume 1333.
+Environment Canada, Forestry Service Ontario, 1974.
+9

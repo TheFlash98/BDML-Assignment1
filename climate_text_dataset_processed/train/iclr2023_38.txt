@@ -1,0 +1,1015 @@
+Published as a workshop paper at ”Tackling Climate Change with Machine Learning”, ICLR 2023
+MINING EFFECTIVE STRATEGIES FOR CLIMATE
+CHANGE COMMUNICATION
+Aswin Suresh
+EPFLLazar Milikic
+EPFLFrancis Murray
+EPFLYurui Zhu
+EPFLMatthias Grossglauser
+EPFL
+ABSTRACT
+With the goal of understanding effective strategies to communicate about climate
+change, we build interpretable models to rank tweets related to climate change
+with respect to the engagement they generate. Our models are based on the
+Bradley-Terry model of pairwise comparison outcomes and use a combination
+of the tweets’ topic and metadata features to do the ranking. To remove confound-
+ing factors related to author popularity and minimise noise, they are trained on
+pairs of tweets that are from the same author and around the same time period
+and have a sufficiently large difference in engagement. The models achieve good
+accuracy on a held-out set of pairs. We show that we can interpret the parameters
+of the trained model to identify the topic and metadata features that contribute to
+high engagement. Among other observations, we see that topics related to climate
+projections, human cost and deaths tend to have low engagement while those re-
+lated to mitigation and adaptation strategies have high engagement. We hope the
+insights gained from this study will help craft effective climate communication to
+promote engagement, thereby lending strength to efforts to tackle climate change.
+1 I NTRODUCTION
+Climate change is arguably one of the most important challenges facing humanity today with im-
+pacts on a global scale. While surveys indicate that a majority of the population in many countries
+is now knowledgeable about climate change and its impacts, the level of awareness and support
+for climate-friendly policies still vary widely among people from different countries, income and
+education levels and age groups (Leiserowitz et al. (2022), Flynn et al. (2021)). It is important to
+use communication to spread awareness and promote engagement among the groups that are less
+involved in order to further increase the scale of actions towards mitigation and adaptation and pres-
+sure lawmakers and governments to create and enforce climate-friendly laws.
+There are several subtopics within climate change including its causes, impacts and mitigation and
+adaptation strategies. The potential to create engagement is likely to be different for each of these
+subtopics. For instance, complex technical details might be less appealing than vivid descriptions
+of impacts or promising solutions. Our goal in this work is to discover in a data-driven way which
+strategies of communication, as defined by the subtopics being emphasised, are more effective in
+creating engagement among a general audience.
+The data source that we use for this study is Twitter. Twitter is extensively used for climate change
+communication by individuals, activist groups, and government agencies. Each tweet is associated
+with several metrics such as the number of likes,retweets , and replies , that quantify the engagement
+that it generates. All tweets along with their metadata are publicly available and can be easily
+accessed through the Twitter API, enabling us to curate a large and rich dataset on which to train
+interpretable engagement prediction models.
+However, a significant challenge in building such models is the presence of confounding factors
+such as author popularity. A tweet might generate strong engagement because its author is popular
+rather than because of its engaging content. Another potential confounder is the change in public
+interest in climate change over time. For instance, tweets about climate change made around the
+time of extreme weather or a major climate change conference might receive greater attention than
+tweets at other times. We minimise the effect of such confounders by defining the task as comparing
+1Published as a workshop paper at ”Tackling Climate Change with Machine Learning”, ICLR 2023
+the engagement within a pair of tweets rather than predicting the engagement for a given tweet. The
+pair of tweets are chosen to be from the same author and from the same window in time.
+Climate change communication is an active area of research and the question of which strategies are
+best to promote engagement has been well-studied in the area (Agin & Karlsson (2021)). Gustafson
+et al. (2020) find that sharing personal stories on the radio about the harmful impacts of climate
+change can be a persuasive strategy. Xia et al. (2021) analyse the spreading behaviour of climate-
+related tweets and identify the factors responsible for virality from a dataset obtained through manual
+coding of a small number of tweets.
+Tweet engagement prediction in general (not restricted to climate change) is also a well-studied
+problem. Tan et al. (2014) study the effect of wording on engagement by comparing pairs of tweets
+from the same user about the same topic. More recently, Wang et al. (2018) used multimodal in-
+formation (images and text) to predict retweet behaviour. Topic modelling (inferring latent topics
+in text) has been used in Dahal et al. (2019) to understand which topics are prevalent in the global
+climate change discourse. To the best of our knowledge, we are the first to apply topic modelling in
+a pairwise comparison framework to predict engagement in climate change tweets and interpret the
+learned model to understand the engaging subtopics.
+The paper is organised as follows. In section 2 we describe the dataset of tweets that we curated.
+The features we use for prediction and our model architecture are given in Section 3. We describe
+training and evaluation and discuss our results in section 4 and conclude the paper in section 5.
+2 D ATASET
+We use the Twitter API to obtain 8,041,921 tweets related to climate change created between January
+1st 2021 and November 4th 2022. To decide whether a tweet is related to climate change, we check
+if it contains one of the keywords in the ‘General’ topic category of UN Global Pulse (2014), a
+taxonomy for studying climate change tweets. We keep only the tweets in English (94.28% of the
+dataset). For each tweet, we keep its full text, author and information about whether it contains
+URLs, hashtags, animated GIFS, images or videos. We also keep the public engagement metrics
+about the tweet, i.e. the number of likes, retweets and replies that it obtained.
+We then construct the pairs of tweets to compare. For each author, we go through their history
+and obtain pairs of tweets that were created within 7 days of each other and have a difference in
+engagement (sum of likes, retweets and replies) of 100 units or 10%, whichever is higher. This
+method of creating pairs ensures that we avoid confounding factors related to the author and time
+and minimise the noise in the comparison. We finally end up with 774,507 pairs of tweets which we
+use for training our engagement prediction model.
+3 M ODEL
+Our model uses both the topic of the tweets in a pair as well as their metadata features to predict
+which of the two tweets receives greater engagement.
+3.1 F EATURES
+To infer the topics present in a tweet, we use the TopClus method which is described in Meng
+et al. (2022). The method uses a pre-trained language model called BERT (Devlin et al. (2019))
+in combination with an attention model to represent texts (tweets in our case). It then uses a latent
+variable model to cluster these representations into topics in an unsupervised fashion. The learned
+topics can be interpreted by looking at the tweets whose representations are closest to the centre of
+the clusters. Once the model is trained on a set of tweets, it can be used to infer the probability that
+a new tweet belongs to each of the topics (i.e. compute the tweet’s topic probability distribution).
+The number of clusters or topics Kis a parameter that needs to be set prior to training the TopClus
+model.
+In order to have a good representation of the tweets for clustering, we pre-process their texts to be
+similar to the texts used for training the BERT model by dropping URLs, mentions and hashtags.
+Due to computational constraints, we train the TopClus model on a 10% random sample of our
+2Published as a workshop paper at ”Tackling Climate Change with Machine Learning”, ICLR 2023
+dataset instead of the full dataset. We then use the trained model to infer the topic probability
+distributions of all the remaining tweets in our dataset. Thus, in the end, we have for each tweet ia
+topic feature vector ti∈RK1.
+In addition to topic features, we also include metadata features for each tweet. These are represented
+as binary values (1 if the corresponding feature is present, 0 if not), and capture the presence of
+URLs, hashtags, animated GIFs, images and videos. We also include a binary value to represent
+if the tweet was created during working hours (weekdays, 9 am-5 pm) on the east coast of the US
+which is likely to have a large fraction of the audience, namely English Twitter users. We represent
+the metadata features of tweet ibymi∈R6.
+3.2 M ODEL ARCHITECTURE
+The model that we use is reminiscent of the Bradley-Terry model of pairwise comparison outcomes
+Bradley & Terry (1952). We define the probability that tweet iin a pair gets more engagement than
+the other tweet jto be
+P(i≻j) =esi
+esi+esj, (1)
+where si, sj∈Rare the engagement potentials of tweets iandjrespectively. The higher the
+engagement potential of a tweet, the more likely it is to have higher engagement in a pair.
+We model the engagement potential as a linear function of the topic and metadata features. More
+precisely we define
+si=wtTti+wmTmi, (2)
+where wt∈RKandwm∈R6are the learned vectors of coefficients for topics and metadata
+respectively. The choice of a linear model enables us to easily understand the effect of the features
+(and thereby find effective strategies that are correlated with high engagement) by interpreting the
+coefficient values. We train three versions of our model that differ in the features they include: Meta
+(onlymi),Topic (onlyti) and Topic+Meta (bothtiandmi)
+Note however that the model as defined so far is not identifiable with respect to the topic coefficients
+wt(we cannot precisely estimate their values). In fact, if we modify the model by adding a constant
+to each of these coefficients we get the same predictions. This can be seen by noting that the sum of
+the components of topic vectors tiare always one (as they are probability distributions). To avoid
+this issue we fix one of the coefficients to be zero.2
+4 E XPERIMENTS AND RESULTS
+We split our dataset of tweet pairs chronologically3into training, validation and testing sets in the
+ratio 90:5:5. We train our models by finding the optimal set of coefficients wt,wmthat maximise
+the probability of the pairs in the training set under the model in equation 1. We use classification
+accuracy as our evaluation metric as our dataset is balanced and errors are symmetric.
+We do not use regularisation as overfitting is unlikely (our model is simple and we have a large
+amount of data). Indeed, we see from the validation performance that overfitting does not occur. We
+re-train on the union of the train and validation sets and report our accuracy on the test set (see Table
+1). For comparison, we also report the human accuracy obtained by one of the authors labelling 200
+random pairs from the test set.
+We see that all our models significantly outperform the random baseline and achieve performance
+comparable to a human. Topic outperforms Meta and the best performance of 66.53% is achieved
+byTopic+Meta , suggesting that the two features provide complementary information. Tan et al.
+1We useK= 100 as it gave interpretable topics. It is also the default value suggested in Meng et al. (2022).
+2The choice of this coefficient does not affect the relative ordering of coefficients and their interpretation.
+3We split chronologically rather than randomly as that is closer to a real setting where we would want to
+predict the engagement of future tweets based on past tweets.
+3Published as a workshop paper at ”Tackling Climate Change with Machine Learning”, ICLR 2023
+Table 1: Test accuracies of different models with 95% confidence intervals
+Random Meta Topic Topic+Meta Human
+50.17±0.50 58 .90±0.49 64 .54±0.4866.53±0.47 65.00±6.61
+Table 2: Feature coefficients with 96% confidence intervals, computed from 300 bootstrap samples
+Feature Coeff. Feature Coeff. Feature Coeff.
+President 7.71±0.78 Geology 0.79±0.77 Investment −6.70±0.81
+Clean Energy 4.25±0.82 Mixed 0.00±0.10 Human cost −8.41±0.90
+Drought-resistant 4.00±1.12 Low Water −0.38±0.90 Projections −10.68±0.85
+Africa 2.79±0.90 Conference −1.65±0.99 Links/Promo −13.71±1.26
+Planet 2.77±0.84 Research −2.12±0.84 Meta:URL −1.54±0.13
+Fossil fuels 1.56±0.82 Youth −2.70±1.12 Meta:Hashtag −0.12±0.12
+Politics 1.51±0.79 Health −3.58±0.94 Meta:GIF 0.47±0.28
+Global warming 1.18±0.84 Rain −3.62±1.03 Meta:Video 0.76±0.13
+Geopolitics 1.09±0.77 News −5.07±0.93 Meta:Image 0.58±0.10
+Anger 0.79±0.90 Deaths −5.43±0.89 Meta:WorkHr −0.24±0.10
+(2014) report a similar accuracy for models based on wording and metadata when predicting relative
+engagement of tweets containing the same URL. We also tried models using the words as features,
+instead of topics. However the accuracy was slightly lower, and the interpretation was more difficult
+for those models as a clear pattern couldn’t be seen among the most predictive words. The accuracy
+for word-based models could possibly be increased by using contextual word embeddings and state-
+of-the-art sequence models like Transformers (Vaswani et al. (2017)), but their interpretation is likely
+to still be difficult.
+We re-train Topic+Meta on the complete set of pairs to obtain the coefficients for interpretation (see
+Table 2). A higher coefficient indicates more engagement. Due to limited space in the table, we
+only include the top 24 topics in terms of their prevalence in our data, in addition to the 6 metadata
+features. The names of the topics were manually assigned by examining the top 500 tweets with the
+highest probability for the topic. A random sample of 10 tweets from this set for each of the topics
+in the table is given in the Appendix for a more detailed interpretation.
+Topics without much useful content such as Links/Promo clearly have low engagement. Tweets
+about the long-term Projections of climate change effects also have low engagement, which could
+be due to the temporal discounting of risks that are far away. Topics such as the Human cost of
+climate change and Deaths have low engagement, as do the topic of stocks and Investment .
+Topics that contribute to high engagement include discussion of the President ’s actions and adap-
+tation and mitigation strategies such as Drought-resistant plants and Clean Energy . Interestingly,
+tweets about climate change impacts in Africa receive high engagement, as do those about climate
+change on other Planets and in Earth’s geological history. Tweets about climate change Conferences
+andResearch get a moderate level of engagement. .
+Looking at the coefficients for metadata features, we can see that tweets that include URLs tend to
+receive less engagement (probably due to less information in the tweet itself). As one might expect,
+tweets created during working hours also receive less engagement. On the other hand, tweets that
+contain animated GIFs, videos or images tend to receive higher engagement.
+5 C ONCLUSION
+In this work, we curated a large dataset of tweets related to climate change and built interpretable
+predictive models of tweet engagement. We avoid confounding factors by formulating the task as
+a pairwise comparison of engagement among a pair of tweets from the same author around the
+same time. The models achieve good accuracy on a held-out set of pairs. By interpreting the
+coefficients of the models we could discover the topic and metadata features that are correlated with
+high engagement. This information could conceivably be used to guide the creation of new climate-
+4Published as a workshop paper at ”Tackling Climate Change with Machine Learning”, ICLR 2023
+related tweets and other climate communication to promote engagement among the population,
+thereby giving strength to citizen-driven efforts to tackle the issue of climate change.
+ACKNOWLEDGEMENTS
+We thank Henrique Da Silva Gameiro, Orfeas Liossatos, and Marko Lisicic for their contributions
+during the initial stages of this project.
+5Published as a workshop paper at ”Tackling Climate Change with Machine Learning”, ICLR 2023
+REFERENCES
+Sol Agin and Michael Karlsson. Mapping the field of climate change communication 1993–2018:
+Geographically biased, theoretically narrow, and methodologically limited. Environmental Com-
+munication , 15(4):431–446, 2021.
+Ralph Allan Bradley and Milton E. Terry. Rank analysis of incomplete block designs: I. the method
+of paired comparisons. Biometrika , 39(3/4):324–345, 1952. ISSN 00063444. URL http:
+//www.jstor.org/stable/2334029 .
+Biraj Dahal, Sathish AP Kumar, and Zhenlong Li. Topic modeling and sentiment analysis of global
+climate change tweets. Social network analysis and mining , 9:1–20, 2019.
+Jacob Devlin, Ming-Wei Chang, Kenton Lee, and Kristina Toutanova. BERT: Pre-training of deep
+bidirectional transformers for language understanding. In Proceedings of the 2019 Conference of
+the North American Chapter of the Association for Computational Linguistics: Human Language
+Technologies, Volume 1 (Long and Short Papers) , pp. 4171–4186, Minneapolis, Minnesota, June
+2019. Association for Computational Linguistics. doi: 10.18653/v1/N19-1423. URL https:
+//aclanthology.org/N19-1423 .
+Cassie Flynn, Eri Yamasumi, Stephen Fisher, Dan Snow, Zack Grant, Martha Kirby, Peter Browning,
+Moritz Rommerskirchen, and Inigo Russell. Peoples’ Climate Vote: Results . United Nations
+Development Programme, 2021.
+Abel Gustafson, Matthew T Ballew, Matthew H Goldberg, Matthew J Cutler, Seth A Rosenthal, and
+Anthony Leiserowitz. Personal stories can shift climate change beliefs and risk perceptions: the
+mediating role of emotion. Communication Reports , 33(3):121–135, 2020.
+Anthony Leiserowitz, Jennifer Carman, Nicole Buttermore, Liz Neyens, Seth Rosenthal, Jennifer
+Marlon, JW Schneider, and Kelsey Mulcahy. International Public Opinion on Climate Change
+2022 . YPCCC: Yale Program on Climate Change Communication, 2022.
+Yu Meng, Yunyi Zhang, Jiaxin Huang, Yu Zhang, and Jiawei Han. Topic discovery via latent space
+clustering of pretrained language model representations. In Proceedings of the ACM Web Confer-
+ence 2022 , pp. 3143–3152, 2022.
+Chenhao Tan, Lillian Lee, and Bo Pang. The effect of wording on message propagation: Topic-and
+author-controlled natural experiments on twitter. In Proceedings of the 52nd Annual Meeting of
+the Association for Computational Linguistics (Volume 1: Long Papers) , pp. 175–185, 2014.
+UN Global Pulse. Taxonomy for studying climate change tweets. http://unglobalpulse.
+net/climate/ , 2014. Accessed: 2022-11-4.
+Ashish Vaswani, Noam Shazeer, Niki Parmar, Jakob Uszkoreit, Llion Jones, Aidan N. Gomez,
+Łukasz Kaiser, and Illia Polosukhin. Attention is all you need. In Proceedings of the 31st Inter-
+national Conference on Neural Information Processing Systems , NIPS’17, pp. 6000–6010, Red
+Hook, NY , USA, 2017. Curran Associates Inc. ISBN 9781510860964.
+Ke Wang, Mohit Bansal, and Jan-Michael Frahm. Retweet wars: Tweet popularity prediction via
+dynamic multimodal regression. In 2018 IEEE winter conference on applications of computer
+vision (WACV) , pp. 1842–1851. IEEE, 2018.
+Yan Xia, Ted Hsuan Yun Chen, and Mikko Kivel ¨a. Spread of tweets in climate discussions: A case
+study of the 2019 nobel peace prize announcement. Nordic journal of media studies , 3(1):96–117,
+2021.
+6Published as a workshop paper at ”Tackling Climate Change with Machine Learning”, ICLR 2023
+A A PPENDIX
+Here we include a sample of 10 tweets chosen uniformly at random from the top 500 tweets that
+have the highest probability for each of the topics in Table 2. Author names are hidden and special
+characters are removed. The Title and Description of linked pages in URLs have been expanded
+where available. Note that some of the tweets may contain offensive language.
+PRESIDENT
+• Biden plans to fight climate change in a way no US president has done before http-
+stcoGgemljiccs
+• GinaMcCarthy White House National Climate Adviser discusses Pres Bidens infrastructure
+plan httpstcozy24j9Cxuk httpstcoLOWQgcDdb9
+• President Joe Biden has already taken more executive action on climate change and the
+environment in his first week in office than any president before him httpstcoFMpGOz6GSt
+• Biden will issue executive orders rolling back Trumps climate policies The Washington
+Post httpstcon2oCIYmu6X
+• Former VP Gore Begged Biden Not to Compromise Climate Change in Bipartisan Infras-
+tructure Deal httpstcoBTd6n17z4g httpstcoFSmMV3TCZh via Newsmax Title Newsmax-
+com Breaking news from around the globe Desciption Newsmaxcom reports todays news
+headlines live news stream news videos from Americans and global readers seeking the
+latest in current events politics US world news health finance and more
+• Joe Biden announces he has cancer during speech about global warming httpstcoDi-
+AUXSb7S8 Title Joe Biden announces he has cancer during speech about global warming
+Desciption JOE BIDEN announced he has cancer during a speech about global warming
+• httpstcouqTL9dePmJ In his first address to Congress President Joe Biden touched on im-
+migration police reform and climate change httpstcoT7Nt3ksSRc
+• Trump dismisses climate change calls on Biden to fire joint chiefs httpstcoFOaxDK6X3O
+httpstcoJN8fNQEFpg
+• WATCH LIVE Biden signs climate change executive orders httpstcoREgDK4ntJq
+• Biden will issue executive orders rolling back Trumps climate policies The Washington
+Post httpstcoSUC6GLxQAi
+CLEAN ENERGY
+• Electricity production from fossil fuels nuclear and renewables Switzerland httpstcoA-
+pAzM7YM6c
+• Three major categories of energy for electricity generation R fossil fuels coal natural gas
+amp petroleum nuclear energy amp renewable energy sources Most electricity is generated
+with steam turbines using fossil fuels nuclear biomass geothermal and solar thermal energy
+• In 2021 40 of the Electricity Produced in the United States Was Derived from NonFos-
+sil Fuel Sources CleanTechnica httpstcoiw0Y1sTIO0 Title In 2021 40 of the Electricity
+Produced in the United States Was Derived from NonFossil Fuel Sources Desciption In
+2021 40 of the Electricity Produced in the United States Was Derived from NonFossil Fuel
+Sources reliance on fossil fuels
+• Nuclear Power The Reliable Energy Source Nuclear power energys ability to produce elec-
+tricity with lower carbon emissions than fossil fuels has been driving the markets develop-
+ment Get More info httpstcoCAPZIDibUV nuclear nuclearpower energy usak France russia
+httpstcokiwQvSyRue Title Nuclear Power Market Global Size Share Industry Trends 2022
+2028 IMR Desciption Global Nuclear Power Market was valued at USD 7141 Billion in
+2021 and is projected to reach USD 16347 Billion by 2028 growing at a CAGR of 1256
+from 2022 to 2028
+• Portland General Electric an Oregon utility is poised to build the nations first largescale
+wind solar and battery facility to accelerate the transition from fossil fuels to 247 cleanen-
+ergy httpstcoxPxHCIX1Zb Title Oregon utility powers up nations first largescale wind solar
+7Published as a workshop paper at ”Tackling Climate Change with Machine Learning”, ICLR 2023
+and battery facility Desciption Portland General Electric has built a firstofitskind facility
+that will use an innovative battery technology supporters are calling a game changer for
+Oregons renewable energy transition
+• Upscaled renewable energy capacity will improve the resilience of Australias main electric-
+ity grid but outages from fossil fuel plants the main threat to supplies httpstcowtT6GtDlYj
+httpstcokcPW92WMOA Title Fossil fuel plant outages pose main threat to summer power
+supply as renewables bolster grid Desciption Australian Energy Market Operator says risks
+of insufficient supply during summer peak load periods remain despite La Nia bringing
+cooler temperatures
+• The Midwest is preparing for a fossilfuelfree future new transmission lines will stabilize
+the grid as it shifts to renewables It will facilitate retirement of more than 50 gigawatts of
+fossil fuelpowered electricity primarily from coal plants httpstcoU7j8yv0VXt Title Biggest
+story of the year for renewables Desciption The Midcontinent Independent System Opera-
+tor approved a 103 billion investment in 18 new transmission lines this week Never before
+have so many power lines been approved all at once
+• More renewables than fossil fuelbased electricity in the grid pv Europe httpst-
+coYU3MlDk6eI
+• New post Renewables Overtake FossilFuel Power Plants In EU Electricity Generation http-
+stcoXviCd5qHxS
+• The US Energy Information Administration has forecast in its January ShortTerm Energy
+Outlook that rising electricity generation from clean energy such as solar and wind will re-
+duce generation from fossil fuelfired power plants over the next 2 years httpstcoCDIpgohIl5
+httpstcoykeMKGuPks Title NonRenewable Energy
+DROUGHT -RESISTANT PLANTS
+• 7 droughttolerant houseplants to add some greenery to your home httpstcoQN9B71d6an
+httpstcozK8XLtUOQ3
+• Drought tolerant soybean variety httpstcolKfheA21CB
+• Tomatoes and Other Crops Wither in California Drought httpstconZRUevvzhH Title Toma-
+toes and Other Crops Wither in California Drought Desciption The Western drought has
+come for pasta sauce and ketchup Processing tomatoes used in innumerable grocery store
+staples are suffering from years of subpar rainfall and snowpack in California The
+• Rediscovering ancient crop varieties httpstcojnWo4iLBLZ
+• Diversity Among Synthetic BackDerived Wheat Triticum Aestivum L Lines for Drought
+Tolerance preprints httpstcohp8ctHMLhL
+• Chile drought fruit crops under threat httpstcoq0YsYcxSi4 httpstcowkbenXmfQX
+• Scientists developing drought and wet tolerant soybean varieties httpstco2I6IM9fZ29 Title
+Scientists developing drought and wet tolerant soybean varieties Talk Business Politics
+Desciption Drought has been a major problem for Arkansas farmers this year and if climate
+prediction models are correct it will be a major problem in the coming years and decades
+• Grafting is a technique used to grow different types of fruits and vegetables For tomatoes
+a desirable fruitbearing scion the shoot is placed atop a rootstock the roots that contains
+some other desirable characteristic httpstcoZyESGFyMdz camerawithflash Steven Bris-
+tow httpstcoYxcEmu0nwT Title How do rootstocks help tomato growers under heat and
+drought Desciption No matter the location plants can experience stress This can be in your
+home garden the local community garden or on a farm miles away Stresses include heat or
+drought and they limit a plant
+• Echium vulgare a very drought resistant plant httpstcoiuSgLiC8Be
+• Top seller in Jan snowflake Cold Start snowflake Germinates from 5 degrees High wear
+tolerance drought tolerant fine leaved httpstcoTWDdNVhVsd
+8Published as a workshop paper at ”Tackling Climate Change with Machine Learning”, ICLR 2023
+AFRICA
+• The Horn of Africa is facing drought and food shortages httpstcorvez2vHA0q Title The
+Horn of Africa is facing drought and food shortages Desciption Ayesha Rascoe speaks to
+Samantha Power administrator of the United States Agency for International Development
+about food shortages and drought in the Horn of Africa
+• Somali presidents envoy for drought Abdirahman Abdishakur and his delegates visited
+displaced people inthe IDP camps in the outskirts of baardheere town Gedo region today
+AAbdishakur HassanSMohamud httpstco4zZk0UjI93
+• Horn of Africa faces brutal drought and food crisis httpstcoI0gvTYzPtj httpst-
+cozQXsR8naVh Title Horn of Africa faces brutal drought and food crisis Citypress De-
+sciption The latest outlook confirms the fears of aid agencies which have been warning for
+months about the worsening consequences of the drought in Ethiopia Somalia and parts of
+Kenya
+• Buhari to attend conference on desertification drought degradation in Abidjan httpst-
+cowQvWB0Fk3c News Abidjan buhari BBnaija Messi Wizkid Davido
+• Drought is on going in Angola Congo DRC Namibia httpstcoAwfWGUzoBF
+• Thousands of Ethiopian refugees who have fled Ethiopias Tigray region are now struggling
+against extreme weather in eastern Sudan cloudwithlightningandrain httpstcomiCEESE0pt
+httpstcoXATNkiQJZ0
+• DROUGHT AND FAMINE BITE HARD IN KAKUMA REFUGEE CAMP UHAI
+EASHRI Refugee Coalition of East Africa UNHCR theUNRefugeeAgency Bisoea
+TheTaalaFoundation TheActionFoundation TeamNosleepfoundation KenyaRefugeeLaw
+ProjectTransAdvocacy Initiative ORAM httpstcoZSbsztfJtW
+• 35 MILLION Kenyans are facing food shortage due to ongoing drought IGAD executive
+director Dr Workneh Gebeyehu says httpstcoouwZge9a8e
+• Not Kaizer Chiefs fans blaming Komphela for their trophy drought Kubi facewithtearsofjoy
+httpstcoeERuQ9cJl2
+• World renowned Oromian athlete of the day she donated 4 mil birr to drought victims in
+Bale Oromia May Waaqa bless you and Oromia httpstcoHnb59jJPbx
+PLANET
+• earth planet of life is destroyed by global warming pensiveface
+• Life may have thrived on early Mars until it drove climate change that caused its demise
+space httpstcopbIKibxpaC Title Life may have thrived on early Mars until it drove climate
+change that caused its demise Desciption If there ever was life on Marsand thats a huge
+ifconditions during the planets infancy most likely would have supported it according to a
+study led by University of Arizona researchers
+• Ancient dinosaurs went extinct 65million years ago due to planetary catastrophe and cli-
+mate change from highspeed collision with enormous astroid causing widespread creator
+explosion
+• The titanoboas existence was made possible by a warming planet httpstcoNRHrCl0HlE
+• Astronomers discover potential water world exoplanet nearby Earth httpstcoE8Ojx1w1vr
+via Yahoo Mankind is for the foreseeable future confined to Earth not committed to keeping
+it livable for themselves still use fossil fuels have yet to achieve lightspeed capability Title
+Astronomers discover potential water world exoplanet nearby Earth Desciption NASA says
+the exoplanet located just 100 light years away could be a water world
+• How superhot rocks miles under the earths surface could provide limitless clean energy
+httpstcotgzYqkjUqK Title How superhot rocks miles under the earths surface could provide
+limitless clean energy Desciption Superhot rock geothermal energy can be generated from
+dry rock thats at least 752 degrees Fahrenheit which lies at depths between two and 12
+miles
+9Published as a workshop paper at ”Tackling Climate Change with Machine Learning”, ICLR 2023
+• Cryptocurrency is the intermediary between a fiat controlled divided fossil fuel operating
+society and a decentralized unified electromagnetically propelled society As long as the
+Illuminati control the economy and subsequently everything else Earth humans cannot be
+free
+• Jeff Bezos and Elon Musk rather than spending billion of dollars traveling to the space
+use the money instead to save the planet earth from destruction by global warmingclimate
+change
+• The nations of the Global North have effectively colonised the atmospheric commons
+Theyve enriched themselves as a result but with devastating consequences for the rest of
+the world and for all of life on Earth httpstcoDaFOqaPzWk Title Why climate change is in-
+herently racist Desciption Climate change divides along racial lines Could tackling it help
+address longstanding injustices
+• In 60 million years we will be the dinosaurs who destroyed ourselves with nukes and cli-
+mate change our fossils studied by some future intelligent species
+FOSSIL FUELS
+• Buy electric cars to eliminate fossil fuels Electricity is made through fossil fuels such as
+oilnatural gas and coal facewithtearsofjoyfacewithtearsofjoyfacewithtearsofjoy
+• There is no such thing as a zero emission vehicle because the electricity to fuel such ve-
+hicles and battery require the burning of fossil fuels EVs will NEVER replace their fossil
+fueled counterparts
+• Fossil Fuels vs Renewables ALL Forms of Energy are Intermittent httpstcoAeGIYC9It3
+• Without fossil fuels renewable energy would not exist
+• Could carbon fibres soon become free of fossil fuels httpstcoUW13DTfA8r
+• Fossil Fuels Recycling Wealth
+• Electric vehicles increase demand for fossil fuels
+• Reliance on fossil fuels must be phased out GovKathyHochul
+• Electric cars run on fossil fuels nuclear power is the answer
+• Fossil Fuels vs Renewables ALL Forms of Energy are Intermittent httpstcooeru25EXAH
+POLITICS
+• Six or more core liberal seats ripped away thanks to scomo running a republican one nation
+lite platform and ignoring climate change Great result
+• Stop Trump Republicans from seizing control of California by voting NO on the recall
+Front runner is lunatic republican Larry Elder antivax conspiracy spreader and climate
+change denier V oteNoOnTheRecall
+• Dem says Manchin blocking energy tax provisions in big bill httpstcoAZDKY6FnJr Title
+Dem says Manchin blocking energy tax provisions in big bill Desciption Sen Joe Manchin
+has told Senate Majority Leader Chuck Schumer that he will oppose a economic measure
+if it includes climate or energy provisions or boosts taxes on the rich or corporations
+• In Florida Dems plan to go after Marco Rubio for voting no on the massive reconciliation
+bill that deals with climate change health care and taxes httpstcoyqyaIxsrTn Title Dems
+hope to punish Rubio over Senate vote Desciption Big vote cometh The Senate approved its
+massive reconciliation bill that deals with climate change health care and taxes on Sunday
+and as expected Sens Marco Rubio and Rick Scott voted no On the home front Theres
+the broader political question of whether the bill will help Democrats and President Joe
+Biden in November But how will it play in Florida Both sides tried hard over the weekend
+to make the votes on the legislation which heads to the House next as well as individual
+amendments
+• Dem says Manchin blocking energy tax provisions in big bill httpstco59NB1ClSDI Ti-
+tle Dem says Manchin blocking energy tax provisions in big bill Desciption Dem says
+Manchin blocking energy tax provisions in big bill
+10Published as a workshop paper at ”Tackling Climate Change with Machine Learning”, ICLR 2023
+• Lib Dems call on PM to act local on climate change httpstcoYcbNfEYziW httpst-
+coov5kH8ytbm
+• Liberal MPs consider crossing the floor to support climate change legislation http-
+stco8SHG3qcCle Title Coalition says it will oppose governments plan to legislate emis-
+sions reduction target Desciption The Coalition has confirmed it will oppose Labors plan
+to enshrine in legislation a 43 per cent emissions reduction target by 2030 after holding a
+party room meeting
+• BREAKING NEWS Key Biden Nominee Open to Raising Taxes on Middle Class to fight
+for Climate Change httpstcoj6N4otIl7g UnitedStates
+• Democrats Want Biden To Go Beast Mode amp Fight ClimateChange Via Executive
+Action httpstcoGOX65U2E1q verbalese Shi4Tech PeterSBecks1 freyyjaa88 BettyFellows
+ableraces danigirl1207 RaymondNorman AKimCampbell versusplus thumperftw bugs4US
+MichaelChrisLA httpstco0NE1MlilYt Title Democrats Want Biden To Go Beast Mode And
+Fight Climate Change Via Executive Action Desciption Time is of the essence if the US
+wants to avoid a global climate catastrophe Democratic senators warned after hopes for
+climate legislation faded once again
+• Slimmed Down Energy Tax and Social Spending Package Targeted for V ote Before August
+httpstco1Ytdz5Bhn1
+GLOBAL WARMING
+• Why is it still hot in November Global warming is terrifying
+• If this is global warming then I love it warm weather then warm rain
+• The weather today is super hot is it because of the global warming or me being effortlessly
+hot
+• Its a hot humid August day in Texas Must be climate change
+• How to keep your home cool in the heatwave in preparation for the rising temperatures
+httpstcozjVrBcyJqr httpstcoVdZ2l6oHcc
+• This country is not prepared for extreme weather of any kind hot cold stormy womanshrug-
+ging
+• I remain cool until global warming make me hot firefirefire httpstcolWxb71NFj8
+• Climate changes freakishly hot summer is leading to a new type of insurance coveragefor
+heat stroke httpstcoizdt8kKaob Title Climate changes freakishly hot summer is leading to a
+new type of insurance coveragefor heat stroke iTech News Desciption Business is booming
+for heatstroke insurance providers in Japan One company saw a 1600 increase in sales of
+daily coverage during the final week of June Read More Source Business Fortune
+• If global warming isnt real why am I sweating in January facewithmonocle it shouldnt be
+this warm in January fam
+• This has to be one of the hottest driest summers ever Global warming is real
+GEOPOLITICS
+• Saudi Arabia Japan and Australia are among countries asking the UN to play down the need
+to move rapidly away from fossil fuels httpstcoNW68HQbBaX Title COP26 Document
+leak reveals nations lobbying to change key climate report Desciption Countries are asking
+the UN to play down the need to move rapidly away from fossil fuels
+• Water woes caused by climate change could compel Iran to seek a deal on its nuclear
+program and join others in the Middle East in water cooperation httpstcorLxcXE6GLx
+• Reuters US President Joe Biden on Friday called on China and other major economies to
+redouble their efforts to combat climate change and improve energy security warning that
+Russias invasion of Ukraine had sharpened the need for urgent action
+• China stands firmly with Pacific island countries on national sovereignty and security cli-
+mate change maritime rights and interests said Chinese State Councilor and Foreign Min-
+ister Wang Yi httpstcoD6qA6KH7Tx
+11Published as a workshop paper at ”Tackling Climate Change with Machine Learning”, ICLR 2023
+• AustraliaChina IRENA and the MEE of the Peoples Republic of China have extended ex-
+isting cooperation on energy transition httpstcoyOLIwWJdjm
+• Alaska talks reveal the tense relationship between US and China on climate change httpst-
+cooJ5p2iogsQ
+• Obama faults Russia and China for dangerous lack of urgency on climate change http-
+stco079770LtDN
+• NATO SecretaryGeneral Jens Stoltenberg says climate change and Russian aggression
+mean defence of the Arctic is key httpstcoVa3CtBzwZW httpstcoqLTuWlnoTA Title
+Stoltenberg Arctic key in defence against Russia Desciption NATO SecretaryGeneral Jens
+Stoltenberg says climate change and Russian aggression mean defence of the Arctic is key
+• Washington sees Germany as a critical ally on everything from confronting China and
+negotiating with Iran to climate change Solving their NS2 problem would allow them to
+focus on their shared agenda FT httpstcoeACl4OW30v
+• Australia is the weakest link in international sanctions on Russia crikeynews httpstcoCK-
+zPyUZw4d
+ANGER
+• This is infuriating enragedface Screwing the planet to line their pockets and easily selling it
+all to a gullible constituency httpstco6JtPick1Qg Title Republican states are trying to force
+people to keep using fossil fuels Desciption Most people recognize that we need to wean
+our way off fossil fuels and embrace clean energy if we have any chance of avoiding the
+worst effects of climate change Unfortunately some of the people who dont realize this
+reality happen to be the
+• Republicans have spent the last four years calling climate change activists the radical left
+meanwhile theyve literally created a coup full of conspiracy theorists and racists with guns
+who are trying to breech the Capitol as we speak to tear down democracyTHAT is radical
+• These green fanatics are nothing more than the footsoldiers of the elites who invented the
+man made climate change hoax to control people and not to control the climate jeremyvine
+httpstcoY7oocc4XtX
+• AGW Climate Change or whatever they want to call it is nothing more than a way to
+bilk gullible people into forking over Trillions of hard working peoples tax dollars to a
+multinational MONEY LAUNDERING SCHEME
+• Fucking despise the Tories ensuring we are world beating at fucking the planet up httpst-
+coaZuEnnXvks Title Fury as government overrules council to approve absurd Surrey gas
+drilling Desciption MP Jeremy Hunt blasts decision that goes against local opinion and
+government commitment to devolution of powers and causes enormous anger
+• US castigates China over climate change efforts httpstcowghTwnLouT via BBCNews Be-
+ware you cannot trust the inhuman Communist Government of China No respect for these
+so called human enslavers
+• Liberals are corrupt stupid bastards httpstcoBL6c8sB06Y
+• These Climate Change freaks make me sick Biden and the Democrats are among these
+filthy trashruining the US economy because they believe they are righteous In reality they
+are little more than misguided spoiled brat lazy useless punks stealing from the workers
+• The gall is staggering They are criminals who are willfully destroying our world amp
+should be treated as such httpstcoTYQsNgDPG2 cop26 JoeBiden JohnKerry BorisJohn-
+son ScottMorrisonMP EmmanuelMacron EPAMichaelRegan epa JustinTrudeau DemWar-
+Room HouseDemocrats ap
+• The weatherchannel just lost my viewership Theyve become the purveyors of the liberal
+climate change is based on racism ideology Shame on you for politicizing amp dehuman-
+izing people of color
+12Published as a workshop paper at ”Tackling Climate Change with Machine Learning”, ICLR 2023
+GEOLOGY
+• Supervolcano Eruption Depleted Earths Ozone Layer 74000 Years Ago httpstcoC-
+qpoogQAzd
+• V olcanic surge narrowed seas during ancient global warming event Climate GlobalWarm-
+ing V olcanos httpstcod7rI4KeDpx via physorgcom
+• Past AMOC collapses were caused by warming of ocean subsurface amp reduction of sur-
+face salinity due to icebergs separating from glaciers into the sea Uh oh grimacingface
+BlackBearNews1 Blueoceanarctic newday2020sc WaveFoundation Kameshwarikate http-
+stcoXrw4VRhliC Title Global warming could collapse the Atlantic circulation system De-
+sciption Global warming could collapse the Atlantic circulation system Earthcom
+• Tipping points in Earths system triggered rapid climate change 55 million years ago re-
+search shows PhysOrg httpstcoBH5XvDQ9Jp httpstcoZvJlp6Aq58
+• Shifting Signatures of Climate Change Reshuffle Northern Species httpstcoU6TdPD6Aw4
+Title Shifting Signatures of Climate Change Reshuffle Northern Species Current Science
+Daily Desciption Analysis of longterm monitoring data for almost 1500 species in Finland
+shows that four decades of climate change has led species to shift between the better and
+worse parts of their climatic niches and that these impacts were most pronounced at higher
+latitudes
+• Antarctic Circumpolar Current flows more rapidly in warm phases In future the intensity
+of the Antarctic Circumpolar Current could increase accelerating climate change httpst-
+coOzkbB5r1y4
+• Arctic Animals Movement Patterns Shifting Due to Climate Change httpstcoiQ39qXuTxW
+httpstcozibpRCLelS
+• A climate warming event 56 million years ago resulted from the release of greenhouse
+gases most likely from a volcanic eruption httpstcou4PqcuGumN
+• Tipping points in Earths system triggered rapid climate change 55 million years ago re-
+search shows httpstcoEtqXhcvVC1 httpstcoNHdC7alKOz Title Physorg News and Arti-
+cles on Science and Technology Desciption Daily science news on research developments
+technological breakthroughs and the latest scientific innovations
+• 15 C Cap Could halve Sea Level Rise From Melting Ice Study httpstcobC7I5dTKJY
+MIXED
+• Our atmosphere is shrinking httpstcoZN4hmHiIGb httpstcoTzQekR8iEe
+• Baetokkis survived the renebaebae droughtI hope shell become more active soon
+• How the Moon Wobble Affects Rising Tides Ecology astronomy via httpst-
+coB2dOvBHk3D httpstcoxicR96Q3h8 Title Twinybots Empower your business
+• our fandom is probably the most wellfed fandom on all of stan twitter yet ariana doesnt
+release music for two weeks and yall start acting like were in a drought loudlycrying-
+faceloudlycryingfaceloudlycryingfaceloudlycryingface
+• i just realized now that josh is done releasing songswe might go into a content drought
+• hes currently saving stays from instagram drought LMAOOOO httpstcoYD3GwIU1QR
+• Australia faces constellation of diplomatic pressures over climate httpstcoEPX83YQ94O
+• Latest climate summit draft waters down fossil fuel language httpstconN4OpAJBoY Cli-
+mateEmergency COP26 JoeBiden XiJinping ClimateCatastrophe ClimateActionNow En-
+ergyTransition GretaThunberg
+• did yall know that rsl is ending the acting drought for Me exclamationquestionmark
+• New study uncovers hidden behaviour of the Arctic Oceans currents that could alter future
+climate change predictions National Oceanography Centre httpstcoZMDaPmOkwi
+13Published as a workshop paper at ”Tackling Climate Change with Machine Learning”, ICLR 2023
+LOW WATER
+• The Hoover Dam reservoir is at an alltime low httpstcofaboCIXwap
+• Lake Mead falls to an unprecedented low exposing one of the reservoirs original water
+intake valves httpstcos8vRKL45o8 Title Lake Mead plummets to unprecedented low ex-
+posing original 1971 water intake valve Desciption Lake Meads plummeting water level
+has exposed one of the reservoirs original water intake valves for the first time officials say
+• In dry California salty water creeps into key waterways from AP httpstcor2Mukxg8eA Title
+In dry California salty water creeps into key waterways Desciption RIO VISTA Calif AP
+Charlie Hamilton hasnt irrigated his vineyards with water from the Sacramento River since
+early May even though it flows just yards from his crop Nearby to the south the industrial
+Bay Area city of Antioch has supplied its people with water from the San Joaquin River for
+just 32 days this year compared to roughly 128 days by this time in a wet year
+• Houseboats removed from LakeOroville which stands at 38 percent of capacity CAwater
+CAdrought California water drought SaveOurWater httpstcoTQKC4K4TxZ
+• The Hoover Dam reservoir is at an alltime low httpstcoxdZxAggtWa httpstcow4d2ZHUcaO
+• Greenhouse gas dynamics in an urbanized river system influence of water quality and land
+use httpstcoYlx25xKnDO
+• Low water levels due to drought reveal sunken car in Pineview Reservoir Salt Lake Tribune
+httpstcoyb8gpqK6U4
+• Critically low water levels at Lake Shasta Californias largest reservoir httpstco-
+qMHkQGxLRJ Title Critically low water levels at Lake Shasta Californias largest reservoir
+Desciption Lake Shasta the largest reservoir in California is experiencing the lowest lev-
+els of rainfall since Shasta Dam was constructed in the 1940s Water allotments to Central
+Valley fammers and urban water districts in the Bay Area have been severely cut back as a
+result
+• The Hoover Dam reservoir is at an alltime low httpstcosINziskFrF
+• Measuring the Bathtub Ring Calculating Reservoir Surface Area Changes in the Colorado
+River Basin planet SatelliteData Drought Reservoirs httpstco7BNqhrF7cT
+CONFERENCE
+• CONFERENCE 57th session of the Intergovernmental Panel on Climate Change IPCC 57
+2730 Sep 2022 Geneva Geneve Switzerland httpstcozgFLPM6hMx Title Event 57th session
+of the IPCC IPCC 57 SDG Knowledge Hub IISD Desciption Tracking the Implementation
+of the 2030 Agenda
+• POTUS and world leaders will discuss climate change on the February 19 virtual G7 hosted
+by BorisJohnson per PressSec
+• New Post OPEC hosts coordination meeting on climate change httpstcoX5sHOjDaeQ
+OPEC hosts coordination meeting on climate change
+• The UK hosts the 26th UN Climate Change Conference of the Parties COP26 Scotland
+Glasgow now httpstco0CaEsS9YRr
+• COP26 Presidency Meeting with UNFCCC Observer Focal Points has held at the ongoing
+United Nations Climate Change Conference and censoj participated httpstco1dGvSO9uni
+• The intergovernmental panel on climate change opens second draft on group III sixth as-
+sessment report httpstco6c2IK74YZZ
+• The United Nations Framework Convention on Climate Change UNFCCC will hold its 26th
+Conference of Parties COP26 in November 2021 It will be hosted by the UKinUganda and
+will take place in Glasgow httpstco2dta51AAu2
+• AIA will send representatives to the United Nations Climate Change Conference COP27
+again this year httpstcogtFBKDOerM Title How AIA is helping to combat the climate
+crisis at COP27 Desciption For the second year in a row AIA is sending representatives to
+the United Nations Climate Change Conference COP27 an annual Conference that brings
+together government officials and nongovernmental organizations to collaborate on ways
+to combat the climate crisis
+14Published as a workshop paper at ”Tackling Climate Change with Machine Learning”, ICLR 2023
+• New Post OPEC hosts coordination meeting on climate change httpstcobo71mMQ1Us
+OPEC hosts coordination meeting on climate change
+• ICYMI In this IABC22 plenary session a panel comprised of climate change communica-
+tors will discuss the evolving approach to change the conversation Join the discussion at
+the World Conference 2629 June httpstcoCJVhU1vNEu httpstcoLiunP7Bj2Y Title Keynote
+and Plenary Sessions
+RESEARCH
+• A major finding using longterm consistent satellite climate data from the esa Climate
+Change Initiative httpstcopKDCSaoaXO
+• A Global LISOTD Climatology of Lightning Flash Extent Density httpstcoRI3kBcdJl4
+• BOE climate stress test results httpstcosM3xpvdTGo Title Bank of England publishes re-
+sults of the 2021 Biennial Exploratory Scenario Financial risks from climate change De-
+sciption The Bank of England Bank has today published the results of the Climate Biennial
+Exploratory Scenario CBES which explores the financial risks posed by climate change for
+the largest banks and insurers operating in the UK
+• The analysis is the latest in a series of studies that show the influence of climate change on
+extreme weather httpstcoTRnNGcZO1e Title Did Warming Play a Role in Deadly South
+African Floods Yes a Study Says Desciption Climate change sharply increased the chances
+of catastrophic rains in the countrys east a team of researchers has found
+• This study has improved our understanding of combined droughtheat wave events by
+considering a much finer temporal resolution than previous studies allowing a more re-
+fined consideration of risk forecasting and hazard preparation for such events httpst-
+cosKZ4X2Pra5 Title Simultaneous Drought and Heat Wave Events Are Becoming More
+Common Eos Desciption As the world heats up the number and duration of combined
+stress events are increasing causing harmful environmental and human impacts
+• OHC is an important indicator of the global climate change Here we conducted a compar-
+ative study of OHC among different data sets including observationbased ones Argoonly
+and Argoother observations ocean reanalyzes and freerunning model httpstcoCwyUcPFo09
+Title A Comparative Study of the ArgoEra Ocean Heat Content Among Four Different
+Types of Data Sets Desciption Global and basinswide ocean heat content OHC trends were
+largely similar among the observationbased data sets Ocean reanalyzes RAs well captured
+the largescale warming and cooling patterns
+• SUNGHOON DROUGHT rollingonthefloorlaughingrollingonthefloorlaughing
+• According to new research from Proceedings of the National Academy of Sciences PNAS
+regarding climate change and pollen seasons there has been a significant increase of pollen
+in the air in recent years httpstcoQeBsZHcBoy
+• A study found that 218 infectious diseases had been exasperated by climate change back-
+handindexpointingdown httpstcozvvrNVKUdf Title Climate change may be fueling infec-
+tious disease outbreaks Luke ONeill says Desciption A study found that 218 infectious
+diseases had been exasperated by climate change
+• Video summary of the Copernicus Climate Change Services report httpstcob5XcjzKFqI
+YOUTH
+• Climate Change AnimationInteractive Poster Competition Open to all year groups BIG
+PRIZES Click link for details httpstcofHgGijVpdk httpstcoEd1mgfiCzM
+• Our course Climate Change Resources for K12 Teachers and Students is for K12
+teachers and students looking for great climaterelated talks videos games websites and
+more resources they can use in advancing their understanding of climate change httpst-
+coL7eqHUOLQI Title Climate Change Resources for K12 Teachers and Students Descip-
+tion Topical Content and Hundreds of Resources for Exploring and Learning About Climate
+Change
+15Published as a workshop paper at ”Tackling Climate Change with Machine Learning”, ICLR 2023
+• We are creating 450 jobs for Youth The ScienceHorizons Youth Internship Program equips
+recent grads with great work experience in the CleanTech sector Apply today httpst-
+couds9GnYSBb httpstcorL0dPtvC7F Title Science Horizons Youth Internship Program
+Canadaca Desciption The Science Horizons Youth Internship Program provides wage sub-
+sidies to eligible employers across Canada to hire recent university college and polytechnic
+graduates for internships in the environmental science technology engineering and mathe-
+matics sectors Description objectives and contact information Application process for em-
+ployers to receive funding Internship opportunities application process for postsecondary
+graduates Interactive map of past internships across Canada You will not
+• Climate Change Writing Competition open to all UG and PGT students A perfect op-
+portunity for our MA cohort to demonstrate their new WeAreALBERT knowledge http-
+stcobNzThDwL3n
+• Join SPIDTheatre for the final month of exciting drama workshops as part of the Far Far
+Away online project in collaboration with sciencemuseum Available to 813 year olds who
+want to get involved with a performative project about climate change and the environment
+performingarts globeshowingEuropeAfrica httpstcozeNG2so53h
+• DYK ScienceHorizons Youth Internship Program helps young Canadian graduates gain
+valuable work experience in STEM This will support their success in the clean energy job
+market Learn more httpstcoiZVO4eRYcL httpstcopSOECkpEw6 Title Science Horizons
+Youth Internship Program Canadaca Desciption The Science Horizons Youth Internship
+Program provides wage subsidies to eligible employers across Canada to hire recent univer-
+sity college and polytechnic graduates for internships in the environmental science technol-
+ogy engineering and mathematics sectors Description objectives and contact information
+Application process for employers to receive funding Internship opportunities application
+process for postsecondary graduates Interactive map of past internships across Canada You
+will not
+• Attention sophomores Consider applying for the Student Climate Change Institute This is
+a great opportunity to connect with climate experts and take on projects that help address
+climate change Applications are due 928 httpstcoT0SHyuUbkL HCConservancy
+• Are you an artist between the ages 1422 who wants to inspire social change Young New
+England artists have the chance at winning cash prizes of 2500 or 5000 for their art-
+work focused on climate change Submit to the TidalShiftAward today sparkleshttpstco-
+quf5WbOl6Lsparkles httpstcokxVJgqWhjb
+• Weve put together some great STEM resources for parents who want to engage their kids
+on climate change do some learning and have some fun with these activities httpstcoMP-
+KBqJt0aG Title Climate change and easy science experiments for kids Desciption At some
+point youre going to have to talk with your kids about climate change This can be intimi-
+dating so weve compiled some info on climate change for kids
+• SF State launches a new interdisciplinary climate change certificate program this fall for
+students in any major httpstcogajrUVtFVJ httpstcoYVxiYQ52wX
+HEALTH
+• A big number of children below the age of five are suffering from malnutrition coupled with
+extreme complications httpstcoFBG9ttoHko Title Over 100 children in Mandera exposed
+to droughtrelated diseases Desciption At least 106 children have already been admitted to
+hospitals across Mandera county
+• The Environmental Protection Agency was never given agency to protect the environment
+Supreme Court rules httpstcouPYEmQLGLc Title Supreme Court rules for coalproducing
+states limits EPAs power to fight climate change Desciption Ruling in favor of coalproduc-
+ing states Supreme Court says Congress not the EPA has the authority to make decisions
+on fighting climate change
+• Breastfeeding breastfeedingmediumdarkskintoneproduces pushpinZero waste pushpinZero
+greenhouse gases and leaves pushpinZero water footprint seedling Its the healthiest and
+most natural way to feed babies Keep supporting breastfeeding for a cleaner healthier and
+more equal futureglobeshowingEuropeAfrica httpstcoHyXJO1Aj8Z
+16Published as a workshop paper at ”Tackling Climate Change with Machine Learning”, ICLR 2023
+• Addressing Climate Change and improving livelihood opportunities for rural women
+through the production of reusable menstrual pads UNPeacebuilding Gambia UNF-
+PATheGambia httpstcomNEAFYyPZX
+• Via euronews Infertility heart failure and kidney disease How does climate change impact
+the human body httpstcoh3a7JwSScQ Title These are the 10 ways climate change affects
+our bodies every day Desciption We need the same urgency to treat climate change as
+when everyone jumped to combat the COVID19 pandemic Otherwise our health is due for
+a downward spiral in coming years
+• One in five deaths every year results from unhealthy diets That is more than the number
+killed from smoking and armed conflict combined Pictet Nutrition funds Mayssa Al Midani
+tells MerrynSW why we need sustainable food systems Link here httpstcougzIvBeUKh
+httpstcozPmzAPfcFp
+• backhandindexpointingdowndarkskintone Health problems During food shortages caused
+by climate change girls are more likely to go hungry and will often eat least and last leading
+to hunger and malnutrition httpstcoZcGNS4ROZL Title 5 ways climate change is disrupt-
+ing girls lives Plan International Desciption These stories show how the inequalities expe-
+rienced by marginalised girls and young women are amplified by the impacts of climate
+change
+• Climate change affects the social and environmental determinants of health clean air safe
+drinking water sufficient food and secure shelter health healthcare healthy facts healthfact
+know more at httpstcoiTXON5Uiwn
+• I wonder if climate change causes myocarditis and blood clots
+• The pandemic has made things worse in addition to the rising costs of living in Aligarh
+Women are concerned about the high cost of food which they are unable to offset despite
+procuring supplies from ration shops writes aashi310 httpstcoGbf0cASadb
+RAIN
+• RAIN FORECAST 7day rain forecast from the Weather Prediction Center Check radargt
+httpstcorJpa708eNn rain flood drought rainfall showers thunderstorm flooding httpst-
+coBaEKE6OOw7
+• Storm Barra Severe weather warnings for wind and rain issued NewsEverything North-
+ernIreland httpstcozJohxg235r Title Online Shopping site in India Shop Online for Mobiles
+Books Watches Shoes and More Amazonin Desciption Amazonin Online Shopping India
+Buy mobiles laptops cameras books watches apparel shoes and eGift Cards Free Shipping
+Cash on Delivery Available
+• Drenching showers and strong winds accompanied the weekends arrival of an atmospheric
+river a long and wide plume of moisture pulled in from the Pacific Ocean The Na-
+tional Weather Services Sacramento office warned of potentially historic rain httpstcoN-
+vLHc5bq4e
+• Greece Extreme Weather Warning Heavy Rains Thunderstorms Hurricane Winds httpst-
+coP2YB87bQam httpstcoVq6fZyNv7S
+• RAIN FORECAST 7day rain forecast from the Weather Prediction Center Check radargt
+httpstcorJpa708eNn rain flood drought rainfall showers thunderstorm flooding httpst-
+comyR0wFpGE1
+• UKWeather redcircle Thunderstorm warning issued as heavy rain set to soak England http-
+stcoN2yW0GF3Sr Title UK weather Thunderstorm warning issued as heavy rain set to
+soak England Desciption Downpour comes days after Britain recorded hottest temperature
+ever
+• A lowpressure system brought extreme weather to Australia from swellbattered beaches
+to blizzardlike conditions httpstcopr0Xqt0PyU Title Watch Australian beaches battered by
+large swells Desciption A lowpressure system brought extreme weather to Australia from
+swellbattered beaches to blizzardlike conditions
+• Flash flooding warnings after recordbreaking 40C heatwave Properties may flood http-
+stcocuzwzeEzIH Title Flash flooding warnings after recordbreaking 40C heatwave How
+17Published as a workshop paper at ”Tackling Climate Change with Machine Learning”, ICLR 2023
+climate change works Desciption FLASH FLOODING warnings have been issued for
+Wednesday after the UKs recordbreaking 40C heatwave with one analyst saying this is
+how climate change works
+• Thunderstorms heading to Northeast following heat wave bringing drought relief httpst-
+coybW04G4tVQ qua usatoday Title Thunderstorms heading to Northeast following heat
+wave bringing drought relief Desciption The heat wave will send temperatures near 100 in
+the coming days in some cities while the storms will bring some needed drought relief
+• Weather Buoys Ensure More Accurate Forecasts of Extreme Weather Events httpstcoh-
+PDi83TNyM
+NEWS
+• Climate change The top environment news stories this week httpstcovLiW4IvjKs via wef
+Title Surprise trees early flowers and green football clubs Everything to know about the
+environment this week Desciption Top environment stories Research finds more than 73000
+species of tree on Earth Plants in the UK are flowering a month earlier Cutting down on
+fossil fuelbased plastics is crucial to tackling climate change says EU environment chief
+• Canadian onair weather personalities shifting tone amid worsening climate change Na-
+tional Newswatch httpstcorftrwyIYor httpstcoqFvWFkBCyX Title Canadian onair weather
+personalities shifting tone amid worsening climate change National Newswatch Desciption
+National Newswatch Canadas most comprehensive site for political news and views Make
+it a daily habit
+• HAY Online News Brianna Sacks joins The Post as an extreme weather and natural disas-
+ters reporter The Washington Post httpstcodvNSWrHI88 httpstcolnwN8oTD6N Title Bri-
+anna Sacks joins The Post as an extreme weather and natural disasters reporter Desciption
+Sacks will explore how climate change is transforming the United States through violent
+storms intense heat widespread wildfires and other forms of extreme weather
+• Climate change disclosures driving awareness and action among companies and investors
+TabbedNews News NewsToday Goodnews Breaking BreakingNews today story httpst-
+cos8aNct9UdC
+• fox vs msnbc lies about climate change vs lies about russia
+• Oregon wildfires featured in new documentary Elemental Statesman Journal News httpst-
+coBSLdIQJe7x News BreakingNews Title Elemental film features Santiam Canyon fires
+looks to shift relationship with wildfire Desciption The documentary which includes
+footage from Oregon wildfires such as the Santiam Canyon and Eagle Creek fires is playing
+for a week at Salem Cinema
+• Reuters a Pulitzer Prize finalist for feature photography on climate change httpst-
+coiMjKJQxlHt httpstcoflI0z7L2d2 Title Reuters A Pulitzer Prize Finalist For Feature Pho-
+tography On Climate Change Desciption A general view can be seen from a damaged
+movie theater after a devastating tornado ripped through Mayfield Kentucky December 16
+2021 REUTERSCheney Orr
+• Extreme Weather Insiders httpstcocddbuRFjqq
+• Live updates247 Breaking News httpstcoSgsI2yJkkg breakingnews Warming climate may
+boost Arctic virus spillover risk research shows httpstcoeIA4CcJmAM Title Live Update
+Breaking News 247 Financial Markets Desciption Breaking News affect finanical markets
+247 searching all breaking news This channel sponsored by Official InrexEA channel In-
+rexea provides trading robots and analysis service Title Warming climate could boost Arctic
+virus spillover risk research shows Desciption Its really unpredictable one research author
+said It can range from benign to an actual pandemic
+• Biden Discusses Climate Change during Visit to florida Today shorts shortsvideo
+httpstco9hXX0PcaCV news politics conservative funny breakingnews alert httpst-
+coxwmTM9CJTg Title YouTube Desciption Enjoy the videos and music you love upload
+original content and share it all with friends family and the world on YouTube
+18Published as a workshop paper at ”Tackling Climate Change with Machine Learning”, ICLR 2023
+DEATHS
+• Washington officials share video of four people and car connected to raging wildfire httpst-
+coKRvxHKvdY1 Title Washington officials share video of four people and car connected
+to raging wildfire Desciption Firefighters hiking on steep terrain with a 45pound backpack
+hand tools chainsaws and water throughout a 12hour shift state Department of Natural Re-
+sources says
+• Heatwaveravaged areas in China now facing heavy rains prompting evacuations httpstco-
+jQv74kS6RO Title Heatwaveravaged areas in China now facing heavy rains prompting
+evacuations National Globalnewsca Desciption Heavy rain in China was forecast for parts
+of Sichuan province and Chongqing city through at least Tuesday
+• Flash floods and landslides set off by torrential rains swamped a southern Philippine
+province killing at least 42 people leaving 16 others missing and trapping some residents
+on their roofs officials said Friday httpstcoJtvJgHeQ7t Title At least 42 dead in floods land-
+slides in south Philippines Desciption Flash floods and landslides set off by torrential rains
+swamped a southern Philippine province killing at least 42 people leaving 16 others missing
+and trappi
+• My condolences are with the family amp friends of those whove lost their lives during this
+extreme weather event I also thank our emergency services and SES volunteers who are
+working around the clock to save lives amp protect properties
+• Kentucky factory workers threatened with firing as tornado neared reports say The Inde-
+pendent news httpstcoQWr7zhn5nz
+• At least 31 people have died 165 people are missing many more are feared to have died
+httpstcoJiO7qC3lH3
+• On Monday August 1 search teams found two more bodies within the perimeter of the
+McKinney wildfire in Northern California httpstcoXXBk7NgazC Title Wildfire death toll
+rises to 4 in Northern California Desciption On Monday August 1 search teams found two
+more bodies within the perimeter of the McKinney wildfire in Northern California
+• On Friday the India Meteorological Department issued a fiveday severe weather warning
+alert for multiple parts of the country as temperatures in some areas reach more than 113
+degrees httpstco9sbaoqHNPY
+• Wind and rain from the storm caused downed trees and power lines as well as flooded roads
+in some regions of the state httpstco3SUBcD2urM
+• Heavy rains fell across Taiwan on Sunday alleviating the drought in some areas and caus-
+ing flooding in Changhua County according to the Central Weather Bureau CWB httpst-
+coo51mbRYiqJ
+INVESTMENT
+• cfauk has launched a qualification designed to help the investment management industry
+understand the implications of climate change on investments by RLawther94 Financial-
+Advisers WealthManagement httpstcoXrDDSHiWHE
+• Would a prudent fiduciary make comp disclosures based on such unlikely events and nega-
+tive investment returns its top priorityresearch reflects that some ESG funds have underper-
+formed A vIolation of fiduciary responsibility Shareholder lawsuits httpstcos7FgtNY2I2
+• Most of the information the SEC wants companies to disclose is irrelevant to financial per-
+formance It would also expose companies to progressive bullying and classaction lawsuits
+httpstcoeHrkN4a9mj Title Opinion Gary Gensler Stonewalls Congress Desciption The SEC
+chief refuses to answer questions about his climate rule
+• Wall Street is trying to fool investors into thinking they can get rich and save the planet
+at the same time pareene writes httpstcozfkKL0MUmz Title ClimateFriendly Investment
+Funds Are a Scam Desciption Wall Street is trying to fool investors into thinking they can
+get rich and save the planet at the same time
+• Insurance companies really should seek funds from fossil fuel companies to cover climate
+related damages httpstco5O2ZyWsPUO
+19Published as a workshop paper at ”Tackling Climate Change with Machine Learning”, ICLR 2023
+• Big US banks have utterly failed to protect their shareholders longterm interests as they re-
+nege on their netzero commitments httpstcoBs1b0PADH3 Title Investors Must Hold Banks
+to Their Word on Climate Change Desciption The biggest financiers of fossil fuels face
+some tough questions this shareholder season
+• GWSO Share Repurchase Announcement Causes Premarket Buying Pressure httpstcoN-
+GIOGofwp0
+• Italys De Nora bets on cornerstone investors to defy IPO drought httpstcooeeI3qtnnj Title
+Italys De Nora bets on cornerstone investors to defy IPO drought Desciption Published by
+Reuters UK By Francesca Landini and Lucy Raitano MILAN Reuters Italys Industrie De
+Nora is counting on cornerstone investors to defy volatility that has inhibited several initial
+• Dividends from British companies crashed last year and could fall even further in 2021 but
+the best investment trusts can offer investors sanctuary from the cuts httpstcoIRI0T2Et3Y
+• NEWS QU has millions in hedge fund investments One hedge fund puts millions into
+fossil fuel industries every year link httpstcorMs5gr07M6 via stevemac2017 httpstcobE-
+hhy71Z8F
+HUMAN COST
+• BONFIRES As well as potentially causing a nuisance bonfires can produce greenhouse
+gases such as carbon dioxide which add to global warming Bonfires can also produce other
+poisonous gases and fine particles which can affect human health
+• There will be drought throughout the United States lots of people will suffer because of
+food shortages and escalating food prices
+• Floods and droughts are some of the most tangible and devastating consequences of the
+climate crisis httpstco1Jhj8fntI7
+• extreme weather patterns and blackouts caused as a result of such are always terrifying es-
+pecially since the people who are affected most by them are typically those who are already
+most vulnerable disabled poor homeless and marginalised people are often at significant
+risk
+• Very Concerning Sea level rise could threaten hundreds of toxic sites in California httpst-
+coOfsQHg5FOO
+• Effects Climate Change causes serious problems like droughts floods extinction of animals
+high temperatures rising sea levels etc httpstcoubX4oE8S7r
+• Fires to floods Extreme weather is occurring worldwide httpstcoIdoUhsdvp2
+• Building in DisasterProne Areas Not More Extreme Weather Causes Rising Losses httpst-
+cok6KMZRps6C
+• RT BrookingsInst Dramatic storms wildfires and floods often generate headlines but more
+subtle persistent changes in the environment are also creating health and safety hazards
+across the United States httpstcozp0Yef92RC Title Sea level rise from climate change is
+threatening home septic systems and public health Desciption Dramatic storms wildfires
+floods and similar events draw the most public attention as examples of how climate change
+threatens human lives and homes But more subtle persistent changes in the e
+• More people are moving into dangerous areas as climate change is making weather disas-
+ters stronger and more frequent httpstcoEMa2pIf0CL
+PROJECTIONS
+• The plan could allow for emissions to keep growing through 2025 httpstco0CwBsBOBVX
+via voxdotcom lilipike
+• httpstcotIbFjtofPl 30year global projections More unprecedented droughts ahead
+• Most of the new units will be available next year but some could be up as early as this
+fall httpstcoIGUR20jKYE Title Younger generations could be the key to reaching older
+Republicans on climate change Desciption Utah Tech hosted a conservative climate change
+panel that focused on the way to bridge the gap between younger and older generations on
+the issue
+20Published as a workshop paper at ”Tackling Climate Change with Machine Learning”, ICLR 2023
+• Earth could cross the global warming threshold as soon as 2027 httpstcoVtO4jMOrig http-
+stcobpH9z7XFz7
+• For a 67 chance of limiting global warming to 15C we would have to reach netzero by 2030
+• There is a 5050 chance globalwarming will exceed 15C before 2025 WMO says http-
+stcoRbhcdakzmF Title There is 5050 chance global warming will exceed 15C before 2025
+WMO says Desciption The WMO warns of 5050 chance that global warming will exceed
+15 degrees within next five years
+• 2020 was a preview of hotter years to come httpstco4uEiJZms7W
+• Under all scenarios examined Earth is likely to reach the crucial 15 warming limit in the
+early 2030s httpstcoxrDjsArY7Q
+• We could be seeing some good news for the fall outlook httpstcoJlayQnKOMJ
+• Climate change will get worse in 2022 But it wont be the end httpstco7oxDS12WBF Title
+Climate change will get worse in 2022 But it wont be the end Desciption The best we can
+hope for is incremental progress two steps forward one step back a string of little victories
+LINKS /PROMO
+• Check out this cartoon httpstcosjx1vDnk6c via TheWeek Title Check out this cartoon De-
+sciption Editorial Cartoons from The Week
+• Check out this cartoon httpstco1GTmMWFHAJ via TheWeek
+• Extreme Weather Warning Please click the link below for our update httpstcoUIYbhAtLRT
+httpstcoBa1v9SzTfK Title Extreme weather Update Desciption Dear Parent Carer Further
+to the communication sent out last week please be advised that students can continue to
+wear uniform with no blaze
+• Climate summit If anyone is struggling to get in to the webinar please try again and make
+sure you are logged in to your zoom account use link on this page httpstcogHGQAWSE4k
+netzerosheffield
+• You can listen to and subscribe to the podcast on Apple Podcasts here httpstcoVgkoxl5u9q
+Title We havent faced anything like climate change before Gaia Vince Desciption In this
+episode Gaia Vince joins Krishnan to talk about her new book Nomad Century in which
+she takes a look at how migration could be the solution to the climate crisis
+• Get my art printed on awesome products Support me at Redbubble RBandME httpst-
+cok3UhxySc3p findyourthing redbubble Title Climate Change Is Real Act Now Tote Bag
+by Peter Baker Desciption The time to act is now Climate change is real The sea ice is
+melting polar bears wont survive eating coconuts ENJOY Millions of unique designs by
+independent artists Find your thing
+• fossilfuelfreefriday What do you think about this announcement following COP26 Click
+this link to learn more httpstcoia7YB8689K httpstco1f3mfmCV5D
+• Check out this article I found on Knewz httpstcopywaqXAF5Z Get more Knewz iOS app
+httpstco6S79hVObml Android app httpstcoZ3n1eS957s Online httpstcoT301uhWrEG
+• Check out this cartoon httpstcop6TPMkc3mv via TheWeek
+• Get my art printed on awesome products Support me at Redbubble RBandME httpstcoX-
+iJBJJo1LC findyourthing redbubble Title Climate Change Code Red Tote Bag by Peter
+Baker Desciption Climate change code red the time to act is now before its too late ENJOY
+your earth dont abuse it Millions of unique designs by independent artists Find your thing
+21

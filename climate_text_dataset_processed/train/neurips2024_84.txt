@@ -1,0 +1,188 @@
+Mamba MethaneMapper: State Space Model for
+Methane Detection from Hyperspectral Imagery
+Satish Kumar1
+satishkumar@ucsb.eduASM Iftekhar1
+iftekhar@ucsb.eduBowen Zhang1
+bowen68@ucsb.edu
+Kaikai Liu1
+kaikailiu@ucsb.edu
+1University of California Santa BarbaraMehan Jayasuriya
+mehan@mozillafoundation.org
+Mozilla Foundation
+Abstract
+Methane ( CH 4) is the chief contributor to global climate change. Recent advance-
+ments in AI-based image processing have paved the way for innovative approaches
+for the detection of methane using hyperspectral imagery. Existing methods, while
+effective, often come with high computational demands and associated costs that
+can limit their practical applications. Addressing these limitations, we propose the
+Mamba MethaneMapper (MMM), a cost-effective and efficient AI-driven solution
+designed to enhance methane detection capabilities in hyperspectral images. MMM
+will incorporate two key innovations that collectively improve performance while
+managing costs. First, we will utilize a gpu-aware state-space encoder, which opti-
+mizes the computational resources and efficiency of the system. Second, MMM
+will use an environment-sensitive module to prioritize image regions likely contain-
+ing methane emissions, which are then analyzed by our efficient Mamba algorithm.
+This selective approach not only improves the accuracy of methane detection but
+also significantly reduces unnecessary computations and memory consumption.
+1 Introduction
+We address the challenge of detecting and pinpointing methane (CH 4) plumes using multispectral
+and hyperspectral imaging data as an object detection and segmentation problem. Identifying and
+locating potential methane emission hot spots is a crucial initial step in mitigating global warming
+caused by greenhouse gases. Methane is responsible for approximately 20% of the global warming
+effect attributed to greenhouse gases [ 9]. Its Global Warming Potential (GWP) is 86 times greater
+than that of carbon dioxide (CO 2) over a 20-year timeframe [ 17]. This underscores the urgent need
+to monitor and reduce methane emissions. Methane persists in the atmosphere for an average of 7.9
+years [ 16], and its atmospheric concentration has been rising steadily since the industrial revolution
+[1]. While the annual increase in methane levels slowed between 1999 and 2006, it began to rise
+again in 2007 [18].
+While methane emission has many sources, the ones of particular interest are those from oil and
+natural gas industries. According to the United States Environmental Protection Agency report,
+methane emissions from these industries accounts to 84 million tons per year [ 7,13]. Current efforts
+to detect these sources mostly depend on aerial imagery. The Jet Propulsion Laboratory (JPL) has
+conducted thousands of aerial surveys in the last decade to collect data using an airborne sensor
+A VIRIS-NG [ 8]. Several methods have been proposed to detect potential emission sites from such
+imagery, for example, see [ 19,20,2,12,14,10]. Most existing methods exhibit high sensitivity to
+background context and variations in land-cover types, which leads to a substantial number of false
+positives. These false detections typically require considerable intervention from domain experts
+Tackling Climate Change with Machine Learning: workshop at NeurIPS 2024.Figure 1: Overview of the MMM architecture: The hyperspectral image input will be processed
+through a feature selector block. A band-pass filter will isolate the salient bands within the RGB
+(400-700nm) and SWIR (2000-2500nm) channels. These isolated channels will be fed into the
+backbone feature extractor. The spectral filter will identify potential methane regions, which will be
+used as masks to select specific spatial locations in the extracted features. These features will then be
+encoded by the state-space encoder and decoded by the hyperspectral decoder to predict bounding
+boxes and segmentation masks for methane detection. FNN and S6 refer as the feed-forward network
+and the Mamba state-space block, respectively.
+to correct. Kumar et al. [ 14,12,10] addressed these limitations by developing a neural network
+architecture capable of modeling background distributions to suppress false positives. Their work
+introduced a hyperspectral transformer model, guided by queries containing prior information about
+methane hotspots, facilitating accurate feature extraction and achieving state-of-the-art detection
+performance.
+However, despite the accuracy of these models, they rely on transformer architecture with attention
+mechanisms that are computationally inefficient [ 3,11,15]. Attention layers introduce significant
+overhead in both computational complexity and inference time. To mitigate these inefficiencies, we
+propose Mamba MethaneMapper (MMM), a novel framework that replaces the attention mechanism
+in the transformer architectures with a Mamba-S6 [ 3] state space block. This block reduces the
+quadratic computational complexity of the attention mechanisms to linear complexity. However,
+due to the nature of the hyperspectral data just replacing attention mechanism will not render to an
+efficient architecture[ 22]. Therefore, we propose an environment dependent selection strategy in the
+form of feature selector block.
+In summary, MMM will incorporate two primary innovative modules. First, it will integrate a GPU-
+optimized state-space encoder [ 3], which is designed to maximize computational efficiency. Second,
+MMM will employ an environment-adaptive feature selector to select regions that are likely to contain
+methane emissions. These prioritized regions will then be processed the mentioned encoder, reducing
+unnecessary computations and memory usage.
+2 Mamba MethaneMapper Architecture
+Data Overview For initial development and preliminary exploration, we will use the Methane
+Hot Spots (MHS) dataset [ 10]. We will train and test on the subset of the dataset from 2015.
+This subset includes flightlines from the Four-Corner (New Mexico, Arizona, Utah, and Colorado)
+region in United States of America. The dataset contains approximately 114 flightlines with point
+source emissions. We excluded the diffused emission source for the initial experiments. A VIRIS-
+NG hyperspectral imaging sensors capture spectral radiance values from N 0(N0= 432) channels
+corresponding to wavelengths ranging from 400nm−2500nm. The complete hyperspectral image is
+represented as x∈RH0×W0×N0where H0, W0are the height & width, respectively, and N0= 432
+is the number of channels.
+2.1 Technical Overview
+As can be seen in 1, MMM composed of the following components: 1) Feature Selector block to
+extract and selects salient features from the input hyperspectral image. 2) State-space Encoder to
+encode the selected features via Mamba-S6 state-space block. 3) Hyperspectral decoder to decode
+2the encoded feature map into segmentation mask and bounding boxes. Our Hyperspectral decoder
+follows the same architecture as the previous work[ 10]. Due to space constraints, we will just give
+overview to the Feature selector and the state-space encoder.
+Feature selector The feature selector takes hyperspectral images as input. Since not all wavelengths
+are relevant for methane detection, we selectively pass only the most useful channels for feature
+extraction. The band-pass filter block achieves this by employing separate filters for the RGB (400nm-
+700nm) and SWIR(2000nm-2500nm) channels. These filtered channels are then concatenated for
+feature extraction by the backbone, which can be any standard feature extractor, such as ResNet [ 6].
+Our spectral filter operates alongside the band-pass filter and the backbone. As input it takes the
+full hyperspectral image. Utilizing a matched filter, it leverages the methane absorption pattern to
+identify potential regions containing methane gas (see [ 10] for more details). This method has high
+recall but poor precision, therefore, we will use it to select potential methane containing regions in
+the hyperspectral images. Our masking block will use these identified regions to determine which
+parts of the extracted features will be passed to the encoder block, discarding the rest. The amount of
+discarding will be determined empirically.
+State-Space Encoder The state-space encoder receives the selected features from the feature
+extractor block. It adheres to a traditional encoder architecture [ 21] but replaces the attention
+mechanism with the Mamba-S6 block. State-space models [ 4,5] are known for their computational
+efficiency in sequence modeling. However, they typically lack context awareness due to fixed input
+parameters. The recent GPU-aware Mamba-S6 block [ 3] addresses this limitation. We will integrate
+this block into our state-space encoder. Additionally, a gated merging mechanism will be incorporated
+to group nearby spatial locations in the features, further reducing the number of input sequences to
+the Mamba-S6 block. The merging mechanism will have depth-wise and pixel-wise convolution
+inspired from the recent work [22].
+As mentioned earlier, Hyperspectral decoder will follow the traditional design [ 10]. It will utilize
+feed-forward networks and de-convolution to predict bounding boxes and segmentation masks
+respectively.
+3 Exprimental Setup & Preliminary Analysis
+We will use the MHS dataset [ 10] to train and test the model. We will evaluate the quality of our
+model following the evaluation protocol of H-mrcnn[14].
+Our initial implementation of the model has demonstrated a fourfold reduction in training memory
+usage. As development progresses, we anticipate achieving even greater efficiency. Unlike existing
+works [ 14,10], which primarily emphasize accuracy without considering computational costs, our
+approach balances both. We build on the inherent efficiency of state-space models while enhancing it
+with our environment-sensitive feature selector. This selector further reduces computational overhead,
+allowing us to deliver a model that is not only highly accurate, but also computationally efficient.
+4 Conclusion
+In this proposal, we propose an end-to-end methane detection model, MMM. MMM has two unique
+modules that leverage GPU-aware state-space model along with environment specific filter to detect
+methane in an efficient manner. The successful implementation of MMM will pave the way for large-
+scale deployment of real-time methane monitoring systems, enabling more effective and widespread
+environmental monitoring.
+References
+[1]Philippe Ciais, Christopher Sabine, Govindasamy Bala, Laurent Bopp, Victor Brovkin, Josep Canadell,
+Abha Chhabra, Ruth DeFries, James Galloway, Martin Heimann, et al. Carbon and other biogeochemical
+cycles. In Climate change 2013: the physical science basis. Contribution of Working Group I to the
+Fifth Assessment Report of the Intergovernmental Panel on Climate Change , pages 465–570. Cambridge
+University Press, 2014.
+3[2]Christian Frankenberg, Andrew K Thorpe, David R Thompson, Glynn Hulley, Eric Adam Kort, Nick
+Vance, Jakob Borchardt, Thomas Krings, Konstantin Gerilowski, Colm Sweeney, et al. Airborne methane
+remote measurements reveal heavy-tail flux distribution in four corners region. Proceedings of the national
+academy of sciences , 113(35):9734–9739, 2016.
+[3]Albert Gu and Tri Dao. Mamba: Linear-time sequence modeling with selective state spaces. arXiv preprint
+arXiv:2312.00752 , 2023.
+[4]Albert Gu, Tri Dao, Stefano Ermon, Atri Rudra, and Christopher Ré. Hippo: Recurrent memory with
+optimal polynomial projections. Advances in neural information processing systems , 33:1474–1487, 2020.
+[5]Albert Gu, Karan Goel, and Christopher Ré. Efficiently modeling long sequences with structured state
+spaces. arXiv preprint arXiv:2111.00396 , 2021.
+[6]Kaiming He, Xiangyu Zhang, Shaoqing Ren, and Jian Sun. Deep residual learning for image recognition.
+InProceedings of the IEEE conference on computer vision and pattern recognition , pages 770–778, 2016.
+[7] Paris IEA. Methane from oil & gas, 2020.
+[8]California Institute of Technology Jet Propulsion Laboratory. Airborne visible infrared imaging spectrome-
+ter - next generation (aviris-ng) overview, 2009.
+[9]Stefanie Kirschke, Philippe Bousquet, Philippe Ciais, Marielle Saunois, Josep G Canadell, Edward J
+Dlugokencky, Peter Bergamaschi, Daniel Bergmann, Donald R Blake, Lori Bruhwiler, et al. Three decades
+of global methane sources and sinks. Nature geoscience , 6(10):813–823, 2013.
+[10] Satish Kumar, Ivan Arevalo, ASM Iftekhar, and BS Manjunath. Methanemapper: Spectral absorption
+aware hyperspectral transformer for methane detection. In Proceedings of the IEEE/CVF Conference on
+Computer Vision and Pattern Recognition , pages 17609–17618, 2023.
+[11] Satish Kumar, ASM Iftekhar, Ekta Prashnani, and BS Manjunath. Locl: Learning object-attribute composi-
+tion using localization. arXiv preprint arXiv:2210.03780 , 2022.
+[12] Satish Kumar, William Kingwill, Rozanne Mouton, Wojciech Adamczyk, Robert Huppertz, and Evan D
+Sherwin. Guided transformer network for detecting methane emissions in sentinel-2 satellite imagery. In
+NeurIPS 2022 Workshop on Tackling Climate Change with Machine Learning , 2022.
+[13] Satish Kumar, Rui Kou, Henry Hill, Jake Lempges, Eric Qian, and Vikram Jayaram. In-situ water quality
+monitoring in oil and gas operations. arXiv preprint arXiv:2301.08800 , 2023.
+[14] Satish Kumar, Carlos Torres, Oytun Ulutan, Alana Ayasse, Dar Roberts, and BS Manjunath. Deep remote
+sensing methods for methane detection in overhead hyperspectral imagery. In Proceedings of the IEEE/CVF
+Winter Conference on Applications of Computer Vision , pages 1776–1785, 2020.
+[15] Satish Kumar, Bowen Zhang, Chandrakanth Gudavalli, Connor Levenson, Lacey Hughey, Jared A Stabach,
+Irene Amoke, Gordon Ojwang, Joseph Mukeka, Stephen Mwiu, et al. Wildlifemapper: Aerial image
+analysis for multi-species detection and identification. In Proceedings of the IEEE/CVF Conference on
+Computer Vision and Pattern Recognition , pages 12594–12604, 2024.
+[16] JOS Lelieveld, Paul J Crutzen, and Frank J Dentener. Changing concentration, lifetime and climate forcing
+of atmospheric methane. Tellus B , 50(2):128–150, 1998.
+[17] Gunnar Myhre, Drew Shindell, and Julia Pongratz. Anthropogenic and natural radiative forcing. 2014.
+[18] Euan G Nisbet, Edward J Dlugokencky, and Philippe Bousquet. Methane on the rise—again. Science ,
+343(6170):493–495, 2014.
+[19] DR Thompson, I Leifer, H Bovensmann, M Eastwood, M Fladeland, C Frankenberg, K Gerilowski,
+RO Green, S Kratwurst, T Krings, et al. Real-time remote detection and measurement for airborne imaging
+spectroscopy: a case study with methane. Atmospheric Measurement Techniques , 8(10):4383–4397, 2015.
+[20] Andrew K Thorpe, Christian Frankenberg, David R Thompson, Riley M Duren, Andrew D Aubrey, Brian D
+Bue, Robert O Green, Konstantin Gerilowski, Thomas Krings, Jakob Borchardt, et al. Airborne doas
+retrievals of methane, carbon dioxide, and water vapor concentrations at high spatial resolution: application
+to aviris-ng. Atmospheric Measurement Techniques , 10(10):3833–3850, 2017.
+[21] Ashish Vaswani, Noam Shazeer, Niki Parmar, Jakob Uszkoreit, Llion Jones, Aidan N Gomez, Łukasz
+Kaiser, and Illia Polosukhin. Attention is all you need. Advances in neural information processing systems ,
+30, 2017.
+[22] Jing Yao, Danfeng Hong, Chenyu Li, and Jocelyn Chanussot. Spectralmamba: Efficient mamba for
+hyperspectral image classification. arXiv preprint arXiv:2404.08489 , 2024.
+4

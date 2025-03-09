@@ -1,0 +1,768 @@
+Graph Representation Learning for Energy Demand Data:
+Application to Joint Energy System Planning under Emissions Constraints
+Aron Brenner*1, Rahman Khorramfar*2, Dharik Mallapragada3, Saurabh Amin4
+1,4Civil and Environmental Engineering (CEE) and Laboratory for Information &Decision Systems (LIDS)
+2MIT Energy Initiative (MITEI) and Laboratory for Information &Decision Systems (LIDS)
+3MIT Energy Initiative (MITEI)
+{abrenner, khorram, dharik, amins }@mit.edu
+Abstract
+A rapid transformation of current electric power and natural
+gas (NG) infrastructure is imperative to meet the mid-century
+goal of CO 2emissions reduction requires. This necessitates
+a long-term planning of the joint power-NG system under
+representative demand and supply patterns, operational con-
+straints, and policy considerations. Our work is motivated by
+the computational and practical challenges associated with
+solving the generation and transmission expansion problem
+(GTEP) for joint planning of power-NG systems. Specifi-
+cally, we focus on efficiently extracting a set of representa-
+tive days from power and NG data in respective networks and
+using this set to reduce the computational burden required
+to solve the GTEP. We propose a Graph Autoencoder for
+Multiple time resolution Energy Systems (GAMES) to cap-
+ture the spatio-temporal demand patterns in interdependent
+networks and account for differences in the temporal resolu-
+tion of available data. The resulting embeddings are used in a
+clustering algorithm to select representative days. We evalu-
+ate the effectiveness of our approach in solving a GTEP for-
+mulation calibrated for the joint power-NG system in New
+England. This formulation accounts for the physical interde-
+pendencies between power and NG systems, including the
+joint emissions constraint. Our results show that the set of
+representative days obtained from GAMES not only allows
+us to tractably solve the GTEP formulation, but also achieves
+a lower cost of implementing the joint planning decisions.
+Introduction
+One of the most significant societal challenges that we cur-
+rently face is to transition to a reliable, low-carbon, and
+sustainable energy system as soon as possible, and to meet
+the mid-century goal of limiting global warming below 2◦C
+(UN-FCCC 2015; Gielen et al. 2019). This requires a signif-
+icant use of renewable energy resources and well-planned
+integration of various energy vectors, including emerging
+clean energy sources such as hydrogen and other renew-
+able energy sources. Our work is motivated by the enor-
+mous potential of machine learning (ML) models in pro-
+moting sustainable energy systems. In particular, we focus
+on ML modeling for extracting a set of representative days
+from heterogeneous demand data associated with real-world
+*The first two authors contributed equally to this work.
+Copyright © 2022, Association for the Advancement of Artificial
+Intelligence (www.aaai.org). All rights reserved.electric power and natural gas (NG) systems, and using this
+set for joint power-NG network planning under emissions
+constraints. In doing so, we leverage ML-extracted repre-
+sentative days to tractably solve an optimization problem
+that determines a capacity and network expansion plan for
+regional-scale energy systems such as that of New England.
+Broadly speaking, our work addresses several practi-
+cal and computational challenges associated with capac-
+ity expansion models (CEMs) for decarbonization of in-
+terdependent power-NG infrastructures. Classical examples
+of such models include the generation expansion problem
+(GEP) and generation and transmission expansion problem
+(GTEP), both of which are well-studied in the context of
+power systems (Li et al. 2022a; He et al. 2018). Our opti-
+mization model is a GTEP that determines the optimal lo-
+cation and timing of generation units, transmission lines,
+and pipelines to meet future energy demands under a range
+of operational and policy constraints such as joint emission
+constraints. In our work, we extend the model to include
+two main interdependencies between power and NG sys-
+tems. The first interdependency captures the increasing role
+of gas-fired power plants in the generation mix of electricity
+production ( EIA; He et al. 2018). The second interdepen-
+dency reflects the joint emission of CO 2in both systems.
+The key computational challenge in solving the GTEP
+arises from the fact that it links long-term investment de-
+cisions (e.g. capacity and network expansion) to short-term
+operational ones (e.g. unit commitment, power production,
+and energy storage). The former decisions have a planning
+horizon of 10-30 years with yearly granularity, while the
+latter usually require hourly or sub-hourly resolution. Un-
+der reasonable assumptions, we can express the GTEP as a
+large-scale mixed-integer linear program (MILP), but cur-
+rent literature has limited success in tractably solving these
+problems to an adequate level of spatial and temporal resolu-
+tion. In our case, the computational difficulty in solving the
+GTEP increases further because we model both power and
+NG networks. Thus, taking into account (projected) demand
+information on a day-to-day basis becomes prohibitively
+expensive from a computational viewpoint. In the classi-
+cal GTEP problems for power systems, the computational
+challenge is addressed by aggregating power system nodes
+(buses) within a geographical neighborhood (power zone) to
+a single node (Li et al. 2022a) and by solving the GTEP for aset of representative days (Hoffmann et al. 2020). Crucially,
+the set of representative days needs to capture demand and
+supply patterns. To the best of our knowledge, the notion of
+representative days has not been clearly defined and devel-
+oped in the context of joint power-NG planning problem –
+this is where we leverage our graph representation learning
+approach.
+Our work also addresses the practical issues arising from
+coarse data availability from the NG network. Firstly, we do
+not have access to the detailed connectivity and transmis-
+sion information in the NG network while this information
+is readily available for the power network. Secondly, power
+systems typically collect demand and generation data at a
+fine temporal resolution (hourly or less), but this data is usu-
+ally not publicly accessible for NG systems. These issues
+thus require us to (a) formulate network constraints based on
+loosely specified information on power and NG node con-
+nectivity and (b) develop an approach to leverage demand
+and supply data from the power system with demand data of
+NG system despite their different temporal resolutions.
+We address the aforementioned challenges by develop-
+ing a graph representation learning approach that captures
+the physical interdependencies between power and NG net-
+works, and also handles the different granularity of data
+at each network. We consider demand data for both sys-
+tems, and consider capacity factor (CF) data for solar and
+wind plants to reflect the supply pattern in the renewable-
+dominated future grid. We utilize graph convolutions to cap-
+ture the network interactions both within and across power
+and NG networks, and adopt an autoencoder architecture
+with tuneable reconstruction losses for the respective de-
+mand and CF data. We demonstrate that the resulting Graph
+Autoencoder for Multiple time resolution Energy Sys-
+tems (GAMES) model is ideally suited to handle embed-
+ding the spatio-temporal patterns in power and NG demand
+as well as wind and solar CF data into a lower-dimensional
+representation, which can be readily clustered to extract the
+set of representative days. Furthermore, our approach to
+computing the set of representative days can also enable an
+accurate estimation of the trade-off between costs (both in-
+vestment and operational) and joint emissions from power
+and NG systems.1
+Previous studies for selecting representative days propose
+variants of k-means (Mallapragada et al. 2018; Li et al.
+2022b; Teichgraeber and Brandt 2019; Barbar and Mallapra-
+gada 2022), k-medoids (Scott et al. 2019; Teichgraeber and
+Brandt 2019), and hierarchical clustering (Liu, Sioshansi,
+and Conejo 2017; Teichgraeber and Brandt 2019). The dis-
+tance matrices used in clustering algorithms for most previ-
+ous works are constructed based on a set of time series inputs
+such as load data and variable renewable energies (VRE)
+capacity factors (Li et al. 2022a; Hoffmann et al. 2020).
+Notably, these approaches neither account for demand data
+with multiple time resolutions nor account for network in-
+1We believe this capability can have a significant societal im-
+pact by lowering the barriers to investment in renewable energy re-
+sources and alleviating reliability concerns in a low-carbon energy
+system.terdependencies. Hence, they cannot be readily extended to
+address the task of extracting representative days for joint
+power-NG systems – an aspect that is crucial for realism and
+tractability in joint planning optimization models for decar-
+bonizing these systems. We believe that our GAMES model
+addresses these challenges and provides a promising path
+to better extract representative days in interdependent power
+and NG systems.
+Graph Convolutional Autoencoder Approach
+In this section, we describe the Graph Autoencoder for Mul-
+tiple time resolution Energy Systems (GAMES) model, a
+simple graph autoencoder with linear graph convolutions.
+We argue that this architecture efficiently captures spatio-
+temporal demand patterns in power and NG systems.
+Autoencoders
+To begin with, we note that direct use of clustering algo-
+rithms to identify representative days for any large-scale en-
+ergy system is prone to the “curse of dimensionality” due
+to the high dimensionality of time series data. In such set-
+tings, it is desirable to first extract low-dimensional and de-
+noised representations of the data before clustering (Par-
+sons, Haque, and Liu 2004). To identify a set of represen-
+tative days, we choose to utilize a state-of-the-art autoen-
+coder architecture for learning low-dimensional embeddings
+for power-NG systems (that have different time resolutions)
+prior to clustering.
+Given a high-dimensional input such as a time series of
+graph signals, X∈Rp, an autencoder can be trained to
+jointly learn an encoder, g:Rp→Rk, and a decoder,
+f:Rk→Rpthat minimize the reconstruction loss func-
+tion∥X−ˆX∥2
+2, where ˆX=f(g(X))is the reconstructed
+signal. Here, k≪pdenotes the dimension of the learned
+latent space.
+Variable Interpretation Granularity Nodes
+XE Electricity Hourly 188
+XW Wind Hourly 188
+XS Solar Hourly 188
+XG Natural Gas Daily 18
+Table 1: Notation for input variables.
+We denote by XE∈Rd×nE×tEthe data tensor of elec-
+tricity demands over all days d, nodes nE, and times tE.
+Similarly, we denote the natural gas data tensor by XG∈
+Rd×nG×tG, the wind capacity factor tensor by XW∈
+Rd×nW×tW, and the solar capacity factor data tensor by
+XS∈Rd×nS×tS(see Table 1). Because the GTEP considers
+different associated costs for investment and operational de-
+cisions related to power, NG, wind, and solar, we introduce
+hyperparameters αG, αW, αSin the autoencoder objective
+function to tune the trade-off between the multiple recon-
+struction losses. This parameter reflects the contribution of
+each system towards the total cost. For example, if the NG
+system cost is twice the power system cost, then higher val-
+ues of αGensure that the reconstruction cost is penalized05101520Hour°2.0°1.5°1.0°0.50.0Electricity Demand (std. dev.)Node 8Node 205101520Hour°2.0°1.5°1.0°0.50.0Electricity Demand (std. dev.)Node 72Node 92
+05101520Hour°2.0°1.5°1.0°0.50.0Electricity Demand (std. dev.)Node 142Node 13005101520Hour°2.0°1.5°1.0°0.50.0Electricity Demand (std. dev.)Node 170Node 155Figure 1: Adjacent nodes in the power network demonstrate similar variations in demand over the course of the day. These
+spatial dependencies are modeled explicitly by graph convolutional layers in the GAMES architecture.
+more when deviating from the data of the NG system. This
+gives us the following loss function:
+dX
+i=11
+dnEtE∥X(i)
+E−ˆX(i)
+E∥2
+F+αG
+dnGtG∥X(i)
+G−ˆX(i)
+G∥2
+F
++αW
+dnWtW∥X(i)
+W−ˆX(i)
+W∥2
+F+αS
+dnStS∥X(i)
+S−ˆX(i)
+S∥2
+F
+,
+where ∥ · ∥Fdenotes the Frobenius norm.
+In our case study, we set αG= 2, αS= 0.5, αW= 0.5.
+However, we note that it is possible to choose the hyperpa-
+rameters by evaluating the downstream GTEP objective for
+different values. Specifically, this can be performed using a
+grid search in which the quality of a combination of hyper-
+parameters {αG, αW, αS}is measured by GTEP objective
+costs given by solving the optimization model rather than
+the GAMES validation loss directly.
+Graph Representation Learning
+Next, we provide a brief introduction to modeling with graph
+convolutional networks (GCNs).Preliminaries We encode the network topology with the
+binary adjacency2matrix A, which we construct such that
+Aij=0 (i, j)/∈ E
+1 (i, j)∈ E.
+We also construct the diagonal degree matrix Dsuch that
+Dii=P
+jAij.
+Graph Convolutions Our graph autoencoder approach
+follows (Kipf and Welling 2017) in utilizing Chebyshev con-
+volutional filters , which approximate spectral convolutions
+to learn node embeddings as weighted local averages of em-
+beddings of adjacent nodes. This is ideal for learning low-
+dimensional embeddings of energy networks as neighbor-
+hoods of nodes typically exhibit similar energy demands
+patterns and can thus be represented jointly. Chebyshev fil-
+ters operate on the “renormalized” graph Laplacian ˜L=
+˜D−1
+2˜A˜D−1
+2, where ˜D=I+Dand˜A=I+A, and
+perform a form of Laplacian smoothing (Li, Han, and Wu
+2018; Taubin 1995). We initialize H(0)=Xand apply con-
+volutional filters to learn subsequent node embeddings as
+2Ideally, one should construct an affinity matrix Awith a Gaus-
+sian kernel such that Aij= exp
+−dist(i,j)2
+σ2
+for all edges (i, j),
+where dist(i, j)denotes the distance of edge (i, j)andσdenotes
+the standard deviation of distances in the network (Shuman et al.
+2012). Since we do not have access to edge distance data in our
+case study, we proceed with the binary adjacency matrix.follows:
+H(l+1)=σ(˜LH(l)Θ(l)),
+where Θ(l)is a trainable weight matrix and H(l)is a matrix
+of node embeddings in layer l.σ(·)is typically a nonlinear
+activation function, such as ReLU ortanh .
+In each layer, GCNs aggregate features from the imme-
+diate neighborhood of each node. Deep GCNs stack multi-
+ple layers with nonlinear activations to learn node embed-
+dings as nonlinear functions of both local and global node
+features. In contrast, (Salha, Hennequin, and Vazirgiannis
+2019) propose a simpler graph autoencoder model, which
+they demonstrate to have competitive performances with
+multilayer GCNs on standard benchmark datasets despite
+being limited to linear first-order interactions. Shallow neu-
+ral architectures are also better suited for settings where data
+is scarce. This is particularly significant in modeling energy
+systems whose data may only be available for a few his-
+torical years. Indeed, we find this simpler GCN approach to
+perform well for our case study. We now introduce GAMES,
+an augmented version of the linear GCN autoencoder for en-
+ergy systems with multiple time resolutions.
+GAMES
+Our proposed GAMES architecture is designed as follows
+and illustrated in Fig. 2.
+Encoder Consider the power, wind CF, solar CF, and NG
+time series corresponding to day i,X(i)
+E,X(i)
+W,X(i)
+S,X(i)
+G.
+We begin by constructing the data matrix X(i)as
+X(i)= 
+X(i)
+EX(i)
+WX(i)
+W 0
+0 0 0 X(i)
+G!
+.
+Note that X(i)∈Rn×t, where n:=nE+nGandt:=
+tE+tW+tW+tG. This is because capacity factor data
+exists for all nodes in the power network and utilizes the
+same network topology. X(i)is then passed through a sin-
+gle convolutional layer to produce the low-dimensional em-
+bedding Z(i)∈Rn×k. The hyperparameter kdefines the
+bottleneck of the autoencoder architecture (i.e. the dimen-
+sion of each node embedding) and consequently the tradeoff
+between compression and reconstruction loss. In our case
+study, we find k= 3 to show a sufficient performance for
+our application of identifying representative days.
+Decoder Z(i)is passed through a convolutional layer to
+produce the embedding H(i)∈Rn×t. This reconstructed
+matrix is then split along the second dimension into two
+blocks: H(i)
+E,W,S∈R(nE+nW+nS)×tandH(i)
+G∈RnG×t.
+Each block is then passed to a separate series of fully con-
+nected layers with tanh activations that map the node em-
+beddings in H(i)
+E,W,SandH(i)
+Grespectively to the reconstruc-
+tions ˆX(i)
+E,W,SandˆX(i)
+G. Finally, the tensor ˆX(i)
+E,W,Sis split
+into the reconstructions ˆX(i)
+E,ˆX(i)
+W,ˆX(i)
+S.Clustering
+After the model is trained, the power
+and NG time series from each day i, i.e.
+(X(1)
+E, X(1)
+W, X(1)
+S, X(1)
+G), . . . , (X(N)
+E, X(N)
+W, X(N)
+S, X(N)
+G),
+is passed through the encoder to generate the embedding
+matrices Z(1), . . . , Z(N). Then, k-medoids clustering is
+applied to select a set of Kcluster medians, denoted by
+S ⊂ { 1, . . . , N }, and assign each day ito a corresponding
+cluster j∈ S. We denote the set of days assigned to the
+cluster defined by day jasCj. Given the number of clusters
+K, the k-medoids algorithm aims to minimize the objective
+function
+minX
+j∈SX
+i∈Cj∥Z(i)−Z(j)∥2
+F (1)
+(Hastie, Tibshirani, and Friedman 2001). Note that every day
+in the dataset must be assigned to exactly one cluster. Se-
+mantically, (1) can be understood as aiming to ensure that
+the set of representative days Sproportionately partitions
+the full set of days in the dataset by minimizing squared Eu-
+clidean distances in the latent space as constructed by the
+autoencoder.
+Capacity Expansion Model
+The result of the clustering algorithm is used to solve the
+CEM for joint power and NG planning, which is formulated
+as a GTEP. The problem determines the minimum invest-
+ment cost and operational decisions for the year 2050 un-
+der various investment, operational, and policy constraints.
+The investment decisions include establishing new power
+plants, transmission lines, and pipelines as well as decom-
+missioning existing plants. The operational constraints in-
+clude minimum production, ramping, energy balance, trans-
+mission, and storage. We consider emission limits and min-
+imum share of VREs as policy constraints. Importantly, in
+our formulation, the emissions constraint limits CO 2emis-
+sions incurred by the consumption of NG in both networks.
+We introduce our model with simplified notation in this
+section and provide a detailed formulation in the supple-
+mentary material (SI 2022). Let ze= (xe,ye,p)represent
+the set of variables for the power system. The integer vari-
+ablexeis the variable establishing plants, decommissioning
+plants, and establishing new transmission lines. The contin-
+uous variable pcaptures the power generation in NG-fired
+plants while yeis a continuous variable that captures all the
+remaining variables including power generation from non
+NG-fired plants and power flow between nodes, storage, and
+load shedding variables. We use zg= (xg,yg,f)to de-
+note the set of variables associated with the NG system. The
+mixed-integer variable xgis the set of all investment, stor-
+age, and load shedding decisions. The continuous variable
+ygrepresents the intra-network flow, i.e. the flow between
+NG nodes or the flow between NG nodes and NG storage
+facilities. The flow between NG and electricity systems is
+denoted by f. We formulate the joint power-NG system as[XE∥XW∥XS]
+XGX ConvEncoder
+Z ConvDecoder
+HHE,W,S
+HGFC tanh FC [ˆXE∥ˆXW∥ˆXS]
+FC tanh FC ˆXG
+Extract Node EmbeddingsFigure 2: The GAMES Architecture. The electric power, wind CF, solar CF, and NG time series are combined into the block
+matrix Xwithnrows and tE+tW+tS+tGchannels. A single linear graph convolutional layer constructs matrix Zby
+embedding each row of Xintokdimensions. Another graph convolutional layer scales each row of Zback to tE+tW+tS+tG
+dimensions, which are then separated and fed through fully connected layers to reconstruct the two time series. After the model
+is trained, the embeddings are extracted by feeding the daily time series inputs through the encoder, at which point clustering is
+applied.
+follows:
+min (ce
+1xe+ce
+2ye+ce
+3p) + (cg
+1xg+cg
+2yg+cg
+3f)
+(2a)
+s.t.Aexe+Beye+Dep≤be
+1 (2b)
+Heye≥be
+2 (2c)
+Agxg+Bgyg+Dgf≤bg
+1 (2d)
+f=E1p (2e)
+G2yg+E2p≤η (2f)
+xe∈Z+,ye,xg∈Z+×R+,p,yg,f∈R+(2g)
+The objective function (2a) minimizes the investment and
+operational costs for the power system (first term) and NG
+system (second term). The constraint (2b) represents all in-
+vestment, commitment, and operational constraints for the
+power system including the production limit, ramping, stor-
+age, and energy balance constraints. The constraint (2c) en-
+forces policy considerations such as the minimum require-
+ment for renewable portfolio standard (RPS). The NG con-
+straints are reflected in constraint (2d), which includes tech-
+nological and operational constraints such as the supply
+limit at each node, flow between NG nodes, and storage.
+The coupling constraint (2e) ensures that NG-fired plants
+operate based on the gas flow they receive from the NG
+network. The second coupling constraint (2f) is the decar-
+bonization constraint that limits emissions resulting from
+NG consumption to serve both electricity (via NG power
+plants) and non-power related NG loads to η. The coeffi-
+cient matrices E1,G2, andE2represent the heat rate, emis-
+sion factors for NG usage, and emission factor for NG-fired
+plants, respectively. Indeed, emissions from coal-fired plants
+is a major driver for decarbonization efforts and NG remains
+as primary fuel for which emissions need to be regulated.
+Therefore, given the declining role of coal in the US energy
+system, the constraint (2f) reflects a futuristic setting where
+such plants are already decommissioned.Input Data
+Using publicly available data, we consider the New England
+region and construct its corresponding power and NG net-
+work. We then calibrate the resulting networks using his-
+torical data. The power network consists of 188 nodes with
+338 existing and candidate transmission lines. The NG net-
+work consists of 18 NG nodes and 7 storage nodes. We as-
+sume that each NG node is connected to two other storage
+nodes. We also assume that each power node is connected
+to three of its closest NG nodes. The Supplementary Infor-
+mation provides the details of the input data for the joint
+power-NG planning model (SI 2022).
+Computational Experiments
+GAMES Performance
+We train GAMES on a dataset of 292 days using the Adam
+optimizer with a learning rate of 0.001. We use the full batch
+of 292 data points for each update step and perform early
+stopping to end training when the validation loss no longer
+decreases. We report the validation reconstruction loss on
+a set of 73 days for various node embedding dimensions k
+in Table 2. We observe slightly diminishing returns for the
+Embed. Dim. k= 1 k= 2 k= 3 k= 4
+MSE Loss 0.727 0.398 0.244 0.160
+Table 2: The reconstruction loss shows diminishing returns
+fork >3node embedding dimensions.
+validation reconstruction loss for k >3. Consequently, we
+proceed with our representative day selection using embed-
+dings generated by the model corresponding to k= 3.
+Representative Days Comparison
+Setup We use the k-medoids clustering algorithm to ob-
+tain different sets of representative days. We apply the clus-
+tering algorithm to both raw data and the embeddings ob-2 6 10 14 18 22 26 30 34 38 421.52.01e10
+Total Cost
+Raw Data GAMES
+2 6 10 14 18 22 26 30 34 38 421.01.51e10
+Power System Cost
+2 6 10 14 18 22 26 30 34 38 424.55.01e9
+NG System Cost
+2 6 10 14 18 22 26 30 34 38 421.01.21e10
+Investment and FOM for Geneneration and Storage (Pow. Sys)
+2 6 10 14 18 22 26 30 34 38 420241e9
+Power System Load Shedding Cost
+2 6 10 14 18 22 26 30 34 38 42
+Number of Representative Days051e6
+Emission from Power System(a) GAMES vs. raw data clustering comparison under an 80%
+carbon reduction goal.
+2 6 10 14 18 22 26 30 34 38 421.752.002.251e10
+Total Cost
+Raw Data GAMES
+2 6 10 14 18 22 26 30 34 38 421.01.51e10
+Power System Cost
+2 6 10 14 18 22 26 30 34 38 42561e9
+NG System Cost
+2 6 10 14 18 22 26 30 34 38 421.01.21.41e10
+Investment and FOM for Geneneration and Storage (Pow. Sys)
+2 6 10 14 18 22 26 30 34 38 420241e9
+Power System Load Shedding Cost
+2 6 10 14 18 22 26 30 34 38 42
+Number of Representative Days051e6
+Emission from Power System(b) GAMES vs. raw data clustering comparison under a 95% car-
+bon reduction goal.
+Figure 3: Various costs and power emission for different number of representative days under different decarbonization goals.
+tained from the GAMES model to compare the results of
+the proposed model. Accordingly, two different sets are ob-
+tained for each number of representative days. The optimiza-
+tion model over the full power network is prohibitively chal-
+lenging even for a very small number of days. Therefore, we
+aggregate all buses in each state of the New England region
+to obtain a 6-node power network. This aggregation allows
+us to run the formulation for up to 42 representative days.
+We obtain a feasible solution in two steps for each set of
+representative days: (1) The optimization model is aggre-
+gated to the set of representative days for tractability and
+then solved. (2) Next, we consider the full planning horizon
+(the entire year of 2050) and set the integer decision vari-
+ables (i.e. investment decisions) to the values determined in
+the first step. We note that the investment decision variables
+in our formulation are (a) the only integer-valued decision
+variables and (b) independent of planning periods. There-
+fore, fixing them reduces the remaining operational problem
+to a linear program (LP), which can be solved considerably
+faster. The resulting solution from the second step is a fea-
+sible solution to the full-year problem, with which we can
+analyze resulting costs and decisions.In our computational experiments, we consider two de-
+carbonization goals of 80 %and 95 %where the former is the
+projected target for New England states (Weiss and Hagerty
+2019), and the latter aims reflects a radical decarbonization
+goal. Figures 3a and 3b show the results under 80 %and 95 %
+emission reduction goals respectively. Both figures evalu-
+ate the following quantities for the clusters obtained from
+GAMES and raw data: i) “Total Cost” which is the objec-
+tive function of model 2; ii) “Power System Cost” which is
+the first term in the objective function (2a); iii) “NG Sys-
+tem Cost” which is the second term in the objective func-
+tion (2a); iv) “Investment and FOM for Generation and Stor-
+age (Pow. Sysm)” (investment-FOM) which is part of the
+power system cost and captures the capital investment and
+fixed operating and maintenance (FOM) costs of installing
+new power plants and storage systems; v) “Power System
+Load Shedding Cost” which is part of the power system cost
+and reflects the cost of unsatisfied electricity demand; and
+v) “Emission from Power System” which is the tonnage of
+emission as a result of operating NG-fired power plants in
+the power system. We use “GAMES” to denote the feasi-
+ble solution for the set of days obtained by GAMES. We doTable 3: Average percentage change when using GAMES approach for for various costs and power emissions.
+Reduction Goal Total Power NG Inv-FOM (Power) Shedding cost (Power) Emission from Power Sys
+80% -5.14 -7.03 0.24 -4.64 -24.13 -9.87
+95% -7.27 -10.50 1.5 -8.51 -27.80 -3.31
+not report the wall-clock times, but all instances are solved
+under 5 hours. As expected, run-times vary significantly de-
+pending on the number of representative days utilized; in-
+stances with 2 representative days typically run in fewer than
+350 seconds, whereas 30-day instances may need to run for
+2800 seconds. All instances are implemented in Python us-
+ing Gurobi 9.5 and are run on the MIT Supercloud system
+with an Intel Xeon Platinum 8260 processor containing up
+to 96 cores and 192 GB of RAM (Reuther et al. 2018).
+Results Table 3 presents the percentage change in various
+quantities yielded by the GAMES representative days solu-
+tion as compared to the solution using representative days
+selected from clustering the raw data. The cost comparisons
+are also plotted in Figures 3a and 3b. We observe, on aver-
+age, a 5.14 %and 7.27 %improvement (decrease) in the total
+cost when using GAMES under 80 %and 95 %decarboniza-
+tion goals, respectively. This improvement may be attributed
+to GAMES’ ability to model dependencies between power
+and NG system data. Under more stringent decarbonization
+targets, the share of VRE increases and the role of dispatch-
+able power plants, such as NG-fired plants, diminishes. As
+a result, modeling the influence of capacity factors and their
+interactions with power and gas demands becomes more es-
+sential. This phenomenon may underlie our observation for
+the 22-day instance in which, while both approaches provide
+similar results under the 80 %decarbonization goal, GAMES
+significantly outperforms the raw data clustering as mea-
+sured by total cost for the higher decarbonization goal. As
+shown in Figures 3a and 3b, the total cost from GAMES out-
+performs or matches the performance of the raw data clus-
+tering in all instances (except the 30-day instance under an
+80%reduction goal). Interestingly, this disparity in perfor-
+mance is most drastic when 15 or fewer representative days
+are utilized under both decarbonization goals. This is worth
+noting as the optimization model instantiated on the full net-
+work topology (i.e. without aggregating nodes by state) is
+only tractable over a small set of representative days (i.e. af-
+ter applying a very coarse temporal aggregation). It is espe-
+cially important when the a model-year model only affords
+to consider a handful of representative days for each year.
+The power system cost largely drives variation in the to-
+tal cost under both decarbonization goals – the total cost is
+lower for all solutions with a lower power system cost. Note
+that the difference in performance is more pronounced in the
+power system cost compared to the total cost as indicated
+by the 7.03 %and 10.50 %power system cost improvement
+for GAMES under the 80 %and 95 %decarbonization goals.
+In Figure 3a, this trend aligns with load shedding costs ex-
+cept for the 14-day instance. However, as the 24.13 %de-
+crease shows, the GAMES approach results in significantly
+lower load shedding on average. The 27.80 %improvementin the load shedding cost for GAMES under the 95 %goal
+is plotted in detail in Figure 3b; GAMES outperforms the
+raw data clustering for all instances. Moreover, the GAMES
+approaches converges after 14 days with load shedding cost
+significantly lower than those instances utilizing fewer rep-
+resentative days.
+In both figures the trends of investment-FOM cost and
+power system cost are the same, indicating that the power
+system cost is largely driven by investment-FOM cost, and
+to a lesser extent, by load shedding cost. This is expected as
+future energy systems will rely significantly on VREs such
+as solar and wind power, which only incur investment and
+FOM costs. Another interesting observation pertains to the
+quantity of emissions in the power system caused by oper-
+ating NG-fired plants. Emissions for the power system are
+on average 9.87 %and 3.31 %lower for GAMES under the
+two decarbonization goals. This indicates a greater share
+of VREs in the GAMES approach, and correspondingly, a
+higher share of gas-fired plants in the raw data clustering
+approach. This is an interesting observation that may have
+significant implications for energy policy-making. In partic-
+ular, it suggests that the results from the raw data cluster-
+ing approach may be misleading as they do not sufficiently
+convey the radical changes required to transform the sys-
+tem from the current gas-dominant generation portfolio to a
+renewable-dominant power grid.
+NG system cost is another essential component of the total
+costs. Although NG costs are similar for GAMES and raw
+data clustering for each instance, the NG cost increases with
+the number of representative days. A possible explanation
+might be that neither GAMES nor raw data clustering aim to
+capture extreme days with separate clusters. Therefore, days
+with loads similar to extreme days are more likely to be se-
+lected as a cluster’s medoid as the number of representative
+days increases, which inevitably raises the NG system cost.
+This consideration is also consistent with the observed load
+shedding cost for the power system, which is significantly
+higher for instances with fewer than 15 representative days,
+indicating that both approaches fail to account for extreme
+days in cluster medoids.
+Conclusion
+In this work, we propose GAMES, a graph convolutional
+autoencoder for modeling energy demand in interdependent
+electric power and natural gas systems with heterogeneous
+nodes and different time resolutions. GAMES is able to ex-
+ploit spatio-temporal demand patterns to learn efficient em-
+beddings of interdependent power and NG networks. We ap-
+ply the k-medoids clustering algorithm to these embeddings
+to identify a set of representative days with which we are
+able to tractably solve an energy system infrastructure plan-ning problem calibrated for the joint power-NG system in
+New England. Our computational results show that the pro-
+posed framework outperforms clustering methods applied to
+the raw data and is effective in selecting a small number
+of representative days to provide high-quality feasible so-
+lutions for the optimization problem.
+The current work can be extended in multiple directions.
+The immediate extension of the GCN architecture is to ex-
+plore alternative approaches to graph representation learning
+such as Laplacian sharpening (Park et al. 2019). The extrac-
+tion and inclusion of extreme days, or low-frequency days
+with unusually low or high demand is another potential next
+step which could prevent high load shedding costs and better
+represents the NG system’s load patterns.
+References
+Barbar, M.; and Mallapragada, D. S. 2022. Represen-
+tative period selection for power system planning using
+autoencoder-based dimensionality reduction. arXiv preprint
+arXiv:2204.13608 .
+(EIA), E. I. A. 2022. EIA Website. Website. Accessed:
+2022-2-18.
+Gielen, D.; Gorini, R.; Wagner, N.; Leme, R.; Gutierrez, L.;
+Prakash, G.; Asmelash, E.; Janeiro, L.; Gallina, G.; Vale,
+G.; et al. 2019. Global energy transformation: a roadmap to
+2050.
+Hastie, T.; Tibshirani, R.; and Friedman, J. 2001. The Ele-
+ments of Statistical Learning . Springer Series in Statistics.
+New York, NY , USA: Springer New York Inc.
+He, C.; Zhang, X.; Liu, T.; Wu, L.; and Shahidehpour, M.
+2018. Coordination of interdependent electricity grid and
+natural gas network—a review. Current Sustainable/Renew-
+able Energy Reports , 5(1): 23–36.
+Hoffmann, M.; Kotzur, L.; Stolten, D.; and Robinius, M.
+2020. A review on time series aggregation methods for en-
+ergy system models. Energies , 13(3): 641.
+Kipf, T. N.; and Welling, M. 2017. Semi-Supervised Clas-
+sification with Graph Convolutional Networks. In 5th In-
+ternational Conference on Learning Representations, ICLR
+2017, Toulon, France, April 24-26, 2017, Conference Track
+Proceedings . OpenReview.net.
+Li, C.; Conejo, A. J.; Liu, P.; Omell, B. P.; Siirola, J. D.; and
+Grossmann, I. E. 2022a. Mixed-integer linear programming
+models and algorithms for generation and transmission ex-
+pansion planning of power systems. European Journal of
+Operational Research , 297(3): 1071–1082.
+Li, C.; Conejo, A. J.; Siirola, J. D.; and Grossmann, I. E.
+2022b. On representative day selection for capacity ex-
+pansion planning of power systems under extreme operat-
+ing conditions. International Journal of Electrical Power &
+Energy Systems , 137: 107697.
+Li, Q.; Han, Z.; and Wu, X.-M. 2018. Deeper Insights into
+Graph Convolutional Networks for Semi-Supervised Learn-
+ing. In Proceedings of the Thirty-Second AAAI Confer-
+ence on Artificial Intelligence and Thirtieth Innovative Ap-
+plications of Artificial Intelligence Conference and EighthAAAI Symposium on Educational Advances in Artificial In-
+telligence , AAAI’18/IAAI’18/EAAI’18. AAAI Press. ISBN
+978-1-57735-800-8.
+Liu, Y .; Sioshansi, R.; and Conejo, A. J. 2017. Hierarchi-
+cal clustering to find representative operating periods for
+capacity-expansion modeling. IEEE Transactions on Power
+Systems , 33(3): 3029–3039.
+Mallapragada, D. S.; Papageorgiou, D. J.; Venkatesh, A.;
+Lara, C. L.; and Grossmann, I. E. 2018. Impact of model
+resolution on scenario outcomes for electricity sector sys-
+tem expansion. Energy , 163: 1231–1244.
+Park, J.; Lee, M.; Chang, H. J.; Lee, K.; and Choi, J. Y . 2019.
+Symmetric Graph Convolutional Autoencoder for Unsuper-
+vised Graph Representation Learning. 2019 IEEE/CVF In-
+ternational Conference on Computer Vision (ICCV) , 6518–
+6527.
+Parsons, L.; Haque, E.; and Liu, H. 2004. Subspace Cluster-
+ing for High Dimensional Data: A Review. SIGKDD Explor.
+Newsl. , 6(1): 90–105.
+Reuther, A.; Kepner, J.; Byun, C.; Samsi, S.; Arcand, W.;
+Bestor, D.; Bergeron, B.; Gadepally, V .; Houle, M.; Hubbell,
+M.; et al. 2018. Interactive supercomputing on 40,000 cores
+for machine learning and data analysis. In 2018 IEEE High
+Performance extreme Computing Conference (HPEC) , 1–6.
+IEEE.
+Salha, G.; Hennequin, R.; and Vazirgiannis, M. 2019. Keep
+it simple: Graph autoencoders without graph convolutional
+networks. arXiv preprint arXiv:1910.00942 .
+Scott, I. J.; Carvalho, P. M.; Botterud, A.; and Silva, C. A.
+2019. Clustering representative days for power systems gen-
+eration expansion planning: Capturing the effects of vari-
+able renewables and energy storage. Applied Energy , 253:
+113603.
+Shuman, D.; Narang, S. K.; Frossard, P.; Ortega, A.; and
+Vandergheynst, P. 2012. The Emerging Field of Signal
+Processing on Graphs: Extending High-Dimensional Data
+Analysis to Networks and Other Irregular Domains. IEEE
+Signal Processing Magazine , 30.
+SI. 2022. Supplementary material available at:
+https://shorturl.at/bkHOU.
+Taubin, G. 1995. A Signal Processing Approach to Fair
+Surface Design. In Proceedings of the 22nd Annual Con-
+ference on Computer Graphics and Interactive Techniques ,
+SIGGRAPH ’95, 351–358. New York, NY , USA: Associa-
+tion for Computing Machinery. ISBN 0897917014.
+Teichgraeber, H.; and Brandt, A. R. 2019. Clustering meth-
+ods to find representative periods for the optimization of en-
+ergy systems: An initial framework and comparison. Ap-
+plied energy , 239: 1283–1293.
+UN-FCCC. 2015. Decision 1/CP. 21, Adoption of the Paris
+Agreement. In Report of the Conference of the Parties on Its
+Twenty-First Session, Held in Paris from , volume 30.
+Weiss, J.; and Hagerty, J. M. 2019. Achieving 80 %GHG
+Reduction in New England by 2050.

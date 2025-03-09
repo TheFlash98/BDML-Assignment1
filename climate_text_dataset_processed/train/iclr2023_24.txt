@@ -1,0 +1,271 @@
+NESTED FOURIER NEURAL OPERATOR FOR BASIN -
+SCALE 4D CO 2STORAGE MODELING
+Gege Wen∗
+Department of Energy Science and Engineering
+Stanford UniversityZongyi Li
+Computing and Mathematical Sciences
+California Institute of Technology
+Qirui Long
+Department of Energy Science and Engineering
+Stanford UniversityKamyar Azizzadenesheli
+NVIDIA Corporation
+Anima Anandkumar
+Computing and Mathematical Sciences
+California Institute of Technology
+NVIDIA CorporationSally M. Benson
+Department of Energy Science and Engineering
+Stanford University
+ABSTRACT
+Carbon capture and storage (CCS) plays an essential role in global decarboniza-
+tion. Scaling up CCS requires accurate and high-resolution modeling of the
+storage reservoir pressure buildup and the gaseous plume migration. However,
+such modeling is very challenging at scale due to the high computational costs
+of existing numerical methods. This challenge leads to significant uncertainty
+in evaluating storage opportunities which can delay the pace of global CCS de-
+ployments. We introduce a machine-learning approach for dynamic basin-scale
+modeling that speeds up flow prediction nearly 700,000 times compared to exist-
+ing methods. Our framework, Nested Fourier Neural Operator (FNO), provides
+a general-purpose simulator alternative under diverse reservoir conditions, geo-
+logical heterogeneity, and injection schemes. It enables unprecedented real-time
+high-fidelity modeling to support decision-making in basin-scale CCS projects.
+1 I NTRODUCTION
+Carbon capture and storage (CCS) is an important climate change mitigation technology that cap-
+tures carbon dioxide (CO 2) and permanently stores it in subsurface geological formations. It pro-
+vides a tangible solution for decarbonizing hard-to-mitigate sectors and can generate negative emis-
+sions when combined with direct air capture or bioenergy technologies (Pathways, 2019; Luderer
+et al., 2018; Fankhauser et al., 2022). However, the current pace of CCS deployment scale-up
+has failed to meet expectations (Reiner, 2016). One of the critical challenges contributing to the
+delay is the uncertainties in storage prospects and injection capacities (Lane et al., 2021). The
+geological storage of CO 2leads to pressure buildup and gaseous plume migration in the storage
+formation (NAS, 2018). Forecasts of these dynamic responses are used to determine CO 2storage
+capacities and guide important engineering decisions. The modeling of these processes requires
+multi-phase (Pruess et al., 1999; Blunt, 2017), multi-physics (Pruess & Garcia, 2002), and multi-
+scale simulations, which are very expensive with current numerical approaches. As a result, they are
+inadequate to provide rigorous computation supports that are needed for accelerating CCS project
+deployments around the world (Lane et al., 2021).
+An especially challenging characteristic of CO 2storage modeling is that it demands both high-
+resolutions and extremely large spatial-temporal domains. The CO 2plume and near-well pressure
+buildup require highly resolved grids (Pruess & M ¨uller, 2009; Andr ´e et al., 2014; Doughty, 2010;
+Wen & Benson, 2019). Meanwhile, pressure buildup can travel hundreds of kilometers beyond the
+∗Corresponding author: gegewen@stanford.edu
+1CO2plume and interfere with other injection operations (Chadwick et al., 2004). Due to these multi-
+scale responses, many CCS-related analyses are forced to use inaccurate simulations with coarsened
+grid resolution (Kou et al., 2022) and/or simplified physics (Cavanagh & Ringrose, 2011).
+One approach for reducing the computational costs of numerical simulations is to use non-uniform
+grids to capture different responses with different resolutions. A popular method, known as local grid
+refinement (Bramble et al., 1988) (LGR), has enabled simulations of real-world three-dimensional
+(3D) CO 2storage projects, where the fine-grid responses capture the plume migration while the
+coarser grid responses capture the far-field pressure buildup (Eigestad et al., 2009; Faigle et al., 2014;
+Kamashev & Amanbek, 2021). However, even with non-uniform grid approaches, these numerical
+models are still too expensive to be used for important CCS tasks that require probabilistic/repetitive
+forward stimulation such as site selection (Callas et al., 2022), optimization (Nghiem et al., 2010;
+Zhang & Agarwal, 2012), and inversion (Strandli et al., 2014).
+Figure 1: a-b. Permeability for a dipped 3D reservoir with four injection wells; white and black lines
+indicate level 0 to 4’s boundary; the black dotted lines in the zoomed-in circles show the locations of
+injection perforation intervals. c.Each grey block represents an FNO model; light grey arrows point
+to the input and output’s level; dark grey arrows show when one model’s output is used as another
+model’s input. d.Pressure buildup and gas saturation at 30 years.
+In recent years, machine learning approaches are emerging as a promising alternative to numerical
+simulation for subsurface flow problems (Tang et al., 2020; Wen et al., 2021b;a). Machine learning
+models, trained with numerical simulation data, are usually much faster than numerical simulators
+because inferences are very cheap. However, for CO 2storage problems, the challenge of the multi-
+scale response has limited developments of machine learning models. Previous studies either focus
+on 2D problems with a single injection well (Wen et al., 2021a; 2022), or 3D problems with very
+coarse resolutions that fail to capture essential physics (Tang et al., 2022; Yan et al., 2022).
+2In addition, standard machine learning methods suffer from the lack of generalization (Kovachki
+et al., 2021). This limits the usage of machine learning in CO 2storage modeling as it requires
+generalization under diverse input conditions. Fourier neural operator (FNO) is a type of neural
+operators (Li et al., 2020b;c) that overcome these generalization challenges by directly learning the
+solution operator for the governing equation family. As a result, it provides great potential towards
+the development of a realistic general-purpose simulator alternative for CO 2storage problems (Wen
+et al., 2022; Witte et al., 2022).
+Here we present a machine learning framework with an unprecedented capability of high-resolution,
+full-physics, dynamic 3D CO 2storage modeling. We integrate the FNO machine learning architec-
+ture with the LGR modeling approach and introduce the Nested Fourier Neural Operator (Nested
+FNO) architecture. As shown in Figure 1, five levels of FNOs are used to predict flow responses in
+five different resolutions. This approach vastly reduces the computational cost needed during data
+collection as well as overcomes the memory constraints in model training. Using this approach, our
+prediction resolution exceeds many benchmark CO 2storage simulations run with existing numerical
+models. Meanwhile, Nested FNO only needs less than 2,500 training data at the coarsest resolution
+and about 6,000 samples for the finer resolutions. Despite the small training size, it generalizes
+well to the large problem dimension with millions of cells and a diverse collection of practical input
+variables, making it a general-purpose simulator alternative for basin-scale CO 2storage projects.
+2 D ATA OVERVIEW
+We consider CO 2injection into basin-scale 3D saline reservoirs (Page et al., 2020) through multiple
+wells over 30 years, as shown in Figure 1 a. Our data set includes a comprehensive collection of
+variables for practical CO 2storage projects, covering most realistic storage scenarios of potential
+CCS sites. Input parameters comprise reservoir conditions (depth, temperature, dip angle), injection
+schemes (number of injection wells, rates, perforation intervals), and permeability heterogeneity
+(mean, standard deviation, correlation lengths). The numerical simulation data is generated using a
+semi-adaptive LGR approach to ensure high fidelity and computational tractability. We use global
+(level 0) resolution grids in the large spatial domain to mimic typical saline storage formations with
+infinite boundary conditions. Next, we apply four levels of local refinements (levels 1 to 4) around
+each well to gradually increase the grid resolutions. Going from levels 0 to 4, we reduce the cell
+size by 80x on the x, ydimensions and 10x on the zdimension to resolve near-well responses.
+3 N ESTED FNO A RCHITECTURE
+As shown in Figure 1, we use a sequence of FNO models to predict the 3D reservoir domain con-
+sisting of subdomains at levels 0 to 4. At each refinement level, we extend the original FNO (Li
+et al., 2020a) architecture into 4D to produce outputs for pressure buildup and gas saturation in the
+3D space-time domain. The input for each model includes the permeability field, initial hydro-static
+pressure, reservoir temperature, injection scheme, as well as spatial and temporal encoding. Besides
+the global level model, each model in Nested FNO takes the input on its own domain together with
+the coarser-level prediction to predict the finer-level output.
+4 R ESULTS & P ATHWAY TO CLIMATE IMPACT
+As shown in Figure 2 a, Nested FNO successfully captures the CO 2plume migration in this nested
+locally refined grid. The shapes and saturation distribution of each plume are accurately predicted
+for each well. Such accuracy is well sufficient for most practical applications, such as forecasting
+plume footprints for land acquisition or monitoring program design. Similarly, as shown in Figure 3,
+Nested FNO precisely captures the local pressure buildup responses around each well, as well as the
+global interaction among them. The high-resolution refinements provide accurate estimates of the
+maximum pressure buildup, which is an essential indicator of reservoir integrity. These predictions
+are sufficient to guide important engineering decisions, such as choosing injection rates.
+Nested FNO offers these dynamic 3D simulations in real time because the prediction speed is
+700,000 times faster compared to the state-of-the-art numerical solver. This prediction speed en-
+ables many critical CCS tasks that were prohibitively expensive. For example, we present a rigorous
+3Figure 2: Gas saturation prediction. a. Visualizations of gas saturation predictions at 30 years for
+a 3-well case. Each row shows permeability, gas saturation ground truth, prediction, and error. The
+white lines indicate the boundary between each level. b.Reservoir permeability and the location of
+each well. c.Testing set plume saturation error versus time for 250 random cases. The red dotted
+line shows the 95% prediction bands of the error. d.Error histograms for 250 cases in the training
+and test set. The solid red column indicates the error for the example shown in a.
+probabilistic assessment for maximum pressure buildup and CO 2plume footprint (Appendix A).
+Such assessment can reduce uncertainties in capacity estimation and injection designs (NAS, 2018);
+however, it would have taken nearly two years with numerical simulators. Using Nested FNO, this
+assessment took only 2.8 seconds. The high-quality real-time predictions of Nested FNO can greatly
+enhance our ability to develop safe and effective CCS projects.
+Notably, by releasing the trained Nested FNO to the public, our approach promotes equity in CCS
+project development and accelerates knowledge adoption for CO 2storage. This especially benefits
+small- to mid-sized developers, as well as communities desiring independent evaluation of projects
+being proposed. Such high-quality forecasts and probabilistic assessments of reservoir dynamics
+were previously unattainable to these important players.
+4Figure 3: Pressure buildup prediction. a. Global and b.well pressure buildup predictions at 30
+years. Each row shows pressure buildup ground truth, prediction, and relative error. The white lines
+indicate the boundary between each level. c.Testing set pressure relative error versus time for 250
+random cases. The red dotted line shows the 95% prediction bands of the error. d.Error histograms
+for 250 cases in the training and test set. The solid red column indicates the error for the visualized
+example.
+REFERENCES
+Laurent Andr ´e, Yannick Peysson, and Mohamed Azaroual. Well injectivity during co2 storage op-
+erations in deep saline aquifers–part 2: Numerical simulations of drying, salt deposit mechanisms
+and role of capillary forces. International Journal of Greenhouse Gas Control , 22:301–312, 2014.
+Martin J Blunt. Multiphase flow in permeable media: A pore-scale perspective . Cambridge univer-
+sity press, 2017.
+James H Bramble, Richard E Ewing, Joseph E Pasciak, and Alfred H Schatz. A preconditioning
+technique for the efficient solution of problems with local grid refinement. Computer Methods in
+Applied Mechanics and Engineering , 67(2):149–159, 1988.
+Catherine Callas, Sarah D Saltzer, J Steve Davis, Sam S Hashemi, Anthony R Kovscek, Esuru R
+Okoroafor, Gege Wen, Mark D Zoback, and Sally M Benson. Criteria and workflow for selecting
+depleted hydrocarbon reservoirs for carbon storage. Applied Energy , 324:119668, 2022.
+Andrew Cavanagh and Philip Ringrose. Simulation of co2 distribution at the in salah storage site
+using high-resolution field-scale models. Energy Procedia , 4:3730–3737, 2011.
+RA Chadwick, P Zweigel, U Gregersen, GA Kirby, S Holloway, and PN Johannessen. Geological
+reservoir characterization of a co2 storage site: The utsira sand, sleipner, northern north sea.
+Energy , 29(9-10):1371–1381, 2004.
+Christine Doughty. Investigation of CO 2plume behavior for a large-scale pilot test of geologic
+carbon storage in a saline formation. Transport in porous media , 82(1):49–76, 2010.
+5Geir Terje Eigestad, Helge K Dahle, Bjarte Hellevang, Fridtjof Riis, Wenche Tjelta Johansen, and
+Erlend Øian. Geological modeling and simulation of co2 injection in the johansen formation.
+Computational Geosciences , 13(4):435–450, 2009.
+Benjamin Faigle, Rainer Helmig, Ivar Aavatsmark, and Bernd Flemisch. Efficient multiphysics
+modelling with adaptive grid refinement using a mpfa method. Computational Geosciences , 18
+(5):625–636, 2014.
+Sam Fankhauser, Stephen M Smith, Myles Allen, Kaya Axelsson, Thomas Hale, Cameron Hepburn,
+J Michael Kendall, Radhika Khosla, Javier Lezaun, Eli Mitchell-Larson, et al. The meaning of
+net zero and how to get it right. Nature Climate Change , 12(1):15–21, 2022.
+Aibar Kamashev and Yerlan Amanbek. Reservoir simulation of co2 storage using compositional
+flow model for geological formations in frio field and precaspian basin. Energies , 14(23):8023,
+2021.
+Zuhao Kou, Heng Wang, Vladimir Alvarado, J Fred McLaughlin, and Scott Austin Quillinan.
+Method for upscaling of co2 migration in 3d heterogeneous geological models. Journal of Hy-
+drology , pp. 128361, 2022.
+Nikola Kovachki, Zongyi Li, Burigede Liu, Kamyar Azizzadenesheli, Kaushik Bhattacharya, An-
+drew Stuart, and Anima Anandkumar. Neural operator: Learning maps between function spaces.
+arXiv preprint arXiv:2108.08481 , 2021.
+Joe Lane, Chris Greig, and Andrew Garnett. Uncertain storage prospects create a conundrum for
+carbon capture and storage ambitions. Nature Climate Change , 11(11):925–936, 2021.
+Zongyi Li, Nikola Kovachki, Kamyar Azizzadenesheli, Burigede Liu, Kaushik Bhattacharya, An-
+drew Stuart, and Anima Anandkumar. Fourier neural operator for parametric partial differential
+equations. arXiv preprint arXiv:2010.08895 , 2020a.
+Zongyi Li, Nikola Kovachki, Kamyar Azizzadenesheli, Burigede Liu, Kaushik Bhattacharya, An-
+drew Stuart, and Anima Anandkumar. Multipole graph neural operator for parametric partial
+differential equations. arXiv preprint arXiv:2006.09535 , 2020b.
+Zongyi Li, Nikola Kovachki, Kamyar Azizzadenesheli, Burigede Liu, Kaushik Bhattacharya, An-
+drew Stuart, and Anima Anandkumar. Neural operator: Graph kernel network for partial differ-
+ential equations. arXiv preprint arXiv:2003.03485 , 2020c.
+Gunnar Luderer, Zoi Vrontisi, Christoph Bertram, Oreane Y Edelenbosch, Robert C Pietzcker, Jo-
+eri Rogelj, Harmen Sytze De Boer, Laurent Drouet, Johannes Emmerling, Oliver Fricko, et al.
+Residual fossil co2 emissions in 1.5–2 c pathways. Nature Climate Change , 8(7):626–633, 2018.
+NAS. Negative Emissions Technologies and Reliable Sequestration . National Academies Press,
+2018. ISBN 9780309484527. doi: 10.17226/25259.
+NETL. Best Practices: Risk Management and Simulation for Geologic Storage Projects,
+2017. URL https://www.netl.doe.gov/sites/default/files/2018-10/
+BPM{_}RiskAnalysisSimulation.pdf .
+Long Nghiem, Vijay Shrivastava, Bruce Kohse, Mohamed Hassam, and Chaodong Yang. Simulation
+and optimization of trapping processes for co2 storage in saline aquifers. Journal of Canadian
+Petroleum Technology , 49(08):15–22, 2010.
+Brad Page, Guloren Turan, Alex Zapantis, Jamie Burrows, Chris Consoli, Jeff Erikson, Ian Haver-
+croft, David Kearns, Harry Liu, Dominic Rassool, et al. The global status of ccs 2020: Vital to
+achieve net zero, 2020.
+Exploring Clean Energy Pathways. The role of co2 storage. IEA: Paris, France , 2019.
+Rajesh J Pawar, Grant S Bromhal, Shaoping Chu, Robert M Dilmore, Curtis M Oldenburg, Philip H
+Stauffer, Yingqi Zhang, and George D Guthrie. The national risk assessment partnership’s in-
+tegrated assessment model for carbon storage: A tool to support decision making amidst uncer-
+tainty. International Journal of Greenhouse Gas Control , 52:175–189, 2016.
+6Karsten Pruess and Julio Garcia. Multiphase flow dynamics during co2 disposal into saline aquifers.
+Environmental Geology , 42(2):282–295, 2002.
+Karsten Pruess and Nadja M ¨uller. Formation dry-out from co2 injection into saline aquifers: 1.
+effects of solids precipitation and their mitigation. Water Resources Research , 45(3), 2009.
+Karsten Pruess, Curtis M Oldenburg, and GJ Moridis. Tough2 user’s guide version 2. Technical
+report, Lawrence Berkeley National Lab.(LBNL), Berkeley, CA (United States), 1999.
+David M Reiner. Learning through a portfolio of carbon capture and storage demonstration projects.
+Nature Energy , 1(1):1–7, 2016.
+Christin W. Strandli, Edward Mehnert, and Sally M. Benson. CO 2plume tracking and history
+matching using multilevel pressure monitoring at the Illinois basin - Decatur project. Energy
+Procedia , 63:4473–4484, 2014. ISSN 18766102. doi: 10.1016/j.egypro.2014.11.483.
+Meng Tang, Yimin Liu, and Louis J Durlofsky. A deep-learning-based surrogate model for data as-
+similation in dynamic subsurface flow problems. Journal of Computational Physics , 413:109456,
+2020.
+Meng Tang, Xin Ju, and Louis J Durlofsky. Deep-learning-based coupled flow-geomechanics surro-
+gate model for co2 sequestration. International Journal of Greenhouse Gas Control , 118:103692,
+2022.
+Gege Wen and Sally M. Benson. CO 2plume migration and dissolution in layered reservoirs. In-
+ternational Journal of Greenhouse Gas Control , 87(May):66–79, 2019. ISSN 17505836. doi:
+10.1016/j.ijggc.2019.05.012.
+Gege Wen, Catherine Hay, and Sally M. Benson. CCSNet: a deep learning modeling suite for
+CO2storage. Advances in Water Resources , pp. 104009, 2021a. ISSN 0309-1708. doi: https:
+//doi.org/10.1016/j.advwatres.2021.104009.
+Gege Wen, Meng Tang, and Sally M. Benson. Towards a predictor for CO 2plume migration using
+deep neural networks. International Journal of Greenhouse Gas Control , 105:103223, 2021b.
+ISSN 1750-5836. doi: 10.1016/j.ijggc.2020.103223.
+Gege Wen, Zongyi Li, Kamyar Azizzadenesheli, Anima Anandkumar, and Sally M Benson. U-
+fno—an enhanced fourier neural operator-based deep-learning model for multiphase flow. Ad-
+vances in Water Resources , 163:104180, 2022.
+Philipp A Witte, Russell J Hewett, Kumar Saurabh, AmirHossein Sojoodi, and Ranveer Chan-
+dra. Sciai4industry–solving pdes for industry-scale problems with deep learning. arXiv preprint
+arXiv:2211.12709 , 2022.
+Bicheng Yan, Bailian Chen, Dylan Robert Harp, Wei Jia, and Rajesh J Pawar. A robust deep learning
+workflow to predict multiphase flow behavior during geological co2 sequestration injection and
+post-injection periods. Journal of Hydrology , 607:127542, 2022.
+Zheming Zhang and Ramesh K Agarwal. Numerical simulation and optimization of co2 sequestra-
+tion in saline aquifers for vertical and horizontal well injection. Computational Geosciences , 16
+(4):891–899, 2012.
+7A P ROBABILISTIC ASSESSMENT
+Nested FNO’s fast prediction speed enables rigorous ensemble modeling and probabilistic assess-
+ments that were previously unattainable. As an example, we conducted a probabilistic assessment
+for the maximum pressure buildup and CO 2plume footprint for a four-well CCS project where each
+well injects at a 1MT/year rate. To investigate the influence of permeability heterogeneity, we gener-
+ate 1,000 realizations using a fixed set of distribution and spatial correlations, then use Nested FNO
+to predict gas saturation plumes and pressure buildup for each realization. As shown in Figure 4, we
+obtained probabilistic estimates of the CO 2plume footprint and maximum pressure buildup, which
+can help project developers and regulators manage uncertainties (Pawar et al., 2016). For example,
+the plume footprint helps determine the area of the land lease acquisition required (NETL, 2017);
+the maximum reservoir pressure buildup helps evaluating the safety of a certain injection scheme
+and ensures reservoir integrity. Running this assessment takes only 2.8 seconds with Nested FNO
+but requires nearly two years with traditional numerical simulators.
+Figure 4: Probabilistic assessment. a. Histogram of CO 2plume footprint predictions given 1,000
+permeability realizations from the same geological parameters. The result satisfies a log-normal
+distribution; P5, P50, and P95 are marked on the distribution. b.Ten realizations of CO 2plume
+at 30 years. c.Histogram of CO 2pressure buildup predictions given the same 1,000 permeability
+realizations. The result satisfies a log-normal distribution; P5, P50, and P95 are marked on the
+distribution. d.Ten realizations of pressure buildup at 30 years.
+8

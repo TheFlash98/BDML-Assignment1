@@ -1,0 +1,589 @@
+Published as a workshop paper at ”Tackling Climate Change with Machine Learning”,
+ICLR 2024
+Semi-Supervised Domain Adaptation for
+Wildfire Detection
+JooYoung Jang1,2Youngseo Cha1Jisu Kim1SooHyung Lee1Geonu Lee1
+Minkook Cho1Young Hwang1Nojun Kwak2∗
+1Alchera, South Korea2Seoul National University, South Korea
+jyjang1090@snu.ac.kr, {ys.cha, js.kim, shlee, gu.lee }alcherainc.com, nojunk@snu.ac.kr
+Abstract
+Recently, both the frequency and intensity of wildfires have increased worldwide,
+primarily due to climate change (Sathishkumar et al., 2023). In this paper, we
+propose a novel protocol for wildfire detection, leveraging semi-supervised Domain
+Adaptation for object detection, accompanied by a corresponding dataset designed
+for use by both academics and industries. Our dataset encompasses 30 times more
+diverse labeled scenes for the current largest benchmark wildfire dataset, HPWREN
+(2000), and introduces a new labeling policy for wildfire detection. Inspired by
+Liu et al. (2018), we propose a robust baseline, Location-Aware Object Detection
+for Semi-Supervised Domain Adaptation (LADA), utilizing a teacher-student (Liu
+et al., 2021) based framework capable of extracting translational variance features
+characteristic of wildfires. With only using 1% target domain labeled data, our
+framework significantly outperforms our source-only baseline by a notable margin
+of 3.8% in mean Average Precision on the HPWREN wildfire dataset. Our dataset
+is available at https://github.com/BloomBerry/LADA.
+1 Introduction
+Wildfires contribute to and are exacerbated by global warming, leading to significant economic
+losses and ecological damage (Sathishkumar et al., 2023; Lindsey & Dahlman, 2020). Such impacts
+can be mitigated through the early detection of wildfires, enabling firefighters to intervene promptly.
+For effective mitigation, wildfire detection systems must achieve high accuracy and maintain low
+false positive rates (Ranadive et al., 2022).
+However, applying fire detection in real-world scenarios present challenges, including a domain shift
+between the training and testing environments that can degrade detection performance (Yoo et al.,
+2022). Even worse, acquiring a large volume of labeled data for the target domain is particularly
+challenging for infrequent events like wildfires (Kim et al., 2022). To address these challenges, this
+paper introduces a new protocol, semi-supervised domain adaptation(SSDA) for wildfire detection.
+To the best of our knowledge, this is the first paper to apply SSDA for object detection task.
+As depicted in Fig.1, SSDA is a combination of semi-supervised learning (SSL) and unsupervsied
+domain adaptation (UDA) task. It uses large amount of source domain images, while uses minimal
+set of target labeled images alongside a substantial corpus of target unlabeled images. SSDA setting
+is practical for real-world application considering labeling cost and performance. (Yu & Lin, 2023)
+∗corresponding author: Nojun Kwak (nojunk@snu.ac.kr)
+1arXiv:2404.01842v1  [cs.CV]  2 Apr 2024Published as a workshop paper at ”Tackling Climate Change with Machine Learning”,
+ICLR 2024
+Figure 1: semi-supervised Domain Adaptation
+This work makes two primary contributions. First, we introduce new labels for wildfire detec-
+tion tasks, increasing label diversity by thirtyfold compared to existing labels within the HPWren
+dataset, as in Table 3. We classified source domain as previous publicily available labels and target
+domain as new labeled set we suggested in this paper. Second, we present a novel approach to learn
+translational variance characteristics of wildfires called Location-Aware Semi-Supervised Domain
+Adaptation (LADA) framework, which integrates Coordinate Convolution (Liu et al., 2018) with
+a scale-aware Faster R-CNN (Chen et al., 2021b). Our result demostrate inhanced performance
+accross various SSDA protocols from current state-of-the-art UDA framework (Hoyer et al., 2023).
+Related work. SSDA approach seeks to reduce the domain-gap between source and target using
+consistency regularization loss (Yu & Lin, 2023), or use cutmix augmentation for domain-mixing
+loss (Chen et al., 2021a). However, those methods neither applied for object detection task. Our
+method uses consistency regularization loss using masked augmentation similar to (Hoyer et al.,
+2023).
+2 Methods
+2.1 Proposed Dataset
+In this paper, we propose a refined set of labels for the HPWREN (2000) dataset. This dataset serves
+as a benchmark for wildfire detection tailored to individual researchers. However, direct application
+of this benchmark for research encounters two primary obstacles. First, the diversity and quality
+of the labels are limited, leading to potential overfitting issues. Specifically, the dataset comprises
+only 609 labeled images across 9 scenes. Second, the practice of labeling smoke with separated
+bounding boxes demands considerable time and efforts for annotation. We have discovered that
+merging these bounding boxes not only simplifies the labeling process but also improves detection
+performance, as illustrated in Fig. 2. Detailed results are presented in Section 3.
+To address these challenges, we introduce a new benchmark for semi-supervised domain adaptation
+in object detection, detailed in Table 1. Inspired by Li et al. (2023), we propose three protocols,
+0.5%, 1.0%, and 3.0%, representing the ratio of labeled data in the target domain relative to
+the total dataset. In this benchmark, the source domain comprises 9 sub-directories with labels
+available on the HPWREN (2000) homepage, while 274 sub-directories are designated as the target
+domain. This configuration results in a domain shift, as the source and target domains do not share
+a common environment.
+2.2 Location-Aware semi-supervised Domain Adaptation
+Preliminary. In this study, we tackle the challenge of early wildfire detection by leveraging object
+detection frameworks (Chen et al., 2021b). Image samples are denoted by xs= (xi)Ns
+i=1,xtl= (xi)Ntl
+i=1
+2Published as a workshop paper at ”Tackling Climate Change with Machine Learning”,
+ICLR 2024
+Table 1: Number of sub-directories, and labels for HPWREN dataset
+Previous labels Proposed labels Total HPWREN
+Number of sub-directories 9 283 342
+Number of images 609 2,575 27,174
+Table 2: semi supervised domain adaptation for wildfire detection protocol
+source target 0.5% target 1.0% target 3.0% target val
+forground images 309 44 94 257 451
+background images 300 58 111 359 630
+total images 609 102 205 616 1,081
+and corresponding bounding-box labels ys= (yi)Ns
+i=1,ytl= (yi)Ntl
+i=1are utilized as input to the
+model, where Ns, Ntlis the number of labeled samples for source and target domain each. The
+label consists of class and bounding boxes yi= (c, x, y, w, h ) where c, x, y, w represents class index,
+center points, width and height of the box. In addition, the pseudo bounding-box labels u= (ui)Ntu
+i=1
+are constructed when the confidence score is bigger than the upper threshold pu> τu, or smaller
+than the lower threshold pu< τlwhere τu, τl, and Nturepresents upper, lower confidence threshold,
+and number of unlabeled target samples, each.
+Pseudo Labeling. We utilize large amount of unlabeled target data with a teacher-student
+paradigm (Liu et al., 2021) augmented with Masked Image Consistency (MIC) Loss (Hoyer et al.,
+2023). Built upon that, we changed pseudo label filter to use reliable background images imple-
+mented by very low probability score in order to train backbround images, as shown in equation
+1. ˆyireprsents ithunlabeled target sample index. We used τu= 0.8, τl= 0.05 for all of our exper-
+iments. We find that it is helpful especially for 0.5%, 1.0% SSDA protocols which lacks of highly
+reliable positive images. Further information is in Appendix C.
+Translation Variance Features. Wildfires typically don’t occur in speacific area, such as skies or
+lakes, or it shows a location-dependent shapes. For instance, they seldom occur in the upper portion
+of the images, which are predominantly occupied by the sky, while many of them has conical shape,
+expanding vertically. In order to utilize such characteristics, the Coordinate Convolution layer (Liu
+et al., 2018) was incorporated into both the Feature Pyramid Network (FPN) (Lin et al., 2017)
+and the Region Proposal Network (RPN) (Ren et al., 2015), as illustrated in Fig. 3. Coordinate
+convolution layer embed coordinate information through two channels, xandyto the original
+convolution layers, and the new added channels enable the model to capture such translational
+variance features at a minimal computational cost. We didn’t add Coordinate convolution layer
+into the backbone as suggested in the (Liu et al., 2018), since it did not show good performance.
+Location Aware Domain Adaptation. The comprehensive diagram of our training process
+is depicted in Fig. 4. The student model is trained using both supervised and unsupervised
+losses, whereas the teacher model is periodically updated through an Exponential Moving Average.
+Unsupervised losses consist of masked image consistency loss, pseudo label based Cross entropy
+loss, and adversarial loss. The former allows the model to learn consistent output from masked
+image to original image, which allows the model to learn robust predictions even in such randomly
+masked images. Pseudo labeling loss, on the other hand, make use of a large amount of unlabeled
+target images to train as supervised learning. Finally, adversarial loss aligns the source and target
+domain features in the backbone in order to reduce domain gap in three levels. More training detail
+information is available in Appendix B.
+3Published as a workshop paper at ”Tackling Climate Change with Machine Learning”,
+ICLR 2024
+Figure 2: Original HPWREN labeled image (Left) vs. Proposed labeled image (Right)
+Figure 3: Location Aware semi-supervised Domain Adaptation Network. We omitted the second
+stage regression and classification heads for simplicity.
+ˆpi> τu
+ˆpi< τl(1)
+3 Results
+Our model is trained in two stages. In the first stage, the training exclusively utilized source data.
+In the subsequent stage, a combination of labeled source data, labeled target data, and unlabeled
+data was employed. We conducted an initial comparison between the original HPWREN labels
+and our proposed labeling approach. As detailed in Table 3, our approach, which utilizes merged
+bounding boxes, improves up to 10.9 mean Average Precision@0.5:0.95 (mAP) over the original
+labels. Based on these results, we advocate for the adoption of our merged bounding box labeling
+strategy in wildfire detection.
+Table 3: Comparison between original & proposed labeling policy at mAP/mAP@0.5
+0.5% 1.0% 3.0%
+original label 1.5/7.0 2.8/12.9 7.9/29.6
+merged label 7.9/24.0 10.2/31.5 18.8/48.4
+As presented in Table 4, our model surpasses the performance of the model proposed by Chen et al.
+(2021b) in the source-only protocol. This protocol exclusively utilizes the source dataset for training
+and subsequently validates the model on the target validation dataset. Our model also outperforms
+Hoyer et al. (2023) in semi-supervised Domain Adaptation protocols. The results indicate that
+our proposed method catches the translational variance features of wildfire well, leading to better
+generalization performance.
+4Published as a workshop paper at ”Tackling Climate Change with Machine Learning”,
+ICLR 2024
+Figure 4: Overall Diagram of our training process. We also use background images for training.
+Type Methods Labeled target images
+0.5% 1.0% 3.0%
+Source-only SADA (Chen et al., 2021b) 6.9/21.9 9.7/28.7 17.8/48.0
+LADA(ours) 7.9/24.0 10.2/31.5 18.8/48.4
+SSDA SADA (Hoyer et al., 2023) 9.7/27.3 12.3/34.9 20.4/53.0
+LADA(ours) 10.0/29.1 14.0/38.0 20.9/52.3
+Table 4: Comparison of source-only and SSDA results. (mAP/mAP@0.5)
+4 CONCLUSION
+In this paper, we propose a novel benchmark utilizing semi-supervised domain adaptation for object
+detection, designed to benefit both academia and industry. Our labeling approach introduces a
+diversity that is thirtyfold greater than that of existing wildfire benchmarks and presents a new
+labeling policy tailored for wildfire detection. Furthermore, we establish a robust baseline for this
+benchmark, named LADA (Location-Aware Semi-Supervised Domain Adaptation), distinguished
+by its capability to capture translational variance features pertinent to wildfire detection.
+5 ACKNOWLEDGEMENTS
+This work was supported by NRF grant (2022R1A5A7026673) funded by MSIT, Korean Govern-
+ment.
+5Published as a workshop paper at ”Tackling Climate Change with Machine Learning”,
+ICLR 2024
+References
+Shuaijun Chen, Xu Jia, Jianzhong He, Yongjie Shi, and Jianzhuang Liu. Semi-supervised domain adaptation
+based on dual-level domain mixing for semantic segmentation. CVPR , 2021a.
+Yuhua Chen, Haoran Wang, Wen Li, Christos Sakaridis, Dengxin Dai, and Luc Van Gool. Scale-aware
+domain adaptive faster r-cnn. IJCV , 2021b.
+Lukas Hoyer, Dengxin Dai, Haoran Wang, and Luc Van Gool. Masked image consistency for context-
+enhanced domain adaptation. CVPR , 2023.
+HPWREN. The high performance wireless research and education network. http://hpwren.ucsd.edu/ ,
+2000.
+JongMok Kim, JooYoung Jang, Seunghyeon Seo, Jisoo Jeong, Jongkeun Na, and Nojun Kwak. Mum : Mix
+image tiles and unmix feature tiles for semi-supervised object detection. CVPR , 2022.
+Jichang Li, Guanbin Li, and Yizhou Yu. Adaptive betweenness clustering for semi-supervised domain
+adaptation. TIP, 2023.
+Tsung-Yi Lin, Piotr Doll´ ar, Ross Girshick, Kaiming He, Bharath Hariharan, and Serge Belongie. Feature
+pyramid networks for object detection. Institute of Electrical and Electronics Engineers , 2017.
+Rebecca Lindsey and LuAnn Dahlman. Climate change: Global temperature. Available online: climate.gov ,
+2020.
+Rosanne Liu, Joel Lehman, Piero Molino, Felipe Petroski Such, Eric Frank, Alex Sergeev, and Jason
+Yosinski. An intriguing failing of convolutional neural networks and the coordconv solution. NIPS , 2018.
+Yen-Cheng Liu, Chih-Yao Ma, Zijian He, Chia-Wen Kuo, Kan Chen, Peizhao Zhang, Bichen Wu, Zsolt Kira,
+and Peter Vajda. Unbiased teacher for semi-supervised object detection. arXiv preprint arXiv:2102.09480 ,
+2021.
+Omkar Ranadive, Jisu Kim, Serin Lee, Youngseo Cha, Heechan Park, Minkook Cho, and Young Hwang.
+Image-based early detection system for wildfires. NIPS , 2022.
+Shaoqing Ren, Kaiming He, Ross Girshick, and Jian Sun. Faster r-cnn: Towards real-time object detection
+with region proposal networks. NIPS , 2015.
+Veerappampalayam Easwaramoorthy Sathishkumar, Jaehyuk Cho, Malliga Subramanian, and Obuli Sai
+Naren. Forest fire and smoke detection using deep learning-based learning without forgetting. Fire
+Ecology , 2023.
+Jayeon Yoo, Inseop Chung, and Nojun Kwak. Unsupervised domain adaptation for one-stage object detector
+using offsets to bounding box. ECCV , 2022.
+Yu-Chu Yu and Hsuan-Tien Lin. Semi-supervised domain adaptation with source label adaptation. CVPR ,
+2023.
+6Published as a workshop paper at ”Tackling Climate Change with Machine Learning”,
+ICLR 2024
+A Dataset
+This section will give more information of HPWREN dataset, and how source and target domain
+has been composed. Each image files are named as equation 2.
+Y Y Y Y MMDD fireName cameraName (2)
+We defined domain shift based on equation 2, and simply splitted train and validation set. We
+splitted target validation set and target train set with 5%, 95% by random sampling. We also
+random sampled 0.5%, 1.0%, 3.0% target labeled dataset among 95% of target train dataset for
+each semi-supervised domain adaptaion protocols. Sub-directories for source domain and target
+domain are summarized in Table 5 to 16. However, we noticed that users could also split based on
+customized domain shift scenario. For example, we illustrate defining domains with cameraName
+in Equation 2. It is summarized in Table 17 to 19.
+Scene Description # of Imgs Scene Description # of Imgs
+20160604 FIRE rm-n-mobo-c 81 20160604 FIRE smer-tcs3-mobo-c 81
+20160619 FIRE lp-e-iqeye 41 20160619 FIRE om-e-mobo-c 81
+20160619 FIRE pi-s-mobo-c 81 20160711 FIRE ml-n-mobo-c 81
+20160718 FIRE lp-n-iqeye 41 20160718 FIRE mg-s-iqeye 41
+20160718 FIRE mw-e-mobo-c 81
+Table 5: Scenes composed for source domain dataset by equation 2
+Scene Description # of Imgs Scene Description # of Imgs
+20160722 FIRE mg-s-iqeye 41 20170708 Whittier syp-n-mobo-c 81
+20160722 FIRE mw-e-mobo-c 81 20170708 Whittier syp-n-mobo-m 80
+20161113 FIRE bl-n-mobo-c 81 20170711 FIRE bl-e-mobo-c 81
+20161113 FIRE bm-n-mobo-c 81 20170711 FIRE bl-s-mobo-c 81
+20161113 FIRE bm-w-mobo-c 81 20170711 FIRE bm-s-mobo-c 64
+20170519 FIRE rm-w-mobo-c 81 20170711 FIRE sdsc-e-mobo-c 81
+20170520 FIRE lp-s-iqeye 81 20170711 FIRE sm-n-mobo-c 81
+20170520 FIRE om-s-mobo-c 55 20170713 FIRE smer-tcs8-mobo-c 77
+20170520 FIRE pi-s-mobo-c 81 20170722 FIRE bm-n-mobo-c 81
+20170520 FIRE pi-w-mobo-c 81 20170722 FIRE hp-e-mobo-c 81
+20170609 FIRE sm-n-mobo-c 81 20170722 FIRE mg-n-iqeye 81
+20170613 FIRE bh-w-mobo-c 81 20170722 FIRE so-s-mobo-c 81
+20170613 FIRE hp-n-mobo-c 81 20170807 FIRE bh-n-mobo-c 78
+20170625 BBM bm-n-mobo 81 20170821 FIRE lo-s-mobo-c 81
+20170625 FIRE mg-s-iqeye 81 20170826 FIRE tp-s-mobo-c 81
+Table 6: Scenes composed for target domain dataset by equation 2 (Part. 1)
+An example of our proposed labels are show in Fig. 5.
+7Published as a workshop paper at ”Tackling Climate Change with Machine Learning”,
+ICLR 2024
+Scene Description # of Imgs Scene Description # of Imgs
+20170901 FIRE om-s-mobo-c 81 20171017 FIRE smer-tcs3-mobo-c 78
+20170927 FIRE smer-tcs9-mobo-c 81 20171021 FIRE pi-e-mobo-c 81
+20171010 FIRE hp-n-mobo-c 81 20171026 FIRE rm-n-mobo-c 81
+20171010 FIRE hp-w-mobo-c 81 20171026 FIRE smer-tcs8-mobo-c 81
+20171010 FIRE rm-e-mobo-c 81 20171207 FIRE bh-n-mobo-c 81
+20171016 FIRE sdsc-e-mobo-c 81 20171207 FIRE bh-w-mobo-c 77
+20171017 FIRE smer-tcs3-mobo-c 78 20171207 FIRE smer-tcs8-mobo-c 81
+20171021 FIRE pi-e-mobo-c 81 20171207 Lilac rm-s-mobo 81
+20171026 FIRE rm-n-mobo-c 81 20180504 FIRE bh-n-mobo-c 81
+20171026 FIRE smer-tcs8-mobo-c 81 20180504 FIRE rm-n-mobo-c 81
+20171207 FIRE bh-n-mobo-c 81 20180504 FIRE smer-tcs10-mobo-c 81
+20171207 FIRE bh-w-mobo-c 77 20180504 FIRE smer-tcs8-mobo-c 81
+20171207 FIRE smer-tcs8-mobo-c 81 20180517 FIRE rm-n-mobo-c 81
+20171207 Lilac rm-s-mobo 81 20180517 FIRE smer-tcs10-mobo-c 81
+20180504 FIRE bh-n-mobo-c 81 20180522 FIRE rm-e-mobo-c 81
+20180504 FIRE rm-n-mobo-c 81 20180602 Alison sp-s-mobo-c 81
+20180504 FIRE smer-tcs10-mobo-c 81 20180602 Alison sp-w-mobo-c 81
+20180504 FIRE smer-tcs8-mobo-c 81 20180602 FIRE rm-n-mobo-c 81
+20180517 FIRE rm-n-mobo-c 81 20180602 FIRE smer-tcs8-mobo-c 81
+20180602 FIRE smer-tcs9-mobo-c 81 20180603 FIRE bl-s-mobo-c 81
+Table 7: Scenes composed for target domain dataset by equation 2 (Part. 2)
+Scene Description # of Imgs Scene Description # of Imgs
+20180603 FIRE rm-w-mobo-c 81 20180606 FIRE lo-s-mobo-c 81
+20180603 FIRE smer-tcs8-mobo-c 81 20180606 FIRE ml-s-mobo-c 81
+20180603 FIRE smer-tcs9-mobo-c 81 20180606 FIRE pi-e-mobo-c 81
+20180603 FIRE sm-n-mobo-c 81 20180611 fallbrook rm-w-mobo-c 81
+20180603 FIRE sm-w-mobo-c 81 20180612 FIRE rm-w-mobo-c 81
+20180605 FIRE rm-w-mobo-c 81 20180612 FIRE smer-tcs9-mobo-c 81
+20180605 FIRE smer-tcs9-mobo-c 81 20180614 Bridle hp-n-mobo-c 81
+20180614 FIRE hp-s-mobo-c 68 20180704 Benton hp-n-mobo-c 81
+20180614 Hope wc-e-mobo-c 81 20180706 FIRE sm-e-mobo-c 81
+20180706 FIRE sm-n-mobo-c 70 20180706 FIRE wc-e-mobo-c 69
+20180706 West lp-n-mobo-c 81 20180717 otay om-s-mobo-c 81
+20180718 FIRE syp-w-mobo-c 81 20180719 Skyline sp-n-mobo-c 81
+20180720 Cinnamon wc-e-mobo-c 81 20180720 FIRE syp-w-mobo-c 81
+20180723 FIRE tp-e-mobo-c 81 20180725 Cranston hp-n-mobo-c 81
+Table 8: Scenes composed for target domain dataset by equation 2 (Part. 3)
+8Published as a workshop paper at ”Tackling Climate Change with Machine Learning”,
+ICLR 2024
+Scene Description # of Imgs Scene Description # of Imgs
+20180725 Cranston sp-e-mobo-c 81 20180806 FIRE mg-s-mobo-c 78
+20180725 FIRE smer-tcs10-mobo-c 81 20180806 FIRE vo-w-mobo-c 81
+20180726 FIRE so-n-mobo-c 81 20180806 Holy sp-s-mobo-c 72
+20180726 FIRE so-w-mobo-c 81 20180806 Holy sp-s-mobo-m 73
+20180727 FIRE bh-n-mobo-c 81 20180809 FIRE bh-s-mobo-c 80
+20180727 FIRE bh-s-mobo-c 81 20180809 FIRE bl-e-mobo-c 81
+20180727 FIRE bl-e-mobo-c 81 20180809 FIRE mg-w-mobo-c 81
+20180727 FIRE mg-w-mobo-c 81 20180813 FIRE bh-s-mobo-c 81
+20180727 FIRE wc-n-mobo-c 81 20180813 FIRE bl-n-mobo-c 81
+20180728 FIRE rm-w-mobo-c 81 20180813 FIRE mg-w-mobo-c 81
+20180728 FIRE smer-tcs9-mobo-c 81 20180827 Holyflareup sp-e-mobo-c 81
+20180910 FIRE smer-tcs8-mobo-c 81 20180919 FIRE rm-e-mobo-c 81
+20181112 house wc-n-mobo-c 71 20190529 94Fire lp-s-mobo-c 81
+20190529 94Fire om-n-mobo-c 81 20190610 FIRE bh-w-mobo-c 81
+20190610 Pauma bh-w-mobo-c 80 20190610 Pauma bh-w-mobo-m 80
+Table 9: Scenes composed for target domain dataset by equation 2 (Part. 4)
+Scene Description # of Imgs Scene Description # of Imgs
+20190620 FIRE rm-w-mobo-c 81 20190715 MLOSouth1 lo-s-mobo-c 81
+20190620 FIRE smer-tcs9-mobo-c 72 20190715 MLOSouth2 lo-s-mobo-c 81
+20190629 FIRE hp-n-mobo-c 57 20190715 MLOSouth3 lo-s-mobo-c 81
+20190712 CottonwoodFire lp-s-mobo-c 81 20190716 FIRE bl-s-mobo-c 70
+20190712 FIRE om-e-mobo-c 81 20190716 FIRE mg-n-mobo-c 68
+20190712 RockHouse wc-e-mobo-c 79 20190716 FIRE so-w-mobo-c 72
+20190714 MLOSouth lo-s-mobo-c 81 20190716 Meadowfire hp-n-mobo-c 70
+20190714 PinosSouth pi-s-mobo-c 81 20190716 Riverfire rm-w-mobo-c 80
+20190717 FIRE lp-n-mobo-c 81 20190717 FIRE pi-w-mobo-c 81
+20190728 Dehesa lp-n-mobo 80 20190728 FIRE om-n-mobo-c 79
+20190728 FIRE sp-n-mobo-c 81 20190801 Caliente om-w-mobo 81
+20190803 OtaySouth lp-s-mobo 79 20190803 OtaySouth om-s-mobo 79
+Table 10: Scenes composed for target domain dataset by equation 2 (Part. 5)
+9Published as a workshop paper at ”Tackling Climate Change with Machine Learning”,
+ICLR 2024
+Scene Description # of Imgs Scene Description # of Imgs
+20190803 Sage om-n-mobo 73 20190814 FIRE om-e-mobo-c 79
+20190805 FIRE sp-e-mobo-c 77 20190814 FIRE-pi-s-mobo-c 80
+20190809 PinosSouth pi-s-mobo 41 20190825 FIRE-smer-tcs8-mobo-c 80
+20190810 SantaFire rm-w-mobo 81 20190825 FIRE sm-w-mobo-c 75
+20190813 FIRE 69bravo-e-mobo-c 81 20190826 FIRE pi-s-mobo-c 80
+20190813 Topanga 69bravo-n-mobo 81 20190826 FIRE rm-w-mobo-c 80
+20190814 Border lp-s-mobo 80 20190826 FIRE smer-tcs9-mobo-c 80
+20190827 FIRE so-w-mobo-c 81 20190829 FIRE bl-n-mobo-c 81
+20190829 FIRE pi-e-mobo-c 81 20190913 FIRE lp-n-mobo-c 80
+20190829 FIRE rm-w-mobo-c 81 20190915 FIRE rm-n-mobo-c 78
+20190829 FIRE smer-tcs8-mobo-c 76 20190922 FIRE ml-w-mobo-c 81
+20190924 FIRE bl-s-mobo-c 79 20190924 FIRE hp-s-mobo-c 80
+Table 11: Scenes composed for target domain dataset by equation 2 (Part. 6)
+Scene Description # of Imgs Scene Description # of Imgs
+20190924 FIRE lo-w-mobo-c 79 20191001 FIRE om-s-mobo-c 60
+20190924 FIRE lp-n-mobo-c 72 20191001 FIRE rm-w-mobo-c 81
+20190924 FIRE ml-w-mobo-c 80 20191001 FIRE smer-tcs9-mobo-c 80
+20190924 FIRE pi-w-mobo-c 79 20191003 FIRE om-s-mobo-c 77
+20190924 FIRE sm-n-mobo-c 76 20191003 FIRE rm-w-mobo-c 81
+20190924 FIRE wc-e-mobo-c 72 20191003 FIRE smer-tcs9-mobo-c 77
+20190924 FIRE wc-s-mobo-c 70 20191005 FIRE bm-e-mobo-c 79
+20190925 FIRE wc-e-mobo-c 81 20191005 FIRE hp-s-mobo-c 81
+20190925 FIRE wc-s-mobo-c 81 20191005 FIRE vo-n-mobo-c 77
+20190930 FIRE om-s-mobo-c 80 20191005 FIRE wc-e-mobo-c 79
+20191001 FIRE bh-w-mobo-c 79 20191005 FIRE wc-n-mobo-c 78
+20191001 FIRE lp-s-mobo-c 80 20191006 FIRE lo-s-mobo-c 79
+20191001 FIRE om-e-mobo-c 79 20191006 FIRE lo-w-mobo-c 80
+20191006 FIRE lp-e-mobo-c 72 20191006 FIRE lp-n-mobo-c 73
+20191006 FIRE lp-s-mobo-c 73
+Table 12: Scenes composed for target domain dataset by equation 2 (Part. 7)
+10Published as a workshop paper at ”Tackling Climate Change with Machine Learning”,
+ICLR 2024
+Scene Description Imgs Scene Description Imgs
+20191006 FIRE ml-w-mobo-c 81 20200226 FIRE rm-e-mobo-c 81
+20191006 FIRE om-n-mobo-c 78 20200304 FIRE rm-w-mobo-c 81
+20191006 FIRE om-s-mobo-c 77 20200306 FIRE mlo-n-mobo-c 81
+20191006 FIRE pi-s-mobo-c 78 20200306 FIRE ml-s-mobo-c 81
+20191007 FIRE lp-s-mobo-c 81 20200306 FIRE pi-n-mobo-c 81
+20191007 FIRE om-s-mobo-c 81 20200521 FIRE om-n-mobo-c 81
+20191007 FIRE sm-s-mobo-c 81 20200521 FIRE om-s-mobo-c 81
+20191030 CopperCanyon om-s-mobo-c 81 20200521 FIRE om-w-mobo-c 81
+20191030 CopperCanyon om-s-mobo-m 81 20200521 VEGMGMT bm-s-mobo-c 81
+20200202 FIRE hp-w-mobo-c 81 20200521 VEGMGMT ml-w-mobo-c 81
+20200205 FIRE hp-w-mobo-c 81 20200521 VEGMGMT wc-e-mobo-c 81
+20200206 FIRE ml-s-mobo-c 81 20200529 StructFire wc-e-mobo-c 80
+20200601 WILDLAND-DRILLS mlo-e-mobo-c 81 20200608 FIRE rm-w-mobo-c 81
+20200601 WILDLAND-DRILLS mlo-s-mobo-c 81 20200611 skyline lp-n-mobo-c 81
+20200601 WILDLAND-DRILLS ml-s-mobo-c 81 20200614 DrumCanyon syp-w-mobo-c 81
+20200601 WILDLAND-DRILLS om-e-mobo-c 81 20200615 Rainbow rm-e-mobo-c 81
+Table 13: Scenes composed for target domain dataset by equation 2 (Part. 8)
+Scene Description Imgs Scene Description Imgs
+20200618 FIRE om-w-mobo-c 81 20200727 Border11Fire om-e-mobo-c 75
+20200705 FIRE bm-w-mobo-c 81 20200727 Border11Fire om-e-mobo-m 75
+20200705 FIRE wc-n-mobo-c 81 20200806 BorderFire lp-s-mobo-c 81
+20200709 Tripp hp-n-mobo-c 81 20200806 BorderFire om-e-mobo-c 81
+20200712 USSBonhommeRichard sm-w-mobo-c 81 20200806 SpringsFire lp-w-mobo-c 62
+20200727 Border11Fire lp-s-mobo-c 75 20200806 SpringsFire lp-w-mobo-m 62
+20200807 AppleFire-backfire-operation hp-n-
+mobo-c81 20200806 SpringsFire om-n-mobo-c 65
+20200808 OliveFire wc-e-mobo-c 74 20200806 SpringsFire om-n-mobo-m 62
+20200812 LakeFire dwpgm-n-mobo-c 81 20200806 SpringsFire sm-e-mobo-c 65
+20200813 Ranch2Fire marconi-n-mobo-c 73 20200813 SkylineFire sp-n-mobo-c 75
+20200813 Ranch2Fire sjh-n-mobo-c 78 20200813 VictoriaFire lp-n-mobo-c 70
+20200813 Ranch2Fire wilson-e-mobo-c 77 20200822 BrattonFire lp-e-mobo-c 81
+20200822 BrattonFire lp-s-mobo-c 81 20200828 BorderFire om-w-mobo-c 80
+20200822 SloaneFire lp-n-mobo-c 81 20200828 BorderFire sm-s-mobo-c 81
+20200823 OakFire pi-e-mobo-c 81 20200829 inside-Mexico cp-s-mobo-c 81
+20200829 inside-Mexico mlo-s-mobo-c 81 20200831 FIRE wc-n-mobo-c 180
+20200905 ValleyFire cp-s-mobo-c 0 20200905 ValleyFire lp-n-mobo-c 73
+20200905 ValleyFire pi-w-mobo-c 75 20200905 ValleyFire sm-e-mobo-c 71
+Table 14: Scenes composed for target domain dataset by equation 2 (Part. 9)
+11Published as a workshop paper at ”Tackling Climate Change with Machine Learning”,
+ICLR 2024
+Scene Description Imgs Scene Description Imgs
+20200911 FIRE lp-e-mobo-c 81 20200930 inMexico lp-s-mobo-c 81
+20200911 FIRE mlo-s-mobo-c 81 20200930 inMexico om-e-mobo-c 81
+20200911 FIRE pi-s-mobo-c 81 20201003 structurefire bh-w-mobo-c 80
+20200930 BoundaryFire wc-e-mobo-c 81 20201003 structurefire bm-w-mobo-c 74
+20200930 DeLuzFire rm-w-mobo-c 61 20201013 FIRE cp-s-mobo-c 79
+20201105 Roundfire lp-s-mobo-c 80 20201105 Roundfire om-e-mobo-c 81
+20201105 Roundfire pi-s-mobo-c 81 20201127 Hawkfire pi-w-mobo-c 81
+20201202 BondFire-nightime sp-w-mobo-c 75 20201205 typical-range-fire sclm-e-mobo-c 81
+20201202 WillowFire-nightime-near-CDF-
+HQlp-w-mobo-c73 20201206 JEEP-ON-FIRE om-w-mobo-c 70
+20201202 WillowFire-nightime-near-CDF-
+HQom-n-mobo-c77 20201207 Labh-s-mobo-c 81
+20201202 WillowFire-nightime-near-CDF-
+HQsm-n-mobo-c77 20201208 FIRE om-s-mobo-c 80
+20201216 ChaparralFire lp-w-mobo-c 81 20201216 ChaparralFire om-n-mobo-c 81
+20201216 ChaparralFire pi-w-mobo-c 81
+Table 15: Scenes composed for target domain dataset by equation 2 (Part. 10)
+B Training details
+In equation 3, LS, LM, LA, LCrefers to supervised loss, masked image consistency loss (MIC loss),
+adversarial loss, and consistency loss each. More information could be seen in baseline method
+Hoyer et al. (2023) since we use same losses.
+In the first source-only stage, we only used supervised learning. Our backbone is Resnet-50 with
+ImageNet pretrained weight. We trained 10 epoch with step decay learning rate schedule. We used
+16 batch size, SGD optimizer with 0.9 momentum and 0.0005 weight decay.
+In second stage, we also trained 10 epoch with same hyperparameter setup as first stage except that
+we used semi-supervised learning loss. We splitted image into 32x32 blocks and masked with ratio
+0.5 for strong augmentation. We used 0.9 as EMA rate, and λMfor 0.5. We used confidence score
+threshold as τu= 0.8, τl= 0.05. The final weight of first stage is used as initial weights. Overall
+hyperparameters used are summarized in Table 20.
+min θs1
+NsNsX
+k=1LS
+k+1
+NtNtX
+k=1(λMLM
+k) +1
+Nt+NsNt+NsX
+k=1(λALA
+k+λCLC
+k) (3)
+C Impact of using background images for semi-supervised Domain
+Adaptation
+Background images are especially helpful for 0.5%, 1.0% protocols where pseudo labels with high
+confidence score is especially lacking as show in Table 21. We defined background image when there
+are no object with confidence score higher than 0.05.
+12Published as a workshop paper at ”Tackling Climate Change with Machine Learning”,
+ICLR 2024
+Scene Description # of Imgs Scene Description # of Imgs
+20201216 ChaparralFire sm-n-
+mobo-c81 20210113 Borderfire mlo-s-
+mobo-c81
+20201223 Creekfire bh-w-mobo-c 81 20210113 Borderfire pi-s-mobo-c 81
+20210107 Miguelfire om-w-mobo-c 80 20210115 Bonitafire tp-w-mobo-c 71
+20210110 Borderfire lp-s-mobo-c 80 20210204 FIRE tp-s-mobo-c 81
+20210209 FIRE hp-e-mobo-c 78 20210302 FIRE lp-e-mobo-c 81
+20210209 FIRE tp-w-mobo-c 77 20210302 FIRE lp-e-mobo-m 81
+20210319 FIRE om-n-mobo-c 81 20210711 FIRE wc-e-mobo-c 81
+20200906-BobcatFire-wilson-e-
+mobo-c82 20210810-Lyonsfire-housefire-lp-
+n-mobo-c64
+20220210-EmeraldFire-marconi-
+w-mobo-c82 20220210-EmeraldFire-signal-s-
+mobo-c82
+20220210-EmeraldFire-stgo-w-
+mobo-c82 20220214-PrescribedFire-pi-n-
+mobo-c82
+20220302-Jimfire-0921-stgo-e-
+mobo-c81 20220302-Jimfire-0921-stgo-s-
+mobo-c81
+20220302-Jimfire-1101-stgo-e-
+mobo-c81 20220405-fire-in-Fallbrook-rm-s-
+mobo-c81
+20220405-fire-in-Fallbrook-rm-s-
+mobo-m82 20220622-HighlandFire-wc-n-
+mobo-c81
+20220622-HighlandFire-wc-n-
+mobo-m82 20220713-Lonestarfire-om-w-
+mobo-c72
+20220727-Casnerfire-bm-s-mobo-c 82 20220831-Border32fire-pi-s-mobo-c 65
+20220831-Border32fire-pi-s-
+mobo-m66 20220905-FairviewFire-bh-n-
+mobo-c81
+20220905-FairviewFire-smer-
+tcs3-mobo-c82 20220905-FairviewFire-stgo-e-
+mobo-c81
+20220905-FairviewFire-tp-w-
+mobo-c81 20221116-Willowfire-om-n-
+mobo-c81
+20221116-Willowfire-sm-n-mobo-c 81 20230128-Cardboard-Fire-om-w-
+mobo-c82
+Table 16: Scenes composed for target domain dataset by equation 2 (Part. 11)
+Scene Description # of Imgs Scene Description # of Imgs
+rm-n-mobo-c 81 smer-tcs3-mobo-c 81
+lp-e-iqeye 41 om-e-mobo-c 81
+pi-s-mobo-c 81 ml-n-mobo-c 81
+lp-n-iqeye 41 mg-s-iqeye 41
+mw-e-mobo-c 81
+Table 17: Scenes composed for source domain dataset by only cameraName
+13Published as a workshop paper at ”Tackling Climate Change with Machine Learning”,
+ICLR 2024
+Scene Description # of Imgs Scene Description # of Imgs
+bl-n-mobo-c 243
+bm-n-mobo-c 162 bm-w-mobo-c 236
+rm-w-mobo-c 1193 lp-s-iqeye 81
+om-s-mobo-c 834 pi-w-mobo-c 478
+sm-n-mobo-c 628 bh-w-mobo-c 559
+hp-n-mobo-c 694 bm-n-mobo 81
+Table 18: Scenes composed for target domain dataset by only CameraName (Part 1.)
+Figure 5: Example of our labeled dataset
+D Relation between foreground-image and background-image ratio
+Since there are dataset imbalance between label and unlabel images, we studied the best ratio
+between labeled and unlabeled data composing in a mini-batch. As shown in Table 22, 80% of
+unlabeled images used for minibatch had best result. It is as expected since the number of unlabeled
+images are more than 10 times than that of labeled dataset. We found that 90% unlabeled images
+used for mini-batch did not converged. We assume it is due to lack of supervisory signal in the
+early phase. We reported our result based on 80% of unlabel ratio in a mini-batch.
+14Published as a workshop paper at ”Tackling Climate Change with Machine Learning”,
+ICLR 2024
+Scene Description # of Imgs Scene Description # of Imgs
+syp-n-mobo-c 81 syp-n-mobo-m 80
+bl-e-mobo-c 243 bl-s-mobo-c 311
+bm-s-mobo-c 227 sdsc-e-mobo-c 162
+smer-tcs8-mobo-c 719 hp-e-mobo-c 159
+mg-n-iqeye 81 so-s-mobo-c 81
+bh-n-mobo-c 402 lo-s-mobo-c 565
+tp-s-mobo-c 162 smer-tcs9-mobo-c 795
+hp-w-mobo-c 243 rm-e-mobo-c 405
+pi-e-mobo-c 405 rm-s-mobo 81
+smer-tcs10-mobo-c 243 sp-s-mobo-c 153
+sp-w-mobo-c 156 sm-w-mobo-c 237
+ml-s-mobo-c 324 hp-s-mobo-c 229
+wc-e-mobo-c 939 sm-e-mobo-c 217
+lp-n-mobo-c 756 syp-w-mobo-c 243
+sp-n-mobo-c 237 tp-e-mobo-c 81
+sp-e-mobo-c 239 so-n-mobo-c 81
+so-w-mobo-c 234 bh-s-mobo-c 323
+mg-w-mobo-c 243 wc-n-mobo-c 572
+mg-s-mobo-c 78 vo-w-mobo-c 81
+sp-s-mobo-m 73 lp-s-mobo-c 874
+om-n-mobo-c 704 bh-w-mobo-m 80
+mg-n-mobo-c 68 lp-n-mobo 80
+om-w-mobo 81 lp-s-mobo 159
+om-s-mobo 79 om-n-mobo 73
+pi-s-mobo 41 rm-w-mobo 81
+69bravo-e-mobo-c 81 69bravo-n-mobo 81
+ml-w-mobo-c 323 lo-w-mobo-c 159
+wc-s-mobo-c 151 bm-e-mobo-c 79
+vo-n-mobo-c 77 lp-e-mobo-c 315
+sm-s-mobo-c 162 om-s-mobo-m 81
+mlo-n-mobo-c 81 pi-n-mobo-c 163
+om-w-mobo-c 546 mlo-e-mobo-c 81
+mlo-s-mobo-c 324 lp-s-mobo-m 75
+om-e-mobo-m 75 lp-w-mobo-c 297
+lp-w-mobo-m 62 om-n-mobo-m 62
+sm-e-mobo-m 63 dwpgm-n-mobo-c 81
+marconi-n-mobo-c 73 sjh-n-mobo-c 78
+wilson-e-mobo-c 159 cp-s-mobo-c 160
+sclm-e-mobo-c 81 tp-w-mobo-c 229
+lp-e-mobo-m 81 marconi-w-mobo-c 82
+signal-s-mobo-c 82 stgo-w-mobo-c 82
+stgo-e-mobo-c 243 stgo-s-mobo-c 162
+rm-s-mobo-c 81 rm-s-mobo-m 82
+wc-n-mobo-m 82 pi-s-mobo-m 66
+smer-tcs3-mobo-m 82
+Table 19: Scenes composed for target domain dataset by only CameraName (Part 2.)
+15Published as a workshop paper at ”Tackling Climate Change with Machine Learning”,
+ICLR 2024
+Table 20: Hyperparameters of training LADA with the proposed SSDA
+Config
+Optimizer SGD
+Optimizer momentum 0.9
+Weight decay 1e-4
+Domain Adaptation rate 2.5e-3
+Warmup epochs 0.333
+Training epochs 10
+EMA decay 0.9
+τu 0.8
+τl 0.05
+λM0.5
+λA
+ins 1e-1
+λA
+img 2.5e-2
+λC
+ins 1e-2
+λC
+img 2.5e-3
+Table 21: LADA vs. baseline for ssda protocol
+ssda 0.5% ssda 1.0% ssda 3.0%
+LADA(ours) 10.0 14.0 20.4
+LADA(without background images) 7.9 13.9 20.9
+Table 22: ratio between label vs. unlabel iamge in a minibatch
+0.5 0.6 0.7 0.8
+SSDA-0.5% 25.2 27.2 27.0 27.3
+16

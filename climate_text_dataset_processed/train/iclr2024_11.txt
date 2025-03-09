@@ -1,0 +1,906 @@
+Accepted for a spotlight talk at the Tackling Climate Change with Machine Learning
+workshop at ICLR 2024
+Extreme Precipitation Nowcasting using
+Transformer-based Generative Models
+Cristian Meo1*Ankush Roy1*Mircea Lic˘ a1*Junzhe Yin1
+Zeineb Bou Cher1Yanbo Wang1Ruben Imhoff2Remko Uijlenhoet1
+Justin Dauwels1
+Abstract
+This paper presents an innovative approach to extreme precipitation now-
+casting by employing Transformer-based generative models, namely Now-
+castingGPT with Extreme Value Loss (EVL) regularization. Leveraging
+a comprehensive dataset from the Royal Netherlands Meteorological In-
+stitute (KNMI), our study focuses on predicting short-term precipitation
+with high accuracy. We introduce a novel method for computing EVL with-
+out assuming fixed extreme representations, addressing the limitations of
+current models in capturing extreme weather events. We present both qual-
+itative and quantitative analyses, demonstrating the superior performance
+of the proposed NowcastingGPT-EVL in generating accurate precipitation
+forecasts, especially when dealing with extreme precipitation events. The
+code is available at https://github.com/Cmeo97/NowcastingGPT .
+1 Introduction
+The advent of climate change has escalated the frequency of intense rainfall events across
+various regions worldwide, leading to considerable societal and infrastructural impacts (Al-
+fieri et al., 2017; Martinkova & Kysely, 2020; Klocek et al., 2021; Czibula et al., 2021;
+Malkin Ond´ ık et al., 2022). Consequently, the ability to accurately forecast short-term
+shifts in rainfall patterns is gaining importance, attracting a growing body of research focus
+(Shi et al., 2015; Trebing et al., 2021; Luo et al., 2021; Liu et al., 2022). The field of precipita-
+tion nowcasting, which involves predicting rainfall changes within a six-hour window, plays
+a crucial role in enabling timely responses to these rapid meteorological variations (Veillette
+et al., 2020a; Malkin Ond´ ık et al., 2022; Yang & Mehrkanoon, 2022; Prudden et al., 2020).
+In the context of escalating climate change impacts, the field of precipitation nowcasting is
+increasingly vital for mitigating the adverse effects of intense rainfall events. This research
+area empowers the development of advanced forecasting models that can provide accurate,
+short-term rainfall predictions. Such capabilities are essential for proactive disaster man-
+agement and climate resilience strategies, enabling communities and infrastructure planners
+to prepare for and respond to extreme weather events more effectively, thereby contributing
+to meaningful efforts in addressing the climate crisis.
+2 Related Works
+Conventional nowcasting techniques, exemplified by frameworks such as PySTEPS (Pulkki-
+nen et al., 2019), adopt the ensemble-based methodology reminiscent of Numerical Weather
+Prediction (NWP) to incorporate uncertainty while modeling precipitation dynamics
+through the lens of the advection equation (Ravuri et al., 2021). On the other hand,
+Deep learning-based approaches, leveraging extensive datasets of radar observations, can
+∗Equal Contribution,1Delft University of Technology, Netherlands2Deltares, Netherlands.
+Corresponding authors: c.meo@tudelft.nl, A.Roy-8@student.tudelft.nl, M.T.Lica@student.tudelft.nl.
+1Accepted for a spotlight talk at the Tackling Climate Change with Machine Learning
+workshop at ICLR 2024
+be trained without the constraints of predefined physical assumptions, significantly enhanc-
+ing forecast accuracy (Ravuri et al., 2021). In the last few years, precipitation nowcasting
+using deep learning models has been cast as a video prediction problem (Bi et al., 2023;
+Bai et al., 2022; Luo et al., 2021; Liu et al., 2022), where given an input spatio-temporal
+sequence of Nframes xin∈RN×H×W×C,H, W denote the spatial resolution and Crepre-
+sents the image channels or the different type of measurements (e.g., radar, heat maps, etc),
+the goal is to predict the next Mframes xout∈RM×H×W×C. Among the most notable
+advancements in the field, Generative Adversarial Networks (GAN; Goodfellow et al., 2014)
+have emerged as a powerful approach, exemplified by methods such as DGMR Ravuri et al.
+(2021), which employs both spatial and temporal discriminators to ensure the fidelity of
+generated sequences to the ground truth. Moreover, Transformer-based strategies Vaswani
+et al. (2017) leverage an Autoregressive Transformer (AT) to model the hidden dynamics of
+precipitation maps (Jin et al., 2024; Bi et al., 2023). For instance, Bi et al. (2023) employs
+Nuw¨ a (Wu et al., 2022), an AT that uses a sparse attention mechanism, namely 3DNA
+(Wu et al., 2022), to adeptly capture the complexities of precipitation dynamics. More-
+over, Bi et al. (2023) regularizes the hidden dynamics incorporating an Extreme Values
+Loss (EVL) to effectively model and predict extreme precipitation events, which are noto-
+riously difficult to represent and predict. Although these models have improved in terms
+of prediction capabilities, they present critical drawbacks. Firstly, the prediction quality
+degrades very quickly, resulting in predicted sequences that are inconsistent over time. Sec-
+ondly, the time required to generate the predicted sequences is extremely high, which is a
+critical problem considering that nowcasting predictions are supposed to predict the very
+next future. For instance, Nuw¨ a-EVL (Bi et al., 2023) takes over 5 minutes to predict the
+next precipitation maps on a Nvidia RTX A6000. Furthermore, predicting and representing
+extreme precipitation events is still very challenging for all the proposed models. Although
+Bi et al. (2023) uses an EVL as a regularizer, it assumes a predefined set of representations
+that should embed the extreme events features, assuming that the extreme features never
+change during training. Since the topology of the hidden space changes during training,
+we believe that using fixed representations is a wrong inductive bias. In this work, we pro-
+pose NowcastingGPT, which follows VideoGPT framework (Yan et al., 2021), employing
+a Vector Quantized-Variational AutoEncoder (VQ-VAE) (Van Den Oord et al., 2017) to
+extract discrete tokens and an Autoregressive Transformer (Esser et al., 2021) to model the
+hidden dynamics. Moreover, we propose a novel approach to correctly compute the EVL
+regularization without assuming any fixed extreme representation. Moreover, we bench-
+mark TECO (Yan et al., 2023), an efficient transformer-based video prediction model that
+generates temporally consistent frames, on the precipitation nowcasting task. Finally, we
+present both qualitative and quantitative comparisons of the considered models.
+3 Methodology
+Video prediction tasks, at their core, involve forecasting the future frames of a video sequence
+based on past observations, akin to predicting the next scenes in a dynamic storyline. This
+challenge extends naturally to nowcasting, where the goal is predicting satellite imagery or
+radar maps, capturing the evolution of environmental and weather conditions over time.
+Both domains share the fundamental task of modeling and anticipating the progression of
+complex, time-varying patterns, making techniques developed for video prediction highly
+relevant and applicable to the realm of nowcasting.
+3.1 Nowcasting as Video Prediction
+Video prediction tasks are known for their sample inefficiency, which poses significant chal-
+lenges in learning accurate and reliable models. To address this, recent advancements have
+introduced spatio-temporal state space models, which typically consist of a feature extrac-
+tion component coupled with a dynamics prediction module. These models aim to under-
+stand and predict the evolution of video frames by capturing both spatial and temporal
+relationships. Notable examples include Nuw¨ a (Wu et al., 2022) and VideoGPT (Yan et al.,
+2021) which, leveraging the space-efficient VQ-VAE feature extraction, and the powerful
+sequence modeling capabilities of Autoregressive Transformers, can achieve a deeper under-
+2Accepted for a spotlight talk at the Tackling Climate Change with Machine Learning
+workshop at ICLR 2024
+standing of the underlying video dynamics, leading to more accurate predictions of future
+frames. We define the video prediction backbone of the proposed nowcasting model following
+the VideoGPT framework, using a VQ-VAE as a feature extractor and an Autoregressive
+Transformer (Esser et al., 2021) to learn the latent space dynamics and predict the future
+precipitation maps. A detailed description of the NowcastingGPT model, depicted in Fig.
+1, can be found in appendix 6.
+Autoregressive T ransformerdecdec
+enc
+ encdec
+Kt Kt+kKt+1
+Extreme tokens
+classifier
+Codebook
+Figure 1: The image shows the NowcastingGPT-EVL model architecture. The VQ-VAE
+Encoder and Decoder are depicted in red and green respectively. The Extreme tokens
+classifier is depicted in orange, it takes the predicted tokens as input from the transformer
+and outputs the probabilities utused in the EVL loss. The dashed line indicates that the
+output of the Classifier is only used to optimize the transformer and not as input.
+3.2 Extreme Value Loss Regularization
+When dealing with imbalanced data, the standard cross-entropy loss often falls short, partic-
+ularly when classifying extreme events. To address this, the Extreme Value Loss (EVL) has
+been introduced as a more effective alternative, designed to balance the disparities between
+extreme and non-extreme cases in time series data Ding et al. (2019):
+EVL( ut, vt) =−β1
+1−ut
+γγ
+vtlog(ut)−β0
+1−1−ut
+γγ
+(1−vt) log(1 −ut),(1)
+where vtrepresents the ground truth labels (extreme/not extreme), utthe predicted proba-
+bilities, and γ, a hyperparameter of the Generalized Extreme Value (GEV) distribution. By
+incorporating β0andβ1, which reflect the proportions of non-extreme and extreme events,
+EVL effectively balances the learning process. When regularizing an Autoregressive Trans-
+former the EVL enhances the model’s ability to predict and represent extreme events. To
+this end, we define a classifier that dynamically predicts extreme labels. As a result, we can
+use the EVL to regularize the Autoregressive Transformer learning behavior and improve
+its ability to capture extreme phenomena in data sequences. A detailed description of the
+classifier can be found in appendix 6.4.3, while the full derivation of the EVL loss can be
+found in appendix 6.5.
+3Accepted for a spotlight talk at the Tackling Climate Change with Machine Learning
+workshop at ICLR 2024
+4 Experiments
+In this section, we design empirical experiments to understand the performance of
+NowcastingGPT-EVL and its potential limitations by exploring the following questions:
+(1) Does EVL regularization improve the nowcasting performances of the proposed model?
+(2) How does time consistency affect downstream results? (3) Does learning extreme repre-
+sentations provide a more effective inductive bias compared to relying on predefined ones?
+4.1 Dataset and Experimental setup
+Our nowcasting study aims to predict precipitation patterns up to three hours into the
+future. This approach generates a series of six future precipitation maps, each separated
+by 30 minutes, conditioned on three previous precipitation maps used as input. Specif-
+ically, we use radar maps defined 256 ×256 images, which follow the approach used in
+(Bi et al., 2023). More details about the dataset are described in appendix 6.1. We com-
+pare the proposed model to a classic benchmark, namely Pysteps (Pulkkinen et al., 2019),
+0.0 0.2 0.4 0.6 0.8 1.0
+False Alarm Rate0.00.20.40.60.81.0Hit RateNowcastingGPT-EVL (AUC = 0.8233)
+NowcastingGPT (AUC = 0.8030)
+Nuwä-EVL (AUC = 0.8064)
+Pysteps (AUC = 0.7854)
+TECO (AUC = 0.7029)
+Figure 2: ROC Curve for extreme event detec-
+tion. Thresholds between 0 .5 and 10 for pre-
+cipitation values are used to define an extreme
+event. NowcastingGPT-EVL had the highest
+AUC, outperforming all other baselines.a temporally consistent video prediction
+benchmark, TECO (Yan et al., 2023), the
+NowcastingGPT model which is described
+in the appendix 6.4.2 and Nuw¨ a-EVL pro-
+posed by Bi et al. (2023), which uses fixed
+latents to represents extreme features. An
+in-depth description of the considered base-
+lines can be found in appendix 6.3. To
+quantitatively assess the experiments we
+use visual fidelity metrics, such as Mean
+Squared Error (MSE), Mean Absolute Er-
+ror (MAE) and Pearson Correlation Score
+(PCC), and nowcasting metrics, such as
+Critical Success Index (CSI), False Alarm
+Rate (FAR) and Fractional Skill Score
+(FSS). Since fidelity metrics cannot cap-
+ture extreme event classification, we plot
+an ROC curve of the extremes to assess
+the considered baselines in terms of extreme
+classification capabilities. A detailed de-
+scription of these metrics can be found in
+appendix 6.2. Table 1 presents a quantitative comparison between all proposed methods
+in terms of number of parameters, training and generation efficiency. Interestingly, TECO,
+showcases orders of magnitude more efficient generation time and cuts the training time
+by approximately 100 hours compared to its closest counterpart. Furthermore, with a gen-
+eration time of 322 .86 seconds, Nuw¨ a-EVL constitutes a good indicator for the sampling
+efficiency of autoregressive models.
+Nuw¨ a-EVL NowcastingGPT PySTEPS TECO NowcastingGPT-EVL
+Number of parameters 772 ,832 M 402 ,735 M - 165 ,960 M 520 ,374 M
+Training time 672h 240h - 155h 264h
+Generation time 322 .86s 38 .90s 9 .34s 0 .51s 43 .10s
+Table 1: Comparison of the proposed methods in terms of number of parameters, training
+time and generation time. Generation time refers to the time required on average to sample
+a sequence from the dataset defined in Section 6.1. Training time is computed in terms of
+GPU hours.
+4Accepted for a spotlight talk at the Tackling Climate Change with Machine Learning
+workshop at ICLR 2024
+Table 2: Quantitative results of the proposed methods. Each value represents the average
+and standard deviation over the means and standard deviations of each of the 6 lead times.
+The description for each metric can be found in appendix 6.2. For statistically meaningful
+results, we consider 3 different seeds for each entry.
+Nuw¨ a-EVL NowcastingGPT PySTEPS TECO NowcastingGPT-EVL
+PCC ( ↑) 0 .15 0 .20±0.002 0 .14 0 .10±0.002 0.22±0.002
+MSE ( ↓) 4 .85 3 .60±0.02 6 .22 3 .65±0.008 3.45±0.02
+MAE ( ↓) 1 .00 0 .72±0.005 0 .93 0.68±0.001 0 .69±0.005
+CSI(1mm) ( ↑) 0.23 0.21±0.002 0 .21 0 .07±0.001 0 .22±0.002
+CSI(2mm) ( ↑) 0.13 0.11±0.001 0 .12 0.03±0.001 0 .12±0.001
+CSI(8mm) ( ↑) 0 .008 0 .005±0.0005 0.01 0.001±0.0009 0 .009±0.0005
+FAR(1mm) ( ↓) 0 .61 0 .59±0.002 0.55 0.69±0.002 0 .59±0.002
+FAR(2mm) ( ↓) 0 .76 0 .71±0.0007 0.70 0.78±0.004 0 .71±0.0007
+FAR(8mm) ( ↓) 0 .85 0 .59±0.003 0 .89 0.49±0.006 0 .52±0.003
+FSS(1km) ( ↑) 0 .35 0 .49±0.003 0 .32 0 .49±0.003 0.52±0.003
+FSS(10km) ( ↑) 0 .42 0 .55±0.004 0 .41 0 .46±0.003 0.58±0.004
+FSS(20km) ( ↑) 0 .48 0 .59±0.004 0 .47 0 .42±0.003 0.62±0.004
+FSS(30km) ( ↑) 0 .52 0 .62±0.004 0 .51 0 .37±0.002 0.65±0.004
+4.2 Experimental Results
+We test the performance of the proposed models by using the extreme precipitation test
+set described in appendix 6.1. Table 2 showcases the effectiveness of these methods against
+a series of metrics that asses the quality and validity of the predictions. The proposed
+NowcastingGPT-EVL outperforms the other models on the majority of metrics and close
+second on the rest. The ROC curve in Figure 2 demonstrates how NowcastingGPT-EVL
+outperforms all other methods on extreme event detection at different thresholds. Figure 4
+illustrates the predicted maps of all considered baselines. While NowcastingGPT presents
+meaningful predictions over all time steps, Nuw¨ a-EVL deteriorates substantially. Indeed, we
+believe that when Nuw¨ a-EVL extreme representations get updated by the AT, the VQ-VAE
+is not able to recognize the extreme latents anymore, which by design are supposed to be
+fixed, predicting images that do not resemble the ground truth maps semantics. Remarkably,
+the graphs presented in Appendix 6.6 demonstrate that TECO achieves results on par with
+other methods, despite having fewer parameters and a more efficient sampling time, and
+exhibits superior temporal consistency compared to alternative approaches.
+5 Conclusion & Discussion
+This work proposes NowcastingGPT-EVL, a video prediction model regularized using an
+EVL regularizer, validating the efficacy of using EVL for nowcasting extreme precipitation
+events. Our findings reveal that the proposed model outperforms existing methods in var-
+ious downstream metrics, providing more accurate predictions. The study highlights the
+importance of addressing data imbalances and the dynamic nature of extreme events in
+model training. As future work, we aim to assess the prediction capabilities of the different
+models on an existing and widely used benchmark dataset (e.g., SEVIR (Veillette et al.,
+2020b)). The successful application of NowcastingGPT-EVL underscores the potential of
+Transformer-based models in enhancing predictive capabilities for critical meteorological
+forecasting tasks, paving the way for future advancements in the field.
+5Accepted for a spotlight talk at the Tackling Climate Change with Machine Learning
+workshop at ICLR 2024
+References
+Lorenzo Alfieri, B Bisselink, Francesco Dottori, Gustavo Naumann, A. P. J. De Roo, P´ eter
+Salamon, Klaus Wyser, and Luc Feyen. Global projections of river flood risk in a warmer
+world. Earth’s Future , 5, 2017. URL https://api.semanticscholar.org/CorpusID:
+42772267 .
+Cong Bai, Feng Sun, Jinglin Zhang, Yi Song, and Shengyong Chen. Rainformer: Features
+extraction balanced network for radar-based precipitation nowcasting. IEEE Geoscience
+and Remote Sensing Letters , 19:1–5, 2022. URL https://api.semanticscholar.org/
+CorpusID:248132089 .
+Haoran Bi, Maksym Kyryliuk, Zhiyi Wang, Cristian Meo, Yanbo Wang, Ruben Imhoff,
+Remko Uijlenhoet, and Justin Dauwels. Nowcasting of extreme precipitation using deep
+generative models. In ICASSP 2023 - 2023 IEEE International Conference on Acoustics,
+Speech and Signal Processing (ICASSP) , pp. 1–5, 2023. doi: 10.1109/ICASSP49357.2023.
+10094988.
+Huiwen Chang, Han Zhang, Lu Jiang, Ce Liu, and William T. Freeman. Maskgit: Masked
+generative image transformer. In The IEEE Conference on Computer Vision and Pattern
+Recognition (CVPR) , June 2022.
+Shengyu Chen, Nasrin Kalanat, Simon Topp, Jeffrey Sadler, Yiqun Xie, Zhe Jiang, and
+Xiaowei Jia. Meta-transfer-learning for time series data with extreme events: An appli-
+cation to water temperature prediction. In Proceedings of the 32nd ACM International
+Conference on Information and Knowledge Management , New York, NY, USA, October
+2023. ACM.
+Stuart Coles. An introduction to statistical modeling of extreme values . Springer Series in
+Statistics. Springer-Verlag, 2001. ISBN 1-85233-459-2.
+Gabriela Serban Czibula, Andrei Mihai, Alexandra-Ioana Albu, Istv´ an Gergely Czibula,
+Sorin Burcea, and Abdelkader Mezghani. Autonowp: An approach using deep autoen-
+coders for precipitation nowcasting based on weather radar reflectivity prediction. Math-
+ematics , 2021. URL https://api.semanticscholar.org/CorpusID:238018677 .
+Laurens De Haan and Ana Ferreira. Extreme Value Theory . Springer Series in Operations
+Research and Financial Engineering. Springer Science+Business Media, January 2006.
+Daizong Ding, Mi Zhang, Xudong Pan, Min Yang, and Xiangnan He. Modeling extreme
+events in time series prediction. In Proceedings of the 25th ACM SIGKDD International
+Conference on Knowledge Discovery and Data Mining , KDD ’19, pp. 1114–1122, New
+York, NY, USA, 2019. Association for Computing Machinery. ISBN 9781450362016. doi:
+10.1145/3292500.3330896. URL https://doi.org/10.1145/3292500.3330896 .
+Patrick Esser, Robin Rombach, and Bjorn Ommer. Taming transformers for high-resolution
+image synthesis. In Proceedings of the IEEE/CVF conference on computer vision and
+pattern recognition , pp. 12873–12883, 2021.
+Ramazan Gen¸ cay and Faruk Sel¸ cuk. Extreme value theory and Value-at-Risk: Relative
+performance in emerging markets. Int. J. Forecast. , 20(2):287–303, April 2004.
+Ian Goodfellow, Jean Pouget-Abadie, Mehdi Mirza, Bing Xu, David Warde-Farley, Sherjil
+Ozair, Aaron Courville, and Yoshua Bengio. Generative adversarial nets. Advances in
+neural information processing systems , 27, 2014.
+RO Imhoff, CC Brauer, A Overeem, AH Weerts, and R Uijlenhoet. Spatial and temporal
+evaluation of radar rainfall nowcasting techniques on 1,533 events. Water Resources
+Research , 56(8):e2019WR026723, 2020.
+Qizhao Jin, Xinbang Zhang, Xinyu Xiao, Ying Wang, Shiming Xiang, and Chunhong Pan.
+Preformer: Simple and efficient design for precipitation nowcasting with transformers.
+IEEE Geoscience and Remote Sensing Letters , 21:1–5, 2024. doi: 10.1109/LGRS.2023.
+3325628.
+6Accepted for a spotlight talk at the Tackling Climate Change with Machine Learning
+workshop at ICLR 2024
+Sylwester Klocek, Haiyu Dong, Matthew Dixon, Panashe Kanengoni, Najeeb Kazmi, Pete
+Luferenko, Zhongjian Lv, Shikhar Sharma, Jonathan A. Weyn, and Siqi Xiang. Ms-
+nowcasting: Operational precipitation nowcasting with convolutional lstms at microsoft
+weather. ArXiv , abs/2111.09954, 2021. URL https://api.semanticscholar.org/
+CorpusID:244463010 .
+Jie Liu, Lei Xu, and Nengcheng Chen. A spatiotemporal deep learning model st-lstm-sa
+for hourly rainfall forecasting using radar echo images. Journal of Hydrology , 2022. URL
+https://api.semanticscholar.org/CorpusID:247602986 .
+Chuyao Luo, Xinyue Zhao, Yuxi Sun, Xutao Li, and Yunming Ye. Predrann: The spatiotem-
+poral attention convolution recurrent neural network for precipitation nowcasting. Knowl.
+Based Syst. , 239:107900, 2021. URL https://api.semanticscholar.org/CorpusID:
+245591327 .
+Irina Malkin Ond´ ık, Luk´ aˇ s Ivica, Peter ˇSiˇ san, Ivan Martynovskyi, David ˇSaur, and Ladislav
+Ga´ al. A concept of nowcasting of convective precipitation using an x-band radar for the
+territory of the zl´ ın region (czech republic). In Computer Science On-line Conference , pp.
+499–514. Springer, 2022.
+Marta Martinkova and Jan Kysely. Overview of observed clausius-clapeyron scaling of
+extreme precipitation in midlatitudes. Atmosphere , 11(8):786, 2020.
+Rachel Prudden, Samantha Adams, Dmitry Kangin, Niall Robinson, Suman Ravuri, Shakir
+Mohamed, and Alberto Arribas. A review of radar-based nowcasting of precipitation and
+applicable machine learning techniques. arXiv preprint arXiv:2005.04988 , 2020.
+Seppo Pulkkinen, Daniele Nerini, Andr´ es A P´ erez Hortal, Carlos Velasco-Forero, Alan Seed,
+Urs Germann, and Loris Foresti. Pysteps: An open-source python library for probabilistic
+precipitation nowcasting (v1. 0). Geoscientific Model Development , 12(10):4185–4219,
+2019.
+Suman Ravuri, Karel Lenc, Matthew Willson, Dmitry Kangin, Remi Lam, Piotr Mirowski,
+Megan Fitzsimons, Maria Athanassiadou, Sheleem Kashem, Sam Madge, et al. Skilful
+precipitation nowcasting using deep generative models of radar. Nature , 597(7878):672–
+677, 2021.
+Xingjian Shi, Zhourong Chen, Hao Wang, Dit-Yan Yeung, Wai-Kin Wong, and Wang-
+chun Woo. Convolutional lstm network: A machine learning approach for precipitation
+nowcasting. Advances in neural information processing systems , 28, 2015.
+R Sluiter. Interpolation methods for the climate atlas . KNMI De Bilt, The Netherlands,
+2012. URL https://cdn.knmi.nl/knmi/pdf/bibliotheek/knmipubTR/TR335.pdf .
+Kevin Trebing, Tomasz Stanczyk, and Siamak Mehrkanoon. Smaat-unet: Precipitation
+nowcasting using a small attention-unet architecture. Pattern Recognition Letters , 145:
+178–186, 2021.
+Aaron Van Den Oord, Oriol Vinyals, et al. Neural discrete representation learning. Advances
+in neural information processing systems , 30, 2017.
+Ashish Vaswani, Noam Shazeer, Niki Parmar, Jakob Uszkoreit, Llion Jones, Aidan N Gomez,
+ Lukasz Kaiser, and Illia Polosukhin. Attention is all you need. Advances in neural infor-
+mation processing systems , 30, 2017.
+Marc Veillette, Siddharth Samsi, and Christopher J. Mattioli. Sevir : A storm event im-
+agery dataset for deep learning applications in radar and satellite meteorology. In Neu-
+ral Information Processing Systems , 2020a. URL https://api.semanticscholar.org/
+CorpusID:227222587 .
+7Accepted for a spotlight talk at the Tackling Climate Change with Machine Learning
+workshop at ICLR 2024
+Mark Veillette, Siddharth Samsi, and Chris Mattioli. Sevir : A storm event im-
+agery dataset for deep learning applications in radar and satellite meteorology. In
+H. Larochelle, M. Ranzato, R. Hadsell, M.F. Balcan, and H. Lin (eds.), Advances in
+Neural Information Processing Systems , volume 33, pp. 22009–22019. Curran Associates,
+Inc., 2020b. URL https://proceedings.neurips.cc/paper_files/paper/2020/file/
+fa78a16157fed00d7a80515818432169-Paper.pdf .
+Chenfei Wu, Jian Liang, Lei Ji, Fan Yang, Yuejian Fang, Daxin Jiang, and Nan Duan. N¨ uwa:
+Visual synthesis pre-training for neural visual world creation. In European conference on
+computer vision , pp. 720–736. Springer, 2022.
+Wilson Yan, Yunzhi Zhang, Pieter Abbeel, and Aravind Srinivas. Videogpt: Video genera-
+tion using vq-vae and transformers. arXiv preprint arXiv:2104.10157 , 2021.
+Wilson Yan, Danijar Hafner, Stephen James, and Pieter Abbeel. Temporally consistent
+transformers for video generation. In Proceedings of the 40th International Conference on
+Machine Learning , pp. 39062–39098, 2023.
+Yimin Yang and Siamak Mehrkanoon. Aa-transunet: Attention augmented transunet for
+nowcasting tasks. 2022 International Joint Conference on Neural Networks (IJCNN) , pp.
+01–08, 2022. URL https://api.semanticscholar.org/CorpusID:246705912 .
+8Accepted for a spotlight talk at the Tackling Climate Change with Machine Learning
+workshop at ICLR 2024
+6 Appendix
+6.1 Dataset
+The reflectivity measurements in the KNMI (Sluiter, 2012) dataset allows for the estima-
+tion of rainfall rates through the application of a Z-R transformation, enabling a nuanced
+river catchment-level analysis to evaluate the model’s effectiveness in real-world scenarios.
+Ideally, extreme rainfall events are identified based on the distribution of the highest annual
+rainfall amounts. However, given the limited span of our dataset, which encompasses only
+14 years, the dataset provides an insufficient quantity of annual maximums for effective
+model training and evaluation. Consequently, we have broadened the criteria for what con-
+stitutes extreme rainfall. Within this study, an event is classified as extreme if the average
+precipitation over a three-hour period within a catchment area ranks within the top 1% of
+all observations recorded from 2008 to 2021. This adjustment allows for a more feasible and
+statistically sound basis for distinguishing significant precipitation events during the study
+period. The training dataset consists of 30632 sequences of images with each sequence con-
+sisting of 9 images (T-60, T-30, T, T+30, T+60, T+90, T+120, T+150, T+180 minutes)
+spanning from 2008-2014. The validation dataset consists of 3560 sequences of images with
+the same sequence length from year 2015-2018. The testing dataset utilised to evaluate the
+performance of the different models in this study, consists of 357 nationwide extreme events
+from 2019-2021, corresponding to 3927 events in the catchment regions.
+6.2 Metrics
+The effectiveness of any predictive model is critically assessed through objective metrics
+that encapsulate its performance capabilities. In our endeavor to evaluate the impact of
+integrating the EVL regularization, we utilize a comprehensive set of performance metrics:
+-Mean Absolute Error (MAE) : MAE quantifies the average magnitude of errors in the pre-
+dictions. It’s computed as the mean of the absolute differences between the predicted values
+and the actual observations, offering a clear and intuitive metric for prediction accuracy.
+-Mean Squared Error (MSE) : MSE measures the average of the squares of the errors between
+the predicted and actual values, providing a more sensitive metric that penalizes larger errors
+more severely than MAE.
+-Pearson Correlation Coefficient (PCC) : PCC assesses the linear correlation between the
+predicted and observed datasets, yielding a value between -1 and 1, where 1 indicates per-
+fect positive correlation, -1 indicates perfect negative correlation, and 0 signifies no linear
+correlation.
+-Critical Success Index (CSI) : CSI is utilized to evaluate the precision of forecasted events,
+particularly the successful prediction of specific events. This study examines CSI at two dis-
+tinct precipitation thresholds: 1mm for light precipitation and 8mm for heavy precipitation,
+thus catering to varying intensities of rainfall.
+-False Alarm Rate (FAR) : FAR is calculated as the proportion of false positive predictions
+relative to the total number of positive forecasts (false positives plus true positives), offering
+insight into the model’s tendency to incorrectly predict events that do not occur.
+-Fractional Skill Score (FSS) : FSS measures the model’s forecast accuracy at specific spatial
+scales, facilitating an understanding of how well the model performs both locally and over
+broader areas. In this study, FSS is evaluated at 1km, 10km, 20km and 30km scales to
+discern the model’s effectiveness at varying geographical extents.
+While both MAE and MSE loss quantify the quality of the predictions, they are not able to
+capture the model’s capability to detect extreme events. Thus, we make use of a Receiver
+Operating Characteristic (ROC) curve to asses hit rate detection of extreme precipitation
+events. The curve is constructed using a set of thresholds that are used to define an event.
+9Accepted for a spotlight talk at the Tackling Climate Change with Machine Learning
+workshop at ICLR 2024
+6.3 Baselines Comparison
+Motivated by the overall inefficiency in nowcasting methods, we consider TECO (Yan
+et al., 2023) as a point of reference in benchmarking both training and sampling time
+of Transformer-based nowcasting models. TECO aims to increase sampling efficiency by
+replacing the common autoregressive prior with a masked token prediction objective, intro-
+duced by Chang et al. (2022). Using the discrete tokens from a VQ-VAE, the model learns
+to predict a randomly generated mask sampled at each timestamp, allowing for orders of
+magnitude improvement in sampling speed. Moreover, TECO manages to drastically de-
+crease training time by using DropLoss, a trick that allows the model to consider only a
+subset of the frames that compose the video. Moreover, to be consistent with the literature,
+we consider PySTEPS (Pulkkinen et al., 2019), a widely used numerical model for short-
+term precipitation predictions that achieves remarkable results in nowcasting (Imhoff et al.,
+2020).
+6.4 NowcastingGPT-EVL Description
+In this section, we describe the used model. Figure 1 illustrates the model architecture.
+The following subsections describe the three main components: VQ-VAE, Autoregressive
+Transformer, and Extreme tokens classifier.
+6.4.1 Vector Quantized Variational Autoencoder
+The Vector Quantized Variational AutoEncoder (VQVAE) (Van Den Oord et al., 2017)
+introduces a novel approach by utilizing Vector Quantization to encode inputs into discrete
+latent representations, moving away from continuous feature representations. This method
+is effective in capturing the complex, multi-dimensional features of data. VQVAE operates
+on an encoder-decoder framework with a discrete codebook, where the encoder compresses
+input data into a discrete set of codes, preserving essential features through a reduction in
+spatial dimensions and an increase in feature channels. The decoder then reconstructs the
+input from these codes, aiming for a close approximation to the original, thereby enabling
+efficient and structured data representation suitable for tasks like image reconstruction. The
+encoder consists of 5 downsampling layers each containing 2 ResNet blocks, thus reducing
+the spatial dimension of the input to the following resolutions: 128 →64→32→16→8.
+Furthermore, the last stage of the encoder includes an attention block used to capture
+the relationships between features before the quantization step. In order to obtain the
+reconstructed image from the discrete codes, we use a decoder that mirrors the structure of
+the encoder.
+To facilitate the training of the VQVAE model, a set of distinct loss functions are harnessed
+and subjected to optimization. These loss functions encompass the reconstruction loss, the
+commitment loss, and the perceptual loss.
+L(E, D,Z) =∥x−ˆx∥2
+2+∥sg[E(x)]−zq∥2
+2+∥sg [zq]−E(x)∥2
+2+Lperceptual (x,ˆx),(2)
+where ˆ z=E(x)∈Rh×w×nzrepresents the encoded image while ˆ x=D(zq) is the recon-
+structed image using zq. We obtain zqusing an element-wise quantization q(.) of each
+spatial code ˆ zij∈Rnzgiven by
+zq=q(ˆz) :=
+arg min
+zk∈Z∥ˆzij−zk∥
+∈Rh×w×nz.
+6.4.2 Autoregressive Transformer
+In order to model the dynamics between consecutive precipitation maps, we use an Au-
+toregressive Transformer. For training the model, we utilize the ground truth precipitation
+maps which are quantized into zq=q(E(x)), generating a sequence s∈ {0, . . . ,|Z|−1}h×w,
+corresponding to the respective indices of the VQVAE codebook. Subsequently, these in-
+dices are transformed into continuous vector representations using an embedder. In order to
+10Accepted for a spotlight talk at the Tackling Climate Change with Machine Learning
+workshop at ICLR 2024
+provide sequence order information to the Transformer, the representations are augmented
+with positional embeddings. These are then processed by the Transformer, which outputs
+the logits generated by the head module. These logits represent the probability of using a
+specific token and are used to compute a cross-entropy loss. The loss compares the predicted
+probabilities given by the model with the actual token probabilities:
+LTransformer =Ex∼p(x)[−logNY
+i=1p(si|s<i)] (3)
+which, given a sequence of indices s<i, the Transformer is trained to predict the distribu-
+tion of the consecutive indices si. The AT employs a causal attention mechanism, where
+the non-causal entries of QKT, those below the diagonal of the attention matrix, are set
+to−∞. As a result, the attention mechanism accesses only previously seen or current to-
+kens when predicting the next one in a sequence, enabling efficient and context-sensitive
+output production. We use the architecture described above to define our ablation model
+NowcastingGPT.
+The Autoregressive Transformer for NowcastingGPT-EVL has the EVL loss function incor-
+porated in it so the overall loss function for the AR transformer is given as:
+LTransformer(NowcastingGPT-EVL) =LTransformer +λ[EVL( ut, vt)]. (4)
+The value of λin the equation above is chosen as 0.5.
+6.4.3 Binary Classifier
+For the classification of the tokens into extreme or non-extreme, a transformer is incorpo-
+rated along with the auto-regressive transformer. The input to this transformer are the
+sequence of tokens that are generated from the auto-regressive transformer during its train-
+ing phase. The model has 6 layers, 1024 embedding dimension and, a total number of
+8 heads. The transformer is trained using a standard binary cross entropy loss function
+where, the ground truth labels vtare calculated on the basis of averaged precipitation over
+a threshold of 5mm. In this way, all the tokens corresponding to an extreme/non-extreme
+event get classified along with the training of the auto-regressive transformer. The classi-
+fier generates logits for the two classes (extreme and, non-extreme) which are then passed
+through a softmax layer to generate probabilities. These probabilities act as the input to
+the EVL loss function mentioned in equation (1) for the term ut. The values for β0and
+β1are taken as 0.95 and 0.05 respectively since, top 5% of the events are considered as
+extreme events. The value of γfor EVL was set to 1, as this setting demonstrated optimal
+performance.
+6.5 Mathematical Proof of the EVL loss function
+As mentioned in Coles (2001), if there is a sequence of independent and identically dis-
+tributed (i.i.d) random variables as X1, X2, . . . , X n, having marginal distribution function
+F. It is natural to regard as extreme events those of the Xithat exceed some high threshold
+u. Denoting an arbitrary term in the Xisequence by X, it follows that a description of the
+stochastic behavior of extreme events is given by the conditional probability:
+Pr{X > u +y|X > u }=1−F(u+y)
+1−F(u), y > 0. (5)
+Starting from the L.H.S we have:
+Pr{X > u +y|X > u },
+and using the formula P(x|y) =P(x,y)
+P(y):
+Pr{X > u +y|X > u }=P(X > u +y, X > u )
+P(X > u )
+=P(X > u +y)
+P(X > u ).
+11Accepted for a spotlight talk at the Tackling Climate Change with Machine Learning
+workshop at ICLR 2024
+Applying the formula, P(X > x ) = 1−F(x) we get,
+=1−F(u+y)
+1−F(u).
+If the parent distribution Fwas known to us then the distribution of threshold exceedances
+in equation 5 would also be known, however, that is not the case. Coles (2001) suggests the
+application of Extreme Value Theory (EVT) for the approximation of the distribution of
+maxima of long sequences when the parent population function (distribution) Fis unknown.
+For the sequence of R.Vs mentioned above (with common distribution function F), we use
+maximum order statistics to characterize extremes :
+Mn= max {X1, X2, X3, . . . X n},P→x∗, n→ ∞ . (6)
+whereP→denotes convergence in probability and, x∗denotes the right end point which is
+x∗= sup{x:F(x)<1}Therefore, for a large nwe have :
+P(max ( X1, X2, . . . , X n)⩽x) =Pr(X1⩽x, X 2⩽x, X 3⩽x, . . . X n⩽x), (7)
+since, they are i.i.d we can also write equation 7 as,
+P(max ( X1, X2, . . . , X n)⩽x) = [Pr( X⩽x)]n= [F( x)]n.
+Hence, from
+[F(x)]n→0 for x < x∗
+[F(x)]n→1 for x⩾x∗,
+it can be said said that [ F(x)]nis a degenerate function as it converges to a single point
+when nbecomes sufficiently large. To mitigate this, EVT suggests that for a sequence of
+constants an>0 and real bnthere is a non-degenerate distribution function Gstated as:
+lim
+n→∞[F(anx+bn)]n=G(x), (8)
+where G(x) is the Generalised Extreme Value distribution function (GEV). The GEV is
+given by:
+G(x) = exp(
+−
+1 +ξx−µ
+σ−1/ξ)
+, (9)
+where µis the location parameter, σis the scale parameter and ξis the shape parameter.
+Also, equation (8) can be written as:
+[F(anx+bn)]n≈G(x)
+=⇒[F(x)]n≈G{(x−bn)/an}
+=⇒[F(x)]n=G∗(x),
+where G∗is another member of the GEV family. Coles (2001) mentions that if equation (8)
+allows the approximation of [ F(anx+bn)]nby a member of the GEV family for large n,
+then [ F(x)]ncan also be approximated using a different member of the GEV family ( G∗(x))
+which has the same definition as mentioned in 9 but with different values of µ,σandξ.
+Therefore, we can then write :
+[F(x)]n≈exp(
+−
+1 +ξx−µ
+σ−1/ξ)
+. (10)
+Taking natural logarithm on both sides,
+n(lnF(x))≈ −
+1 +ξx−µ
+σ−1/ξ
+.
+For large values of x, a Taylor expansion implies that,
+lnF(x)≈ −{ 1−F(x)}.
+12Accepted for a spotlight talk at the Tackling Climate Change with Machine Learning
+workshop at ICLR 2024
+Substituting this in the above equation we get,
+1−F(x)≈1
+n
+1 +ξx−µ
+σ−1/ξ
+. (11)
+Now, we substitute the above result obtained in the R.H.S of equation (5) for a large uand
+y >0 as,
+1−F(u)≈1
+n
+1 +ξu−µ
+σ−1/ξ
+and,
+1−F(u+y)≈1
+n
+1 +ξu+y−µ
+σ−1/ξ
+.
+Therefore, we can write equation (5) as:
+Pr{X > u +y|X > u } ≈n−1[1 +ξ(u+y−µ)/σ]−1/ξ
+n−1[1 +ξ(u−µ)/σ]−1/ξ
+=
+1 +ξy/σ
+1 +ξ(u−µ)/σ−1/ξ
+=
+1 +ξy
+˜σ−1/ξ
+,(12)
+where ˜ σ=σ+ξ(u−µ). This distribution function is known as the Generalised Pareto
+Distribution (GPD) function which helps in modeling observations over a large enough
+threshold u(Peaks Over Threshold method - POT) and is written formally as :
+H(y) = 1−
+1 +ξy
+˜σ−1/ξ
+, (13)
+defined on {y:y >0 and (1 + ξy/˜σ)>0}, where
+˜σ=σ+ξ(u−µ).
+According to Coles (2001), the above relation in equation 12 implies that, if block maxima
+have approximating distribution G, then threshold excesses have a corresponding approxi-
+mate distribution within the GPD family ( H). Also, the parameters of GPD can be uniquely
+determined by those of the associated GEV distribution of block maxima. Moreover, the
+GEV distribution function and the GPD distribution function are related to each other
+since they have the same shape parameter ξso we can derive a rough mathematical relation
+between these two distribution functions as:
+H(y) = 1 + ln( G(y)), (14)
+for some location ( µ) and shape ( σ,˜σ) parameters. This relationship is also mentioned
+in the paper Gen¸ cay & Sel¸ cuk (2004) which utilises EVT and Value-at-Risk for relative
+performance of stock market returns in emerging markets. We can rewrite equation (5)
+with the help of the derived results in equations (12) and (13) as:
+1−F(u+y)
+1−F(u)=
+1 +ξy
+˜σ−1/ξ
+=⇒1−F(u+y)
+1−F(u)= 1−H(y)
+=⇒1−F(u+y)≈(1−F(u))(1−H(y)).(15)
+This equation is the main equation for the tail approximation of observations exceeding a
+threshold uand matches with the tail approximation equation mentioned in De Haan &
+Ferreira (2006) as:
+1−F(x)≈(1−F(t))
+1−Hξx−t
+f(t)
+, x > t, (16)
+13Accepted for a spotlight talk at the Tackling Climate Change with Machine Learning
+workshop at ICLR 2024
+where Hξis the GPD function with the shape parameter ξ. Therefore, we use the result
+derived in equation (15) to derive the weights of the EVL loss function mentioned in the
+paper Bi et al. (2023). However, the authors utilise the GEV distribution function to define
+the underlying distribution of the time series data used in the paper. The goal of the paper
+is to predict outputs YT:T+Kin the future given the observations ( X1:T, Y1:Tand future
+inputs XT:T+K. For the sake of convenience, the authors define X1:T= [x1,···, xT] and
+Y1:T= [y1,···, yT] to denote the general input and output sequences without referring
+to specific sequences. Therefore, for Trandom variables y1,···, yTi.i.d sampled from a
+distribution FY, the distribution of the maximum is realised using EVT as :
+lim
+T→∞P{max ( y1,···, yT)≤y}= lim
+T→∞FT(y) =G(y), (17)
+for some linear transformation where G(y) is GEV distribution function. We can observe
+that equation (8) and equation (17) have the same meaning (but with different variables in
+their definitions). Moreover, the authors define the GEV function as:
+G(y) =(
+exp
+−
+1−1
+γyγ
+, γ̸= 0,1−1
+γy >0
+exp (−e−y), γ = 0,(18)
+where γis known as the extreme value index (the shape parameter) with condition γ̸= 0.
+It can also be observed that the definition of GEV function in equation (18) is similar to
+the definition mentioned in equation (9) but with ξ=−1
+γ,µ= 0 and, σ= 1. For modeling
+the tail distribution of the corresponding time-series data, they use equation (16) but as
+mentioned before, rather than using the GPD function they use the GEV distribution func-
+tion to model the tail approximation. Therefore, we substitute the relationship mentioned
+in equation (14) as −ln(G(y)) = 1 −H(y) in equation (16) and get the following result:
+1−F(y)≈(1−F(ξ))
+−lnGy−ξ
+f(ξ)
+, y > ξ, (19)
+where ξis the threshold and, f(ξ) is a scale function as mentioned in the paper Bi et al.
+(2023). Also, the authors define an extreme indicator sequence V1:T= [v1,···, vT] as:
+vt=
+1yt> ξ
+0yt⩽ξ,(20)
+where ξis the threshold. For time step tifvt= 0 then the output ytis considered as
+a ’normal event’ and if vt= 1 then ytis considered as an ’extreme event’. The authors
+also mention a hard approximation for the term (y−ξ
+f(ξ)) in equation (19) as utwhich is the
+predicted indicator by the neural network used by them in their experiment. This can be
+interpreted as a normalization which restricts the values of output y, above and below the
+threshold ξbetween [ −1,1]. Therefore, considering this to be true, we can rewrite equation
+(19) as:
+1−F(y)≈(1−F(ξ)) [−lnG(ut)], (21)
+Substituting the definition of GEV in equation (18) into the above equation (21) we obtain:
+1−F(y)≈(1−F(ξ))
+1−ut
+γγ
+. (22)
+The term 1 −F(ξ) can be approximated as:
+1−F(ξ) = Pr( y > ξ ) =⇒1−F(ξ) = Pr( vt= 1), (23)
+where Pr( vt= 1) is the proportion of extreme events in the dataset. Therefore, we can
+rewrite equation (22) with the above substitution as:
+1−F(y)≈Pr(vt= 1)
+1−ut
+γγ
+. (24)
+This tail approximation is incorporated in the terms of the standard Cross Entropy (CE)
+function as weights to define the main EVL loss function mentioned in paper Bi et al. (2023).
+However, the authors in paper Bi et al. (2023) define the weight as:
+1−F(y)≈(1−Pr(vt= 1))
+1−ut
+γγ
+. (25)
+14Accepted for a spotlight talk at the Tackling Climate Change with Machine Learning
+workshop at ICLR 2024
+Upon simplifying the term (1 −Pr(vt= 1) we get:
+1−Pr (vt= 1)
+= Pr ( vt= 0)
+= Pr( y⩽ξ)
+=F(ξ),(26)
+so we get the expression 1 −F(y)≈(F(ξ))h
+1−ut
+γiγ
+which is not in congruence with the
+main tail approximation in equation (19) as shown by Bi et al. (2023). Moreover, research
+by Chen et al. (2023) show similar weight derivations for the EVL loss function as it has
+been derived in equation (24). Therefore, applying the weights derived in equation (24) to
+the standard BCE loss function, we get:
+EVL ( ut, vt) =−Pr(vt= 1)
+1−ut
+γγ
+vtlog (ut)
+−Pr(vt= 0)
+1−1−ut
+γγ
+(1−vt) log (1 −ut),(27)
+where the standard BCE loss function for a binary classification task is given by:
+BCE ( ut, vt) =−vtlog (ut)
+−(1−vt) log (1 −ut).(28)
+15Accepted for a spotlight talk at the Tackling Climate Change with Machine Learning
+workshop at ICLR 2024
+6.6 Additional Results
+This section supports the findings in Section 4.2 with a series of qualitative results that
+provide a different perspective for assessing the quality of the results. Thus, the emphasis
+is on the quality difference between lead times on the extreme precipitation events dataset.
+Figure 3 aims to provide visualizations of the predicted lead times as a visual signal on the
+quality of the predictions. On the other hand, Figure 4 to Figure 16 provide additional
+analysis on the performance of the proposed models on the metrics presented in Section 4.2
+Ground truth NowcastingGPT -EVL PySTEPS NowcastingGPT TECO Nuwä-EVL
+T+30 T+60 T+90 T+120 T+150 T+180
+Figure 3: Nowcasting of extreme precipitation scenarios. The generation is conditioned on
+3 previous timestamps with the task to predict the next 6 lead times. There is a gap of 30
+minutes between each timestamp. Images are upsampled to 256 ×256 pixels.
+16Accepted for a spotlight talk at the Tackling Climate Change with Machine Learning
+workshop at ICLR 2024
+30 60 90 120 150 1801/e  0.37
+PCC Average Over Time
+Time (minutes)PCC AverageDataset
+NowcastingGPT (Avg: 0.201)
+NowcastingGPT-EVL (Avg: 0.219)
+Nuwä-EVL (Avg: 0.156)
+PySTEPS (Avg: 0.149)
+TECO (Avg: 0.149)
+Figure 4: PCC metric evaluation over the 6 lead times. Each point represents the average
+value for a specific lead time over the whole dataset. Higher values represent better perfor-
+mance. NowcastingGPT-EVL outperforms all other models.
+30 60 90 120 150 1803456MSE Average Over Time
+Time (seconds)MSE AverageDataset
+NowcastingGPT (Avg: 3.577)
+NowcastingGPT-EVL (Avg: 3.426)
+Nuwä-EVL (Avg: 4.854)
+PySTEPS (Avg: 6.221)
+TECO (Avg: 3.347)
+Figure 5: MSE metric evaluation over the 6 lead times. Each point represents the average
+value for a specific lead time over the whole dataset. Lower values represent better per-
+formance. NowcastingGPT-EVL and TECO outperforms all other models for bigger lead
+times.
+17Accepted for a spotlight talk at the Tackling Climate Change with Machine Learning
+workshop at ICLR 2024
+30 60 90 120 150 1800.50.60.70.80.911.1MAE Average Over Time
+Time (minutes)MAE Average
+Dataset
+NowcastingGPT (Avg: 0.732)
+NowcastingGPT-EVL (Avg: 0.684)
+Nuwä-EVL (Avg: 1.005)
+PySTEPS (Avg: 0.933)
+TECO (Avg: 0.653)
+Figure 6: MAE metric evaluation over the 6 lead times. Each point represents the average
+value for a specific lead time over the whole dataset. Lower values represent better perfor-
+mance. TECO outperforms all other models.
+30 60 90 120 150 1800.10.20.3CSI (1mm) Average Over Time
+Time (minutes)CSI (1mm) AverageDataset
+NowcastingGPT (Avg: 0.209)
+NowcastingGPT-EVL (Avg: 0.223)
+Nuwä-EVL (Avg: 0.232)
+PySTEPS (Avg: 0.210)
+TECO (Avg: 0.091)
+Figure 7: CSI(1mm) metric evaluation over the 6 lead times. Each point represents the
+average value for a specific lead time over the whole dataset. Higher values represent better
+performance. Nuw¨ a-EVL and NowcastingGPT-EVL outperform the rest of the models but
+decay quickly.
+18Accepted for a spotlight talk at the Tackling Climate Change with Machine Learning
+workshop at ICLR 2024
+30 60 90 120 150 1800.050.100.150.200.25CSI (2mm) Average Over Time
+Time (minutes)CSI (2mm) AverageDataset
+NowcastingGPT (Avg: 0.113)
+NowcastingGPT-EVL (Avg: 0.127)
+Nuwä-EVL (Avg: 0.133)
+PySTEPS (Avg: 0.129)
+TECO (Avg: 0.032)
+Figure 8: CSI(2mm) metric evaluation over the 6 lead times. Each point represents the
+average value for a specific lead time over the whole dataset. Higher values represent better
+performance. Nuw¨ a-EVL outperforms the rest of the models.
+30 60 90 120 150 18000.010.020.03CSI (8mm) Average Over Time
+Time (minutes)CSI (8mm) AverageDataset
+NowcastingGPT (Avg: 0.006)
+NowcastingGPT-EVL (Avg: 0.009)
+Nuwä-EVL (Avg: 0.009)
+PySTEPS (Avg: 0.013)
+TECO (Avg: 0.001)
+Figure 9: CSI(8mm) metric evaluation over the 6 lead times. Each point represents the
+average value for a specific lead time over the whole dataset. Higher values represent better
+performance. PySTEPS outperforms the rest of the models.
+19Accepted for a spotlight talk at the Tackling Climate Change with Machine Learning
+workshop at ICLR 2024
+30 60 90 120 150 1800.40.50.60.7FAR (1mm) Average Over Time
+Time (minutes)FAR (1mm) Average
+Dataset
+NowcastingGPT (Avg: 0.598)
+NowcastingGPT-EVL (Avg: 0.582)
+Nuwä-EVL (Avg: 0.620)
+PySTEPS (Avg: 0.553)
+TECO (Avg: 0.665)
+Figure 10: FAR(1mm) metric evaluation over the 6 lead times. Each point represents the
+average value for a specific lead time over the whole dataset. Lower values represent better
+performance. PySTEPS outperforms the rest of the models.
+30 60 90 120 150 1800.60.70.8FAR (2mm) Average Over Time
+Time (minutes)FAR (2mm) Average
+Dataset
+NowcastingGPT (Avg: 0.713)
+NowcastingGPT-EVL (Avg: 0.707)
+Nuwä-EVL (Avg: 0.770)
+PySTEPS (Avg: 0.706)
+TECO (Avg: 0.790)
+Figure 11: FAR(2mm) metric evaluation over the 6 lead times. Each point represents the
+average value for a specific lead time over the whole dataset. Lower values represent better
+performance. NowcastingGPT-EVL outperforms the rest of the models.
+20Accepted for a spotlight talk at the Tackling Climate Change with Machine Learning
+workshop at ICLR 2024
+30 60 90 120 150 1800.50.60.70.80.9FAR (8mm) Average Over Time
+Time (minutes)FAR (8mm) AverageDataset
+NowcastingGPT (Avg: 0.606)
+NowcastingGPT-EVL (Avg: 0.520)
+Nuwä-EVL (Avg: 0.857)
+PySTEPS (Avg: 0.896)
+TECO (Avg: 0.534)
+Figure 12: FAR(8mm) metric evaluation over the 6 lead times. Each point represents the
+average value for a specific lead time over the whole dataset. Lower values represent better
+performance. NowcastingGPT-EVL and TECO outperform the rest of the models.
+30 60 90 120 150 1800.20.30.40.50.60.7FSS(1km) Average Over Time
+Time (minutes)FSS(1km) averageDataset
+NowcastingGPT (Avg: 0.494)
+NowcastingGPT-EVL (Avg: 0.521)
+Nuwä-EVL (Avg: 0.359)
+PySTEPS (Avg: 0.326)
+TECO (Avg: 0.640)
+Figure 13: FSS(1km) metric evaluation over the 6 lead times. Each point represents the
+average value for a specific lead time over the whole dataset. Higher values represent better
+performance. TECO outperforms the rest of the models.
+21Accepted for a spotlight talk at the Tackling Climate Change with Machine Learning
+workshop at ICLR 2024
+30 60 90 120 150 1800.30.40.50.60.7FSS(10km) Average Over Time
+Time (minutes)FSS(10km) averageDataset
+NowcastingGPT (Avg: 0.546)
+NowcastingGPT-EVL (Avg: 0.582)
+Nuwä-EVL (Avg: 0.429)
+PySTEPS (Avg: 0.416)
+TECO (Avg: 0.608)
+Figure 14: FSS(10km) metric evaluation over the 6 lead times. Each point represents
+the average value for a specific lead time over the whole dataset. Higher values represent
+better performance. TECO outperforms the rest of the models on higher lead times while
+NowcastingGPT and NowcastingGPT-EVL perform better on lower lead times.
+30 60 90 120 150 1800.40.60.8FSS(20km) Average Over Time
+Time (minutes)FSS(20km) averageDataset
+NowcastingGPT (Avg: 0.590)
+NowcastingGPT-EVL (Avg: 0.623)
+Nuwä-EVL (Avg: 0.482)
+PySTEPS (Avg: 0.473)
+TECO (Avg: 0.566)
+Figure 15: FSS(20km) metric evaluation over the 6 lead times. Each point represents the
+average value for a specific lead time over the whole dataset. Higher values represent better
+performance. NowcastingGPT-EVL outperforms the rest of the models.
+22Accepted for a spotlight talk at the Tackling Climate Change with Machine Learning
+workshop at ICLR 2024
+30 60 90 120 150 1800.30.40.50.60.70.8FSS(30km) Average Over Time
+Time (minutes)FSS(30km) averageDataset
+NowcastingGPT (Avg: 0.622)
+NowcastingGPT-EVL (Avg: 0.654)
+Nuwä-EVL (Avg: 0.524)
+PySTEPS (Avg: 0.514)
+TECO (Avg: 0.501)
+Figure 16: FSS(30km) metric evaluation over the 6 lead times. Each point represents the
+average value for a specific lead time over the whole dataset. Higher values represent better
+performance. NowcastingGPT-EVL outperforms the rest of the models.
+23

@@ -1,0 +1,193 @@
+Fine-Grained Distribution Grid Mapping Using
+Street View Imagery
+Qinghu Tang1, 2, Zhecheng Wang1, Arun Majumdar1, Ram Rajagopal1
+1Stanford University,2Tsinghua University
+tqh16@mails.tsinghua.edu.cn, {zhecheng, amajumdar, ramr}@stanford.edu
+Abstract
+Fine-grained distribution grid mapping is essential for power system operation and
+planning in the aspects of renewable energy integration, vegetation management,
+and risk assessment. However, currently such information can be inaccurate,
+outdated, or incomplete. Existing grid topology reconstruction methods heavily
+rely on various assumptions and measurement data that is not widely available. To
+bridge this gap, we propose a machine-learning-based method that automatically
+detects, localizes, and estimates the interconnection of distribution power lines and
+utility poles using readily-available street views in the upward perspective. We
+demonstrate the superior image-level and region-level accuracy of our method on a
+real-world distribution grid test case.
+1 Introduction
+Distributed Energy Resources (DERs) such as photovoltaic (PV) and wind power generators are
+widely adopted at an unprecedented pace. For example, the cumulative global PV capacity is
+estimated to be 500GW in 2018 with a 20% annual increment, and projected to be over 1100GW
+in 2023 [ 1]. While these DERs play an increasingly important role in decarbonizing the energy
+sector and addressing climate change, their deep penetration into the power systems poses signiﬁcant
+challenge on grid stability and resilience due to the bidirectional power ﬂow they create. Integration
+of DERs to the power grids requires the detailed knowledge of the grid connectivity, especially that of
+distribution grid. However, unlike transmission networks whose connectivities are well documented,
+the topology information of distribution grid can be outdated, inaccurate, and even unavailable
+due to frequent grid reconﬁguration and poor knowledge on the connectivity of privately-owned
+DERs. OpenStreetMap [ 2] collects the geolocation information of power lines and utility poles using
+crowdsourcing method yet it is far from complete. Existing works on distribution grid topology
+reconstruction heavily rely on various assumptions and data availability, such as radial topology
+assumption [ 3,4] and the availability of smart meter time-series data [ 5,6,7]. However, many
+distribution networks in the real world contain meshed structures, and smart meters are not widely
+deployed around the world. Even in the U.S, the penetration rate of smart meters is less than 50% [8],
+and their data are owned by different private companies. Such bottlenecks limit the feasibility and
+scalability of these methods and make them difﬁcult to validate on real-world distribution networks.
+The breakthrough of deep learning techniques [ 9] and the availability of widespread and frequently-
+updated street view imagery provide an alternative approach for ﬁne-grained infrastructure mapping.
+[10] introduced a pipeline that uses fully convolutional neural networks (FCNN) to segment the
+regions of telegraph poles in street views, estimates their distance from the camera, and localizes
+them with triangulation. [ 11] used a fully-supervised object detection model to detect utility poles in
+images, and estimate their geolocations with a simple cross bearing algorithm without the need of
+monocular depth estimation. However, neither of them has detected power lines from the street views
+Equal contribution
+33rd Conference on Neural Information Processing Systems (NeurIPS 2019), Vancouver, Canada.and used them to connect poles for a complete distribution grid map. Besides, they both relied on
+fully-supervised detection or segmentation methods requiring large number of bounding boxes or
+boundary annotations for training. In contrast, we propose a semi-supervised learning framework
+requiring only image-level labels to detect and localize both distribution lines and utility poles in
+street views towards a complete and granular distribution grid mapping. We evaluate our model
+on a real-world distribution grid map in California. Besides the usage in distribution grid topology
+reconstruction, grid mapping produced by our method can be further combined with tree location map,
+renewable generation inventory, and weather data to facilitate various power system stakeholders in
+the aspects of vegetation management, DER integration, risk assessment, and disaster prevention.
+2 Methods
+Figure 1: Proposed framework, which consists of power line detection module and utility pole
+detection module. Pole detection is only applied on images in which line has been detected.
+Figure 1 shows the model framework which is comprised of two modules: (1) A power line detection
+module that takes upward street view image as input and outputs the line positions and directions
+if and only if the input is classiﬁed to contain line(s). (2) A utility pole detection module that takes
+upward street view image as input and outputs the bearing of the pole within the image if and only
+if the input is classiﬁed to contain pole(s). Based on the assumption that a utility pole must be
+accompanied by power lines in an upward street view but not vice versa , we apply pole detection
+module only on images that are classiﬁed to contain line(s) to reduce false positive pole detection.
+Such assumption is based on the observation of our dataset. Finally, we generate the distribution grid
+map by attaching lines to their nearby poles based on geolocations and line directions.
+Upward view. In contrast to previous works [ 10,11] that used horizontal or near-horizontal per-
+spective of street views to localize objects, we choose the upward view as model inputs which has
+rarely been proposed in existing literature on street view object recognition. This is because there are
+much fewer irrelevant objects in the upward view compared to horizontal view, while utility poles
+and power lines near the streets are sufﬁciently high to be captured in images. Furthermore, we set
+the street view heading consistently to 0when retrieving images. Such speciﬁcations signiﬁcantly
+simplify the geometric relationships of power lines and utility poles in images, and thus facilitate the
+direction estimation and localization.
+Power line detection module. Training fully-supervised object detection models needs large datasets
+with detailed bounding box annotations, which can be expensive and time-consuming to obtain.
+Instead, we use a semi-supervised model to generate the activated regions of power lines in an
+image requiring only image-level binary label indicating whether it contains line (“positive”) or not
+(“negative”). We adopt the training scheme proposed in [ 12] (Appendix A.3). Speciﬁcally, we ﬁrstly
+train a classiﬁcation model to classify whether an image is positive or negative using the Inception-v3
+architecture [ 13]. Then we add an additional CNN branch directly connected to an intermediate layer
+of the classiﬁer and further train it for classiﬁcation while keeping the main branch ﬁxed. We use this
+branch to produce Class Activation Map (CAM) [ 14] that highlights line regions. Note that CAM is
+generated only if the classiﬁcation result is “positive”. We estimate the line directions in CAMs using
+Hough transform (See details in Appendix A.1). Due to the geometric simplicity of upward views,
+the direction detected in an image is exactly the actual line direction on maps.
+2Utility pole detection module. We use the same CNN architecture in the line detection module to
+detect utility poles in input images and generate CAMs for positive detections. To localize poles
+on the map, we assume all utility poles are completely vertical cylinders. In this way, any pole
+appearing in an upward street view must point to the image center, and the bearing of pole can be
+derived by calculating the angle between the pole and horizontal axis in the image ( in Figure
+1). We use another Hough transform to implement this process (Details in Appendix A.2). Finally,
+by intersecting the line-of-bearings (LOBs) derived from at least 2 view points and clustering the
+intersections, we further obtain the exact location of poles [ 11]. Appendix A.4 shows an illustration.
+3 Results
+We randomly retrieve upward street view images using Google Street View API and construct a
+dataset containing 10,000 samples. Each image is associated with two labels indicating whether it
+contains lines and whether it contains poles, respectively. There are 3,204 images containing line(s)
+and 1,786 images containing pole(s) (Appendix A.0). CNNs used in both modules are initialized
+with weights pretrained on ImageNet. During training, each input image is rotated with an angle
+randomly selected among 0,90,180and270and also randomly ﬂipped for data augmentation.
+Table 1 shows the classiﬁcation performance on the test set. The F1 scores (harmonic mean of
+precision and recall) for both line and pole identiﬁcation are higher than 92% with precisions over
+97% and recalls at around 90%, which indicates superior image-level performance. We also evaluate
+the region-level performance of our model on San Carlos, CA, USA. Figure 2 shows a small fraction
+of the distribution grid map reconstructed by our model with the locations and connectivity of lines
+and poles. We compare the pole localization accuracy of our model with that reported in [ 11]. The
+result is shown in Figure 3. The metrics is the percentage of annotated poles that have been detected
+within a certain range, and its variation with the radius of the range is represented by orange curve for
+our model, and red curve for the performance reported in [ 11]. Our model signiﬁcantly outperforms
+[11] even though our model is semi-supervised. 78% of the actual poles can be detected by our model
+within 4m, and the average localization error of detected poles is 2:25m. Such results demonstrate
+the beneﬁt of using upward views and the strength of semi-supervised learning.
+Figure 2: Distribution grid mapping in San Carlos, CA.
+Figure 3: Pole location accuracy
+precision recall F1 score
+line 0.978 0.929 0.953
+pole 0.973 0.882 0.925
+Table 1: Classiﬁcation performance
+4 Conclusion and Future Work
+In this study, we propose a semi-supervised learning framework to identify and localize utility poles
+and power lines in street view imagery for ﬁne-grained distribution grid mapping. Future work
+includes: (1) Identifying the connectivity at crossroads to complete grid topology reconstruction and
+extend the model to other regions. (2) Combining solar installation database [ 12] for PV integration
+analysis. (3) Combining tree inventory and weather data (e.g. wind) for vegetation management (e.g.
+inform tree trimming to prevent outage) and disaster prevention (e.g. ﬁre risk assessment).
+3Acknowledgements
+We thank Amazon Web Service for offering cloud computing credits. Qinghu Tang was supported by
+Tsinghua Academic Fund for Undergraduate Overseas Studies and Tsinghua University Initiative
+Scientiﬁc Research Program. Zhecheng Wang was supported by the Stanford Interdisciplinary
+Graduate Fellowship as Satre Family Fellow.
+References
+[1] IEA, “Renewables 2018: Analysis and forecasts to 2023,” tech. rep., 2018.
+[2] OSM Foundation, “Openstreetmap.” https://www.openstreetmap.org.
+[3]D. Deka, S. Backhaus, and M. Chertkov, “Estimating distribution grid topologies: A graphical learning
+based approach,” in 2016 Power Systems Computation Conference (PSCC) , pp. 1–7, IEEE, 2016.
+[4]D. Deka, S. Backhaus, and M. Chertkov, “Learning topology of the power distribution grid with and
+without missing data,” in 2016 European Control Conference (ECC) , pp. 313–320, IEEE, 2016.
+[5]Y . Weng, Y . Liao, and R. Rajagopal, “Distributed energy resources topology identiﬁcation via graphical
+modeling,” IEEE Transactions on Power Systems , vol. 32, no. 4, pp. 2682–2694, 2016.
+[6]J. Yu, Y . Weng, and R. Rajagopal, “Patopa: A data-driven parameter and topology joint estimation
+framework in distribution grids,” IEEE Transactions on Power Systems , vol. 33, no. 4, pp. 4335–4347,
+2017.
+[7]Y . Liao, Y . Weng, G. Liu, and R. Rajagopal, “Urban mv and lv distribution grid topology estimation via
+group lasso,” IEEE Transactions on Power Systems , vol. 34, no. 1, pp. 12–27, 2018.
+[8] FERC, “2018 assessment of demand response and advanced metering,” tech. rep., 2018.
+[9] Y . LeCun, Y . Bengio, and G. Hinton, “Deep learning,” nature , vol. 521, no. 7553, p. 436, 2015.
+[10] V . Krylov, E. Kenny, and R. Dahyot, “Automatic discovery and geotagging of objects from street view
+imagery,” Remote Sensing , vol. 10, no. 5, p. 661, 2018.
+[11] W. Zhang, C. Witharana, W. Li, C. Zhang, X. Li, and J. Parent, “Using deep learning to identify utility
+poles with crossarms and estimate their locations from google street view images,” Sensors , vol. 18, no. 8,
+p. 2484, 2018.
+[12] J. Yu, Z. Wang, A. Majumdar, and R. Rajagopal, “Deepsolar: A machine learning framework to efﬁciently
+construct a solar deployment database in the united states,” Joule , vol. 2, no. 12, pp. 2605–2617, 2018.
+[13] C. Szegedy, V . Vanhoucke, S. Ioffe, J. Shlens, and Z. Wojna, “Rethinking the inception architecture for
+computer vision,” in Proceedings of the IEEE conference on computer vision and pattern recognition ,
+pp. 2818–2826, 2016.
+[14] B. Zhou, A. Khosla, A. Lapedriza, A. Oliva, and A. Torralba, “Learning deep features for discriminative
+localization,” in Proceedings of the IEEE conference on computer vision and pattern recognition , pp. 2921–
+2929, 2016.
+4Appendix
+A.0 Dataset construction
+To construct the image dataset for line and pole detection, we manually select the images that contain line(s)
+among the 10,000 samples and get 3,204 such samples. Then we manually select 1,786 images that contain
+pole(s) among these 3,204 samples, based on the assumption that an image that contains utility pole(s) must
+contain power line(s). The dataset is ﬁnally split into train/validation/test sets following 85%-7.5%-7.5% ratio.
+A.1 Hough transform (Line detection module)
+Hough transform is a conventional computer vision technique which is used to detect particular shapes in images.
+It can detect the shape even if it is broken or distorted. The main idea of this approach is using voting procedure
+to ﬁnd imperfect instances of objects with a certain mathematical expression.
+Here we use Hough transform to detect lines in CAMs. For each line in an image, it can be represented as
+=xcos+ysin, wherex;yare the pixel positions in the image and ;are the line parameters. is the
+perpendicular distance from origin and is the angle with respect to horizontal axis. For each activated pixel in
+CAM, it will vote for a sinusoidal curve in the parameter ( ;) space, which represents all potential lines the
+pixel may lie in. After all activated pixels have voted, the local maximal points in the parameter space have a
+high possibility to be a line, thus the line parameters can be detected.
+In order to detect multiple lines in an image, we create a mask in the CAM to cover each line once it is detected.
+All the potential lines can be detected one after another by applying Hough transform to the CAM multiple
+times.
+A.2 Hough transform for angles (Pole detection module)
+The Hough transform for angles borrows the ideas from the Hough transform for lines. Because all rays of poles
+are assumed to pass through the image center, the voting procedure only accumulates among the angles of the
+lines which pass through the center. And the maximal in the parameter ( ) space represents the possible line.
+A.3 CNN architecture
+See the Inception-v3 architecture with a branch for generating CAM in Figure 4.
+Figure 4: Inception-v3 architecture with a branch for generating CAM.
+Figure 5: Illustration for cross bearing algorithm
+5A.4 Cross bearing algorithm
+After setting a threshold for the effective radius of a street view image, Any pair of non-parallel line-of-bearings
+(LOBs) within a certain range can produce an intersection which suggests that there can be a pole at the
+intersection. Because one pole may be captured by more than 2 upward street views, there can be more than one
+intersection for a single pole. We use a distance-based clustering method to cluster intersections into groups
+for different poles. And the centroid of all intersections in a group is used to represent the location of the
+corresponding pole (See Figure 5).
+6

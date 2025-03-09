@@ -1,0 +1,492 @@
+Memory to Map:
+Improving Radar Flood Maps With Temporal Context and Semantic
+Segmentation
+Veda Sunkara1Nicholas R. Leach1Siddha Ganju2
+Abstract
+Global ﬂood risk has increased due to worsen-
+ing extreme weather events and human migra-
+tion into growing ﬂood-prone areas. Accurate,
+high-resolution, and near-real time ﬂood maps
+can address ﬂood risk by reducing ﬁnancial loss
+and damage. We propose Memory To Map ,
+a novel machine learning approach that utilizes
+bi-temporal context to improve ﬂood water seg-
+mentation performance for Sentinel-1 imagery.
+We show that the inclusion of unﬂooded context
+for the area, or “memory,” allows the model to
+tap into a “prior state” of pre-ﬂood conditions,
+increasing performance in geographic regions in
+which single-image radar-based ﬂood mapping
+methods typically underperform (e.g. deserts).
+We focus on accuracy across different biomes to
+ensure global performance. Our experiments and
+novel data processing technique show that the con-
+ﬂuence of pre-ﬂood and permanent water context
+provides a 21% increase in mIoU over the base-
+line overall, and over 87% increase in deserts.
+1. Introduction
+Climate change-driven ﬂood disasters are rapidly increasing
+in frequency and magnitude (UNDRR, 2015). More people
+are affected by ﬂooding than any other climate disaster (Hal-
+legatte et al., 2017; CRED, 2019), hindering sustainable
+development. Research consistently shows that relative
+property loss caused by ﬂoods are highest in places of social
+vulnerability (UNDRR, 2019; Ceola et al., 2014), exacer-
+bating economic disparities (Tellman et al., 2020). Readily
+available remote sensing satellite data allows for scalable,
+low cost, near-real time disaster monitoring and mapping
+in order to support response and relief. Multidisciplinary
+approaches to ﬂood detection algorithms, leveraging con-
+ventional remote sensing, hydrology, and machine learning,
+are paramount to using satellite imagery for effective ﬂood
+detection (Mateo-Garcia et al., 2021).
+Imagery from Sentinel-1, ESA’s synthetic aperture radar
+Figure 1. Memory To Map inference pipeline. The model com-
+bines multi-temporal contextual information, (pre-ﬂood and GSW)
+with ﬂooded radar imagery to improve segmentation performance
+for Sentinel-1. We hypothesize that the subtle changes in backscat-
+ter between the memory context and the ﬂood radar imagery could
+potentially be exploited by the model to improve performance.
+(SAR) satellite, is commonly used for ﬂood mapping as it is
+free, easily accessible, cloud penetrating (i.e. the image is
+not affected by the presence of clouds or other atmospheric
+conditions), and systemically acquired (Potin et al., 2014).
+However, the accuracy of SAR-derived ﬂood maps is often
+reduced due to multiple land surfaces - such as sandy river
+banks, deserts, recently cleared ﬁelds, and terrain shadows -
+appearing similar to ﬂood waters in backscatter images.
+Memory To Map introduces a pre-ﬂood image of the
+scene and a permanent water layer (derived from the the
+Joint Research Council Global Surface Water data v1.1
+(hereafter “GSW”) (Pekel et al., 2016)) as input channels
+to the network which provide unﬂooded context, thereby
+leveraging change detection when segmenting water. Our
+approach resulted in signiﬁcant improvements over the base-
+line, as well as unique improvements in deserts and other
+areas that are particularly difﬁcult for ﬂood mapping us-
+ing SAR. To the best of our knowledge, this is the ﬁrst
+work of its type tested globally with accuracy measured
+across different biomes, motivated by the frequent ﬂooding
+in different biomes and the necessity of globally performant
+models. The framework introduced here for training andMemory to Map: Improving Radar Flood Maps With Temporal Context and Semantic Segmentation
+validating globally-applicable models is a key contribution
+of this work. Our approach can also serve as a template
+for using temporal information in semantic segmentation to
+detect ﬂooding in SAR images.
+We demonstrate a way to utilize accessible data sources
+to improve semantic segmentation of ﬂoods by 21% mean
+intersection over union (mIoU) overall, creating a model
+for generating high quality ﬂood maps across domains. We
+improved performance in uniquely challenging regions such
+as deserts, in which we found a 87% increase in mIoU,
+making a ﬂood mapping network useful for global applica-
+tions. The use of a globally-distributed dataset for training
+and validation constitutes a major beneﬁt of this model and
+substantially broadens the applicability of our results. As
+shown by the reliance of governments and aid agencies on
+ﬂood maps derived from satellite imagery (Ho et al., 2021),
+these maps enable better global preparedness for and robust
+response to increasingly common climate disasters.
+2. Related Work
+SAR-based ﬂood segmentation approaches often rely on
+the assumption that inundated areas have lower backscatter
+than the rest of the scene (Chini et al., 2017; Martinis et al.,
+2015). While this is often true, inundation may actually
+increase backscatter compared to unﬂooded conditions in
+certain situations, such as ﬂooded vegetation (Tsyganskaya
+et al., 2018; Zhang et al., 2020). Approaches relying on
+phase information rather than backscatter have been used
+for ﬂood detection (Shen et al., 2019), but these methods are
+often very sensitive to non-target change and can be difﬁcult
+to implement and interpret.
+There are few SAR-based ﬂood segmentation methods that
+have been demonstrated to be effective globally (Mateo-
+Garcia et al., 2021; Bonaﬁlia et al., 2020; Rambour et al.,
+2020). Quantifying our model’s accuracy in different
+biomes may help users to understand its applicability to
+speciﬁc regions. Many others have discussed performance
+differences of SAR-based ﬂood mapping approaches in spe-
+ciﬁc geographic areas and conditions (Giustarini et al., 2013;
+Zhang et al., 2020; Tsyganskaya et al., 2018). The use of
+RESOLVE biomes (Dinerstein et al., 2017) allows us to an-
+alyze chips based on their biogeoclimatic similarity without
+the need for subjective grouping. Furthermore, we believe
+the use of biomes as a sampling stratum for developing
+globally-applicable machine learning models has value be-
+yond the scope of this work, and may be worth consideration
+for other computer vision tasks which must perform well
+across many geographic areas.
+Recent work in deep learning has leveraged recurrent neural
+networks for bi-temporal change detection in using satel-
+lite data (Lyu et al., 2016; Ma et al., 2019), as well as
+multimodal inputs that leverage context for semantic label-ing (Audebert et al., 2018). Our work combines elements of
+both of these approaches, leveraging a standard segmenta-
+tion architecture with multimodal temporal information to
+improve the accuracy of water maps.
+3. Memory To Map
+We describe the three main contributions of our work:
+1.A novel data processing technique that combines
+ﬂooded, pre-ﬂood, and GSW data to produce state
+of the art segmentation results.
+2.A U-Net training scheme to leverage change informa-
+tion and context to segment ﬂoods.
+3.Utilization of global biome information to assess bal-
+ance of model performance across geoclimactic re-
+gions, with a focus on desert biomes.
+3.1. Dataset
+We describe the generation of the three distinct inputs to
+our network; permanent water from GSW, pre-ﬂood, and
+ﬂooded chips. We use the term “chips” to indicate 512x512
+pixel crops of images, in accordance with domain terminol-
+ogy.
+Flooded Chips: Candidate ﬂood events were selected from
+the Dartmouth Flood Observatory (Brakenridge, 2010) and
+ﬁltered based on the following criteria: (1) ﬂood events were
+discarded unless there were Sentinel-1 and Sentinel-2 im-
+ages within four days of each other for which at least 50% of
+the Sentinel-2 image overlapped with the Sentinel-1 image.
+This was required so that Sentinel-2, which carries a multi-
+spectral sensor sensitive to visible and infrared wavelengths,
+could be used to support the creation of high-quality hand
+labels; the Sentinel-2 images were not used in this study
+beyond the generation of hand labels. (2) The Sentinel-2
+image was required to have less than 50% cloud cover. (3)
+The dataset was balanced to remove over-representation of
+common biomes (e.g. Tropical & Subtropical Grasslands,
+Savannas & Shrublands) by removing ﬂood events based
+on their biome (Dinerstein et al., 2017). These ﬂood events
+were then divided into 512x512 chips from a total of 125
+ﬂood events. For each chip, a team of domain scientists
+hand-labeled segmentation masks by cross-referencing the
+Sentinel-1 and corresponding Sentinel-2 chips.
+Pre-Flood Chips: To generate pre-ﬂood chips, we con-
+ducted a search based on the original Sentinel-1 image for
+each ﬂooded chip. We searched for a pre-ﬂood Sentinel-1
+image meeting three criteria: (1) the pre-ﬂood image must
+be acquired from the same orbit direction as the ﬂood image
+from which the ﬂooded chip was derived (i.e. the ascend-
+ing or descending pass); (2) the image must be acquired
+from the same relative orbit number; and (3) the pre-ﬂoodMemory to Map: Improving Radar Flood Maps With Temporal Context and Semantic Segmentation
+image must be acquired 14-35 days prior to the ﬂooded
+image. This date range was chosen to allow for at least
+one Sentinel-1 same-orbit acquisition while exceeding the
+global median ﬂood duration to increase the likelihood that
+the image was acquired in an unﬂooded condition (Najibi &
+Devineni, 2017). If multiple images meet all three of these
+criteria, the image acquired nearest in time to the ﬂooded
+image was selected as the pre-ﬂood image. If no images
+meeting these criteria were found, the chip was discarded.
+Out of the total 3513 available chips, pre-ﬂood images for
+2250 of them were found and the others were not used.
+Permanent Water Chips: For each chip, we created a
+permanent water chip based on GSW data. To do so, we
+cropped the Global Surface Water occurrence data to the
+extent of each of our Sentinel-1 chips. The occurrence data
+was then resampled to 10-meter resolution.
+3.2. Training Methodology
+We had 2250 total chips from 125 ﬂood events, divided into
+1820 training and 430 test. We devised testing and training
+splits by testing random seeds to optimize for even distribu-
+tion of ﬂood water per biome and chips per ﬂood event. We
+used an Adam optimizer and trained on GeForce RTX 3090
+GPU. We modify the U-Net (Yakubovskiy, 2020) to accept
+additional inputs by increasing the number of input chan-
+nels and train with a batch size of 32, initial learning rate
+of 0.001, patience of 8, random cropping data augmenta-
+tions, pretrained timm efﬁcientnet b1 backbone (Wightman,
+2019), and test with an identical network.
+4. Results
+We trained and benchmarked our network with the ﬂooded
+chip, ﬂooded and GSW chips, ﬂooded and pre-ﬂood chips,
+and lastly ﬂooded, GSW, and pre-ﬂood chips. As shown in
+Table 1, the network performs best overall when supplied
+with both the GSW and pre-ﬂood chips. We measured model
+performance both with overall mIoU and overall F1 Score.
+Model
+Inputs FloodedFlooded
+Pre-FloodFlooded
+GSWFlooded
+GSW
+Pre-Flood
+mIoU 0.62 0.66 0.72 0.75
+F1 Score 0.77 0.80 0.84 0.87
+Table 1. Model performance across input channels. The model that
+includes ﬂooded, GSW, and pre-ﬂood chips perform consistently
+better than models with fewer inputs. Results tallied for all biomes.
+To assess geographic variation in model performance, we
+assigned each chip a biome based on the RESOLVE biome
+corresponding to the majority of its area. Of the biomes in-
+cluded, those with the lowest average Sentinel-1 backscatter
+are Deserts & Xeric Shrublands (henceforth Deserts) andTropical & Subtropical Grasslands, Savannas & Shrublands.
+As shown in Figure 2, just including a pre-ﬂood chip did
+not improve model performance in these biomes; however
+including GSW data substantially improved model perfor-
+mance in Deserts. The model which included the ﬂooded,
+pre-ﬂood, and GSW chips was the best-performing model
+in the majority of the evaluated biomes. For a selection of
+predictions for each biome, see Appendix Figure 4.
+Figure 2. Comparison of four models across different RESOLVE
+biomes. The biomes are arranged from least to most represented
+in the data2. The model trained on ﬂooded, GSW, and pre-ﬂood
+chips performed better on Deserts than the model trained on just
+ﬂooded chips by 87% mIoU.
+We sought to improve model performance in uniquely chal-
+lenging biomes for SAR such as Deserts. To assess this,
+we trained all four of our networks on only Deserts, all
+biomes except Deserts, and all biomes, and in all cases
+tested only on Deserts. As shown in Figure 3, networks
+trained on only Deserts had the best performance, while
+networks with ﬂooded and GSW and pre-ﬂood, GSW, and
+ﬂooded chips performed comparably well when trained on
+all biomes. The network provided with pre-ﬂood, GSW, and
+ﬂooded chips trained on all biomes except Deserts had the
+best performance compared with models with fewer inputs.
+Figure 3. Four models trained on Deserts, every biome except
+Deserts, and every biome, and tested on Deserts.Memory to Map: Improving Radar Flood Maps With Temporal Context and Semantic Segmentation
+5. Analysis
+Given the challenges with segmenting water from Sentinel-1
+SAR imagery, we developed a segmentation network and
+algorithm that leveraged context to generate better ﬂood seg-
+mentation masks at the high-resolution scale needed to sup-
+port disaster resilience. We performed a novel cross-biome
+global analysis, and found that our method signiﬁcantly im-
+proved network performance in uniquely challenging low
+backscatter regions such as deserts.
+While we found that simply providing the model with per-
+manent water data signiﬁcantly improved performance over
+segmentation with a single ﬂooded chip, providing perma-
+nent water and a pre-ﬂood chip provided the best results.
+This is possibly because the model is able to leverage the
+combination of the permanent water mask and the visual rep-
+resentation of the permanent water state (i.e. the pre-ﬂood
+chip) to then better interpret unique water/land boundaries.
+Notably, we found that providing the network with the pre-
+ﬂood chip and ﬂooded chip only slightly improved perfor-
+mance over simply providing the ﬂooded chip. This is likely
+due to the network requiring more context for the distinction
+between the two input chips.
+5.1. Biome Analysis
+As expected, the models which only included a ﬂooded chip
+performed poorly in biomes with low average backscatter
+(Figure 2). For Desert chips, models which included GSW
+data performed better, and the model which included both
+GSW and a pre-ﬂood chip was the best performing. The
+inclusion of the GSW data is likely helping the model distin-
+guish between deserts and open water, which have similar
+backscatter intensities. These results suggest that informa-
+tion about permanent water is important for SAR-based
+water segmentation in areas with low average backscatter.
+Models provided with ﬂooded, pre-ﬂood, and GSW data,
+when trained on all biomes except Deserts, perform best
+on Deserts compared to models with fewer inputs (Figure
+3). The models with both forms of context are best able
+to generalize to unseen biomes. This suggests that, when
+developing a network with a limited amount of training
+data representing a key challenge area, providing pre-ﬂood
+and GSW context together can boost performance. The
+ability to generalize is necessary for deployment, especially
+when training data from the main application or speciﬁc
+2The biome labels refer to Tropical & Subtropical Dry
+Broadleaf Forests (59 chips); any other biomes (110 chips); Deserts
+& Xeric Shrublands (128 chips); Temperate Grasslands, Savannas
+& Shrublands (192 chips); Temperate Broadleaf & Mixed Forests
+(389 chips); Tropical & Subtropical Moist Broadleaf Forests (633
+chips); and Tropical & Subtropical Grasslands, Savannas & Shrub-
+lands (731 chips).geographic regions may be missing.
+The approach described in this paper has some important
+limitations. Generating context data for each chip involves
+extra data preparation and processing. Selecting appropriate
+pre-ﬂood images requires some assumptions about the dura-
+tion of ﬂoods that may not always be true; for example, a
+“pre-ﬂood” image acquired 14 days before the ﬂooded image
+may still contain ﬂooding. Optimal selection of pre-ﬂood
+images may also vary among geographic areas and ﬂood
+types. Additionally, this model is only usable if there is a
+valid pre-ﬂood image available; simply using GSW yields
+signiﬁcant performance boosts and is universally accessible.
+As the results of this study show, the inclusion of context did
+not always improve the model’s performance; in Tropical &
+Subtropical Grasslands, Savannas & Shrublands, the model
+which included both GSW and pre-ﬂood chips performed
+worse than the model with only ﬂooded chips. Changes
+in the backscattering properties of these grasslands due to
+rainfall create spatially-varying changes in the backscat-
+ter between the pre-ﬂood and ﬂooded images, potentially
+explaining this dip in performance.
+6. Discussion and Conclusion
+Memory To Map is a prototype for utilizing contextual
+information to improve the performance of semantic seg-
+mentation of ﬂood water in Sentinel-1 SAR Imagery. Im-
+proving the accuracy and reliability of these ﬂood maps
+allows for near-real time ﬂood monitoring even in adverse
+weather conditions, a common precedent to extreme ﬂood
+events. These near-real time maps can then be used for disas-
+ter relief and response, as well as for planning for necessary
+infrastructure for climate resilience. Our novel biome-based
+analysis demonstrates the applicability of this methodology
+to global domains. Providing context to segmentation net-
+works results in a signiﬁcant performance boost in areas
+with relatively low backscatter, such as deserts, making the
+algorithm globally performant.
+Future work should include a more rigorous exploration
+of context inputs. To emphasize change detection based
+on seasons, a pre-ﬂood image could be constructed as a
+pixelwise statistical measure (such as average or z-score)
+of backscatter values taken at even intervals across the pre-
+vious year. Additional contextual information can also be
+constructed based on publicly available datasets, such as
+pixelwise masks containing biome, land cover, agricultural,
+and population density information. Topographic informa-
+tion could also provide the network with context for water
+drainage and movement patterns over time. As the successes
+of this approach vary across biomes, using an ensemble ap-
+proach to decide which model is best for detecting ﬂood
+water in a scene may provide the best results globally.Memory to Map: Improving Radar Flood Maps With Temporal Context and Semantic Segmentation
+Reliable and high-resolution ﬂood detection methods al-
+low for the development of effective disaster relief sys-
+tems. These system can provide critical services to give
+governments and aid organizations the resources to rebuild,
+replant crops, access international aid, and more. The de-
+scribed novel data processing technique produces segmenta-
+tion models that are performant regardless of biogeography
+and generalize effectively, creating consistent ﬂood maps
+that can be deployed to mitigate harm to climate vulnerable
+communities, regardless of their location.
+References
+Audebert, N., Le Saux, B., and Lef `evre, S. Beyond rgb:
+Very high resolution urban remote sensing with multi-
+modal deep networks. ISPRS Journal of Photogrammetry
+and Remote Sensing , 140:20–32, 2018. ISSN 0924-2716.
+doi: https://doi.org/10.1016/j.isprsjprs.2017.11.011.
+URL https://www.sciencedirect.com/
+science/article/pii/S0924271617301818 .
+Geospatial Computer Vision.
+Bonaﬁlia, D., Tellman, B., Anderson, T., and Issenberg,
+E. Sen1ﬂoods11: A georeferenced dataset to train and
+test deep learning ﬂood algorithms for sentinel-1. In
+Proceedings of the IEEE/CVF Conference on Computer
+Vision and Pattern Recognition (CVPR) Workshops , June
+2020.
+Brakenridge, G. R. Global active archive of large ﬂood
+events. Dartmouth Flood Observatory, University of
+Colorado , 2010.
+Ceola, S., Laio, F., and Montanari, A. Satellite nighttime
+lights reveal increasing human exposure to ﬂoods world-
+wide. Geophysical Research Letters , 41(20):7184–7190,
+2014. doi: 10.1002/2014gl061859.
+Chini, M., Hostache, R., Giustarini, L., and Matgen, P. A hi-
+erarchical split-based approach for parametric threshold-
+ing of sar images: Flood inundation as a test case. IEEE
+Transactions on Geoscience and Remote Sensing , 55(12):
+6975–6988, 2017. doi: 10.1109/TGRS.2017.2737664.
+CRED. 2018: Extreme weather events affected 60 million
+people. Centre for Research on the Epidemiology of Dis-
+asters CRED, Jan 2019. URL https://www.cred.
+be/2018-review-disaster-events .
+Dinerstein, E., Olson, D., Joshi, A., Vynne, C., Burgess,
+N. D., Wikramanayake, E., Hahn, N., Palminteri,
+S., Hedao, P., Noss, R., and et al. Ecoregion-
+based approach to protecting half the terrestrial realm,
+Apr 2017. URL https://academic.oup.com/
+bioscience/article/67/6/534/3102935 .Giustarini, L., Hostache, R., Matgen, P., Schumann, G.
+J.-P., Bates, P. D., and Mason, D. C. A change detec-
+tion approach to ﬂood mapping in urban areas using
+TerraSAR-x. IEEE Transactions on Geoscience and Re-
+mote Sensing , 51(4):2417–2430, April 2013. doi: 10.
+1109/tgrs.2012.2210901. URL https://doi.org/
+10.1109/tgrs.2012.2210901 .
+Hallegatte, S., V ogt-Schilb, A., Bangalore, M., and Rozen-
+berg, J. Unbreakable: building the resilience of the poor
+in the face of natural disasters . World Bank, 2017.
+Ho, J. C., Vu, W., Tellman, B., Dinga, J. B., N’diaye,
+P. I., Weber, S., Bauer, J.-M., Schwarz, B., Doyle, C.,
+Demuzere, M., Anderson, T., and Glinskis, E. Chapter
+6 - from cloud to refugee camp: A satellite-based
+ﬂood analytics case-study in congo-brazzaville. In
+Schumann, G. J.-P. (ed.), Earth Observation for Flood
+Applications , Earth Observation, pp. 131–146. Elsevier,
+2021. ISBN 978-0-12-819412-6. doi: https://doi.org/
+10.1016/B978-0-12-819412-6.00006-7. URL https:
+//www.sciencedirect.com/science/
+article/pii/B9780128194126000067 .
+Lyu, H., Lu, H., and Mou, L. Learning a transferable
+change rule from a recurrent neural network for land
+cover change detection. Remote Sensing , 8(6), 2016.
+ISSN 2072-4292. doi: 10.3390/rs8060506. URL https:
+//www.mdpi.com/2072-4292/8/6/506 .
+Ma, L., Liu, Y ., Zhang, X., Ye, Y ., Yin, G., and
+Johnson, B. A. Deep learning in remote sens-
+ing applications: A meta-analysis and review.
+ISPRS Journal of Photogrammetry and Remote
+Sensing , 152:166–177, 2019. ISSN 0924-2716.
+doi: https://doi.org/10.1016/j.isprsjprs.2019.04.015.
+URL https://www.sciencedirect.com/
+science/article/pii/S0924271619301108 .
+Martinis, S., Kersten, J., and Twele, A. A fully
+automated terrasar-x based ﬂood service. IS-
+PRS Journal of Photogrammetry and Remote
+Sensing , 104:203–212, 2015. ISSN 0924-2716.
+doi: https://doi.org/10.1016/j.isprsjprs.2014.07.014.
+URL https://www.sciencedirect.com/
+science/article/pii/S0924271614001981 .
+Mateo-Garcia, G., Veitch-Michaelis, J., Smith, L., Oprea,
+S. V ., Schumann, G., Gal, Y ., Baydin, A. G., and Backes,
+D. Towards global ﬂood mapping onboard low cost satel-
+lites with machine learning. Scientiﬁc Reports , 11(1),
+2021. doi: 10.1038/s41598-021-86650-z.
+Najibi, N. and Devineni, N. Recent trends in frequency and
+duration of global ﬂoods. Earth System Dynamics Dis-
+cussions , pp. 1–40, 07 2017. doi: 10.5194/esd-2017-59.Memory to Map: Improving Radar Flood Maps With Temporal Context and Semantic Segmentation
+Pekel, J.-F., Cottam, A., Gorelick, N., and Belward, A. S.
+High-resolution mapping of global surface water and its
+long-term changes. Nature , 540(7633):418–422, 2016.
+doi: 10.1038/nature20584.
+Potin, P., Rosich, B., Roeder, J., and Bargellini, P. Sentinel-1
+mission operations concept. In 2014 IEEE Geoscience
+and Remote Sensing Symposium . IEEE, July 2014. doi:
+10.1109/igarss.2014.6946713. URL https://doi.
+org/10.1109/igarss.2014.6946713 .
+Rambour, C., Audebert, N., Koeniguer, E., Saux, B. L., Cru-
+cianu, M., and Datcu, M. Flood detection in time series of
+optical and sar images. ISPRS - International Archives of
+the Photogrammetry, Remote Sensing and Spatial Infor-
+mation Sciences , XLIII-B2-2020:1343–1346, 2020. doi:
+10.5194/isprs-archives-xliii-b2-2020-1343-2020.
+Shen, X., Anagnostou, E. N., Allen, G. H., Robert
+Brakenridge, G., and Kettner, A. J. Near-real-
+time non-obstructed ﬂood inundation mapping us-
+ing synthetic aperture radar. Remote Sensing of
+Environment , 221:302–315, 2019. ISSN 0034-
+4257. doi: https://doi.org/10.1016/j.rse.2018.11.
+008. URL https://www.sciencedirect.com/
+science/article/pii/S0034425718305169 .
+Tellman, B., Schank, C., Schwarz, B., Howe, P. D., and
+de Sherbinin, A. Using disaster outcomes to validate
+components of social vulnerability to ﬂoods: ﬂood dam-
+age and property damage across the usa. SocArXiv,
+Jun 2020. doi: 10.31235/osf.io/byrgu. URL osf.io/
+preprints/socarxiv/byrgu .
+Tsyganskaya, V ., Martinis, S., Marzahn, P., and Ludwig, R.
+Detection of temporary ﬂooded vegetation using sentinel-
+1 time series data. Remote Sensing , 10(8):1286, 2018.
+doi: 10.3390/rs10081286.
+UNDRR. The human cost of weather-related disasters 1995-
+2015. Centre for Research on the Epidemiology of Disas-
+ters CRED, 2015.
+UNDRR. Global Assessment Report on Disaster Risk Re-
+duction 2019 . 05 2019. ISBN 978-92-1-004180-5.
+Wightman, R. Pytorch image models. https://github.
+com/rwightman/pytorch-image-models ,
+2019.
+Yakubovskiy, P. Segmentation models py-
+torch. https://github.com/qubvel/
+segmentation_models.pytorch , 2020.
+Zhang, M., Chen, F., Liang, D., Tian, B., and Yang, A. Use
+of sentinel-1 grd sar images to delineate ﬂood extent in
+pakistan. Sustainability , 12(14), 2020. ISSN 2071-1050.
+doi: 10.3390/su12145784. URL https://www.mdpi.
+com/2071-1050/12/14/5784 .7. Appendix
+Figure 4. We provide a few visual examples in Figure 4 of the
+segmentation outputs for various biomes, from the best performing
+model with inputs of all three ﬂooded, pre-ﬂood, GSW, and the
+baseline model with ﬂooded images as inputs.

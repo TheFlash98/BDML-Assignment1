@@ -1,0 +1,392 @@
+Tackling Climate Change with Machine Learning workshop at ICLR 2024
+PHYSICS -INFORMED MACHINE LEARNING -BASED
+CLOUD MICROPHYSICS PARAMETERIZATION FOR
+EARTH SYSTEM MODELS
+Ellen Sarauer
+Deutsches Zentrum f ¨ur Luft- und Raumfahrt
+Institut f ¨ur Physik der Atmosph ¨are
+Oberpfaffenhofen
+Germany
+ellen.sarauer@dlr.deMierk Schwabe
+Deutsches Zentrum f ¨ur Luft- und Raumfahrt
+Institut f ¨ur Physik der Atmosph ¨are
+Oberpfaffenhofen
+Germany
+Philipp Weiss
+Atmospheric, Oceanic and Planetary Physics
+Department of Physics
+University of Oxford
+UKAxel Lauer
+Deutsches Zentrum f ¨ur Luft- und Raumfahrt
+Institut f ¨ur Physik der Atmosph ¨are
+Oberpfaffenhofen
+Germany
+Philip Stier
+Atmospheric, Oceanic and Planetary Physics
+Department of Physics
+University of Oxford
+UKVeronika Eyring
+Deutsches Zentrum f ¨ur Luft- und Raumfahrt
+Institut f ¨ur Physik der Atmosph ¨are
+Oberpfaffenhofen
+University of Bremen
+Bremen
+Germany
+ABSTRACT
+In this study, we develop a physics-informed machine learning (ML)-based
+cloud microphysics parameterization for the ICON model. By training the
+ML parameterization on high-resolution simulation data, we aim to improve
+Earth System Models (ESMs) in comparison to traditional parameterization
+schemes. We investigate the usage of a multilayer perceptron (MLP) with
+feature engineering and physics-constraints, and use explainability techniques
+to understand the relationship between input features and model output. Our
+novel approach yields promising results, with the physics-informed ML-based
+cloud microphysics parameterization achieving an R2score up to 0.777 for an
+individual feature. Additionally, we demonstrate a notable improvement in the
+overall performance in comparison to a baseline MLP, increasing its average
+R2score from 0.290 to 0.613 across all variables. This approach to improve
+the representation of cloud microphysics in ESMs promises to enhance climate
+projections, contributing to a better understanding of climate change.
+1 I NTRODUCTION
+Machine learning (ML) made great strides in enhancing Earth System Models (ESMs) by replacing
+traditional parameterizations that are based on empirical and physical understanding and represent
+the statistical effect of a given process at the grid scale of the climate model (Rasp et al., 2018;
+Reichstein et al., 2019; Eyring et al., 2023b). For this, typically ML models are trained on
+high-resolution climate simulations or observations and then coupled to the coarse climate model,
+potentially eliminating long-standing biases in ESMs (Gentine et al., 2021; Grundner et al., 2022;
+1Tackling Climate Change with Machine Learning workshop at ICLR 2024
+Eyring et al., 2023a). However, in the literature, the cloud microphysics parameterization has
+only been emulated on the same resolution as the simulation data (Gettelman et al., 2021; Han
+et al., 2020; Perkins et al., 2023). Therefore, this study presents a novel approach for learning
+the cloud microphysics parameterization by incorporating higher resolution dynamics into the
+lower resolution ESM. This will be especially beneficial when parameterizing cloud convection
+together with cloud microphysics in future studies. The parameterization of cloud microphysics
+is central in traditional ESMs, working closely coupled to the convection scheme in order to
+model the behavior of clouds. It calculates the formation, growth and removal of cloud liquid
+water particles and captures phase changes. Additionally, cloud microphysics processes impact the
+lifetime of clouds, the water vapor distribution outside of clouds, the fluxes of water and radiation
+through the atmosphere, and latent heating. We aim to enhance the representation of subgrid-scale
+cloud microphysics within the coarse-scale Icosahedral Non-hydrostatic modeling framework
+(ICON) (Z ¨angl et al., 2014; Giorgetta et al., 2018), which traditionally employs the single moment
+microphysical scheme (Lohmann & Roeckner, 1996). This scheme focuses on prognostic equations
+for the mass mixing ratios (MMRs) of water vapor, cloud liquid water, cloud ice, and rain. In order
+to improve upon this baseline, we propose the development of an ML-based parameterization that is
+trained on ICON simulation data that uses the more complex graupel scheme (Rutledge & Hobbs,
+1984; Baldauf et al., 2011). The graupel scheme not only calculates the MMR of snow and graupel
+but also provides precipitation rates for rain, snow, and graupel. Moreover, the use of high-resolution
+simulation data allows us to incorporate the statistical effects of higher-resolved dynamics into the
+ML model. This holds the potential to further improve the cloud microphysics parameterization and
+enhance the accuracy of ESMs.
+2 M ETHODOLOGY
+2.1 U NDERLYING DATASET
+We generate high-resolution data through a simulation setup utilizing the atmospheric component of
+ICON Sapphire (Hohenegger et al., 2023; NextGems, 2024) with a horizontal resolution of roughly
+5 km. An illustration of the simulation is given in the Appendix A, Figure 3. The model time step for
+cloud microphysics is set to 40 seconds. To keep the data volume manageable, we store data every
+three simulated hours, namely, the mean over that time period of all input and output parameters
+used in the ML parameterization (see below). We run the simulation for 30 days from 20 January
+2020 and discard the first ten days as spin-up period. We use ERA5 boundary conditions from
+Hersbach et al. (2020) to initialize the model with historical weather data, ozone concentrations,
+aerosol concentrations, ocean properties like the sea surface temperature and sea salt concentration,
+and land properties. Subsequently, we proceed to a coarse-graining technique where we compute
+the mean of the variables using a weighting system based on the grid cell size, adopting the same
+methodology as Grundner et al. (2022), mapping the data to a coarser ICON grid with a horizontal
+resolution of 80 km. We consider a cell-based approach and preselect for grid cells that contain a
+sufficient amount of cloud MMR (cloud liquid water mqc, cloud ice mqi) or precipitation MMR (rain
+mqr, snow mqs, graupel mqg) defined as follows
+(mqc+mqi)≥10−5kg·kg−1,(mr+ms+mg)≥10−7kg·kg−1. (1)
+The coarse-graining and preselection strategy results in a total data set size of approximately 6.4
+million samples, which we randomly split into training, validation and testing sets. We scale the
+data with respect to the standard deviation and the mean of the training set.
+2.2 M ACHINE LEARNING MODEL
+As discussed in de Burgh-Day & Leeuwenburg (2023), incorporating domain knowledge into
+ML parameterizations increases the performance. Figure 1 shows an overview of the ML
+parameterization developed in this work. Since the goal is to run the ML model online in an
+ICON simulation run, we prioritize a simpler model architecture (shown in blue in the figure)
+and focus on implementing additional meaningful input features, introducing constraints to avoid
+unphysical negative MMRs, and explain the model’s behavior with explainability methods. The
+training of the base multilayer perceptron (MLP) model is structured as follows: 27 input nodes
+for the microphysical input parameters, three hidden layers with 256 nodes each using the ReLu
+2Tackling Climate Change with Machine Learning workshop at ICLR 2024
+activation (Agarap, 2019), 7 output nodes using linear activation. For the used set of input and output
+parameters and their description the reader is referred to the Appendix A, Table 2. We train the model
+over 100 epochs and optimize the model’s hyperparameters with the Keras tuner (O’Malley et al.,
+2019). Feature engineering provides a methodology to incorporate additional physical information
+into the ML parameterization model (Zheng et al., 2021). Since the Graupel scheme calculates the
+phase transition from different microphysical tracers, we introduce the relative difference in MMRs
+between the aggregate states of water as an additional model input. The relative difference ∆mq1,q2
+for MMRs mof the tracers q1andq2is defined as follows:
+∆mq1,q2=mq1−mq2
+mq2,ifmq2>0,else∆mq1,q2= 0. (2)
+During the preselection procedure of our simulated dataset we find that the classical parameterization
+produces negative masses, or tendencies that lead to negative masses after the application of the
+classical parameterization in 4 %of the samples in the preselected dataset. When these effects occur
+in the classical parameterization, the ICON model sets the negative masses to zero and recalculates
+the tendencies. To incorporate this correction into our model, we apply the method of physics
+constraining for negative masses following the approach of Harder et al. (2022). We modify the
+weights of the output layer during the optimization of the MLP, constraining all tendencies ∆qnot
+fulfilling the condition
+mq,t1=mq,t0+ ∆t·∆q≥0. (3)
+Here, mq,t1is the MMR after the application of the parameterization, and mq,t0the MMR before
+the application of the parameterization. The tendency ∆qrepresents the rate of change of the MMR
+per internal model time step ∆tin the ICON simulation, which is 40 s in this study. Finally, for the
+purpose of explainability, the input feature importance ranking performed in this study is computed
+via the SHAP package (Lundberg & Lee, 2017). This package follows the game theory approach of
+the calculation of Shapley values.
+3 R ESULTS
+Our study evaluates the performance of the physics-informed MLP algorithm with feature
+engineering (blue, yellow and green model in Figure 1) on the coarse-grained ICON simulation
+test dataset in comparison with the physics-informed MLP model without feature-engineered
+input variables (blue and green model in Figure 1). By hyperparameter tuning with Keras
+tuner, we identify the physics-informed ML algorithm that best captures the characteristics of the
+coarse-grained high-resolution simulation data and the additional input features. Even though the
+cloud microphysics parameterization is a complex problem to tackle (cf. Appendix A, Figure 4),
+we are able to reach a goodness of fit of 0.613 R2score averaged over all output features, with
+achieving the best regression output for the cloud liquid water MMR (0.777 R2score). For the
+specific goodness of fit for the individual output features are presented in Table 2. The goodness
+of fit for the tendencies of temperature and cloud properties (water vapor, cloud liquid water and
+cloud ice) are better compared to the tendencies for precipitation (rain, snow, graupel). This
+may be due to a lack of events with high precipitation MMR in the training dataset. With the
+introduction of additional input features, we are able to improve the model’s performance from
+Figure 1: Overview of the presented ML parameterization. The baseline MLP model is shown
+(blue) with additional input features obtained via feature engineering (yellow), negative mass
+constraining (green) and explainability (red).
+3Tackling Climate Change with Machine Learning workshop at ICLR 2024
+Figure 2: ML predictions vs. ground truth of water vapor MMR tendencies without (left) and with
+(right) additional input features. The colors illustrate the density of the data on a logarithmic scale.
+0.290 to 0.613 R2score. As an example, the tendency of the MMR of water vapor is examined
+in Figure 2, showcasing the outcomes of the feature engineering technique. In the panels, the ML
+parameterization predictions of the tendencies are shown as function of the training data for the
+MLP trained without (left) resp. with (right) the feature-engineered input. Both figures indicate that
+the ML parameterization overestimates tendencies that are zero in the classical parameterization or
+the ML prediction. This could be due to an over-representation of microphysical tracers with values
+very close to zero in their distributions. Moreover, the MLP trained without feature-engineered input
+variables exhibits a more extensive spread of data compared to that incorporating the additional
+input variables. We see an enhancement of the model’s performance through feature engineering.
+However, by training the baseline MLP on a more balanced training data set, we can anticipate the
+model to independently capture these features. The comparison between model prediction and test
+dataset (ground truth) for the other variables can be found in Appendix A, Figure 5. In contrast
+to feature engineering, constraining unphysical values in the training dataset as described above
+does not have an impact on the overall performance of the ML parameterization. Nevertheless, we
+expect the constrained ML parameterization to lead to an improved and more stable simulation when
+coupled to the climate model in future work. Furthermore, we employ explainability techniques to
+gain a better understanding of the relationships between different input features and the resulting
+model output, i.e., microphysical tendencies. Detected by the Shapley value calculation, we observe
+a strong correlation between the microphysical tendencies and both air pressure and temperature.
+This is due to clouds and precipitation occuring more often at certain height levels and the direct
+influence of temperature on phase transitions. Moreover, the vertical velocity and meridional wind
+also play a significant role in determining the microphysical properties. This could stem from the fact
+that convective clouds are coupled to the strong vertical updraft, and that the overall dynamics of the
+atmosphere are strongly influenced by the wind. We will elaborate on this aspect in future work when
+Table 1: Goodness of fit measures for the regression output in the ML parameterization without
+additional input features (base) compared with additional input features (marked bold). The table
+shows for each output variable: arithmetic average (mean) and standard deviation ( σ), root mean
+squared error (RMSE), and squared pearson correlation (R2).
+OUTPUT MEAN σ RMSE (base) RMSE R2(base) R2
+tend tamig 3.87 ·10−52.31·10−41.83·10−41.21·10−40.370 0.726
+tend qvmig 1.77 ·10−89.91·10−87.88·10−85.14·10−80.367 0.731
+tend qcmig 8.51 ·10−108.92·10−84.21·10−85.20·10−80.412 0.777
+tend qimig 2.71 ·10−102.92·10−92.37·10−91.63·10−90.337 0.687
+tend qrmig 1.13 ·10−91.71·10−81.54·10−81.22·10−80.188 0.492
+tend qsmig 5.46 ·10−108.91·10−98.33·10−96.97·10−90.126 0.388
+tend qgmig 5.02 ·10−102.11·10−81.86·10−81.51·10−80.226 0.493
+4Tackling Climate Change with Machine Learning workshop at ICLR 2024
+parameterizing microphysics together with convection. Additionally, the feature importance for the
+variables that describe the relative difference between the tracers is larger than that of the MMRs
+themselves. This implies that the additional input features derived with the feature engineering
+method are a good choice.
+4 D ISCUSSION
+In this study, we conduct a 5 km-scale simulation with the atmospheric component of the Earth
+System Model ICON to produce a dataset that contains inputs and outputs of the existing cloud
+microphysics parameterization. We coarse-grain the data to 80 km resolution, train an MLP model
+by including physical information through feature engineering, and ensure meaningful outputs of the
+model by incorporating the physical constraint of preventing negative masses. By ranking the feature
+importance, we are able to find the most important input features for the ML parameterization. The
+physics-informed ML-based cloud microphysics parameterization achieves a goodness of fit of up to
+0.777 R2score for one individual feature. We improve the baseline MLP model’s performance from
+0.290 R2score to 0.613 R2score averaged over all variables. Nevertheless, the model performance
+can be further improved by generating a more balanced dataset, e.g. conducting multiple shorter
+simulations at different times of the year. Moreover, the full benefits of this approach will only
+become apparent when implementing this ML-based microphysics parameterization in a global
+climate model. Overall, our study presents a novel approach to parameterize cloud microphysical
+processes by introducing small-scale dynamical processes from high resolution simulations. The
+findings of this research provide a foundation for a future cloud microphysics and convection
+parameterization, reducing the uncertainties of clouds in climate simulations with current models.
+With our work, we aim to improve the accuracy and reliability of climate projections, contributing
+to a better understanding of climate change and its implications.
+ACKNOWLEDGMENTS
+This project was made possible by the DLR Quantum Computing Initiative and the Federal Ministry
+for Economic Affairs and Climate Action and by the European Research Council (ERC) Synergy
+Grant “Understanding and Modelling the Earth System with Machine Learning (USMILE)” under
+the Horizon 2020 research and innovation programme (Grant agreement No. 855187). Philip Stier
+and Philipp Weiss acknowledge funding from the Horizon 2020 projects nextGEMS under grant
+agreement number 101003470 and FORCeS under grant agreement number 821205. This work
+used resources of the Deutsches Klimarechenzentrum (DKRZ) granted by its Scientific Steering
+Committee (WLA) under project ID bd1179. The authors gratefully acknowledge the Earth System
+Modelling Project (ESM) for funding this work by providing computing time on the ESM partition
+of the supercomputer JUWELS J ¨ulich Supercomputing Centre (2021) at the J ¨ulich Supercomputing
+Centre (JSC).
+REFERENCES
+A. F. Agarap. Deep learning using rectified linear units (relu), 2019.
+M. Baldauf, A. Seifert, J. F ¨orstner, D. Majewski, M. Raschendorfer, and T. Reinhardt.
+Operational convective-scale numerical weather prediction with the cosmo model: Description
+and sensitivities. Monthly Weather Review , 139(12):3887 – 3905, 2011. doi: 10.1175/
+MWR-D-10-05013.1.
+C. de Burgh-Day and T. Leeuwenburg. Machine learning for numerical weather and climate
+modelling: a review. Geoscientific Model Development , 16:6433–6477, 11 2023. doi: 10.5194/
+gmd-16-6433-2023.
+V . Eyring, W.D. Collins, P. Gentine, E.A. Barnes, M. Barreiro, T. Beucler, M. Bocquet, C.S.
+Bretherton, H.M. Christensen, D.J. Gagne, D. Hall, D. Hammerling, S. Hoyer, F. Iglesias-Suarez,
+I. Lopez-Gomez, M.C. McGraw, G.A. Meehl, M.J. Molina, C. Monteleoni, J. Mueller, M.S.
+Pritchard, D. Rolnick, J. Runge, P. Stier, O. Watt-Meyer, K. Weigel, R. Yu, and L. Zanna. Pushing
+the frontiers in climate modelingand analysis with machine learning. Nature Climate Change ,
+submitted, 2023a.
+5Tackling Climate Change with Machine Learning workshop at ICLR 2024
+V . Eyring, P. Gentine, G. Camps-Valls, D. M. Lawrence, and M. Reichstein. Next-generation
+earth system modeling to address urgent mitigation and adaptation needs. Nature Geoscience ,
+submitted, 2023b.
+P. Gentine, Ve. Eyring, and T. Beucler. Deep Learning for the Parametrization of Subgrid Processes
+in Climate Models , pp. 307–314. John Wiley & Sons, Ltd, 2021. ISBN 978-1-119-64618-1. doi:
+https://doi.org/10.1002/9781119646181.ch21.
+A. Gettelman, D. J. Gagne, C.-C. Chen, M. W. Christensen, Z. J. Lebo, H. Morrison, and G. Gantos.
+Machine learning the warm rain process. Journal of Advances in Modeling Earth Systems , 13(2):
+e2020MS002268, 2021. doi: https://doi.org/10.1029/2020MS002268.
+M. A. Giorgetta, R. Brokopf, T. Crueger, M. Esch, S. Fiedler, J. Helmert, C. Hohenegger,
+L. Kornblueh, M. K ¨ohler, E. Manzini, T. Mauritsen, C. Nam, T. Raddatz, S. Rast, D. Reinert,
+M. Sakradzija, H. Schmidt, R. Schneck, R. Schnur, L. Silvers, H. Wan, G. Z ¨angl, and B. Stevens.
+Icon-a, the atmosphere component of the icon earth system model: I. model description. Journal
+of Advances in Modeling Earth Systems , 10(7):1613–1637, 2018. doi: https://doi.org/10.1029/
+2017MS001242.
+A. Grundner, T. Beucler, P. Gentine, F. Iglesias-Suarez, M. A. Giorgetta, and V . Eyring. Deep
+learning based cloud cover parameterization for icon. Journal of Advances in Modeling Earth
+Systems , 14(12):e2021MS002959, 2022. doi: https://doi.org/10.1029/2021MS002959.
+Y . Han, G. J. Zhang, X. Huang, and Y . Wang. A moist physics parameterization based on deep
+learning. Journal of Advances in Modeling Earth Systems , 12(9):e2020MS002076, 2020. doi:
+https://doi.org/10.1029/2020MS002076.
+P. Harder, D. Watson-Parris, P. Stier, D. Strassel, N. R. Gauger, and J. Keuper. Physics-informed
+learning of aerosol microphysics. Environmental Data Science , 1:e20, 2022. doi: 10.1017/eds.
+2022.22.
+H. Hersbach, B. Bell, P. Berrisford, S. Hirahara, A. Hor ´anyi, J. Mu ˜noz-Sabater, J. Nicolas,
+C. Peubey, R. Radu, D. Schepers, A. Simmons, C. Soci, S. Abdalla, X. Abellan, G. Balsamo,
+P. Bechtold, G. Biavati, J. Bidlot, M. Bonavita, G. De Chiara, P. Dahlgren, D. Dee,
+M. Diamantakis, R. Dragani, J. Flemming, R. Forbes, M. Fuentes, A. Geer, L. Haimberger,
+S. Healy, R. J. Hogan, E. H ´olm, M. Janiskov ´a, S. Keeley, P. Laloyaux, P. Lopez, C. Lupu,
+G. Radnoti, P. de Rosnay, I. Rozum, F. Vamborg, S. Villaume, and J. Th ´epaut. The ERA5 global
+reanalysis. Quarterly Journal of the Royal Meteorological Society , 146(730):1999–2049, 2020.
+ISSN 1477-870X. doi: 10.1002/qj.3803.
+C. Hohenegger, P. Korn, L. Linardakis, R. Redler, R. Schnur, P. Adamidis, J. Bao, S. Bastin,
+M. Behravesh, M. Bergemann, J. Biercamp, H. Bockelmann, R. Brokopf, N. Br ¨uggemann,
+L. Casaroli, F. Chegini, G. Datseris, M. Esch, G. George, M. Giorgetta, O. Gutjahr, H. Haak,
+M. Hanke, T. Ilyina, T. Jahns, J. Jungclaus, M. Kern, D. Klocke, L. Kluft, T. K ¨olling,
+L. Kornblueh, S. Kosukhin, C. Kroll, J. Lee, T. Mauritsen, C. Mehlmann, T. Mieslinger, A. K.
+Naumann, L. Paccini, A. Peinado, D. S. Praturi, D. Putrasahan, S. Rast, T. Riddick, N. Roeber,
+H. Schmidt, U. Schulzweida, F. Sch ¨utte, H. Segura, R. Shevchenko, V . Singh, M. Specht, C. C.
+Stephan, J.-S. von Storch, R. V ogel, C. Wengel, M. Winkler, F. Ziemen, J. Marotzke, and
+B. Stevens. Icon-sapphire: simulating the components of the earth system and their interactions
+at kilometer and subkilometer scales. Geoscientific Model Development , 16(2):779–811, 2023.
+doi: 10.5194/gmd-16-779-2023.
+J¨ulich Supercomputing Centre. JUWELS Cluster and Booster: Exascale Pathfinder with Modular
+Supercomputing Architecture at Juelich Supercomputing Centre. Journal of large-scale research
+facilities , 7(A138), 2021. doi: 10.17815/jlsrf-7-183. URL http://dx.doi.org/10.
+17815/jlsrf-7-183 .
+U. Lohmann and E. Roeckner. Design and performance of a new cloud microphysics scheme
+developed for the echam general circulation model. Climate Dynamics , 12:557–572, 1996.
+S. M. Lundberg and S. Lee. A unified approach to interpreting model predictions. In I. Guyon, U. V .
+Luxburg, S. Bengio, H. Wallach, R. Fergus, S. Vishwanathan, and R. Garnett (eds.), Advances in
+Neural Information Processing Systems 30 , pp. 4765–4774. Curran Associates, Inc., 2017.
+6Tackling Climate Change with Machine Learning workshop at ICLR 2024
+2021 NextGems. Next generation earth modelling systems. https://cordis.europa.eu/
+project/id/101003470 , 2024. Accessed 22 January 2024.
+T. O’Malley, E. Bursztein, J. Long, F. Chollet, H. Jin, L. Invernizzi, et al. Kerastuner, 2019. https:
+//github.com/keras-team/keras-tuner , 2019. Accessed 15 December 2023.
+W. A. Perkins, N. D. Brenowitz, C. S. Bretherton, and J. M. Nugent. Emulation of cloud
+microphysics in a climate model . June 2023. doi: 10.22541/essoar.168614667.71811888/v1.
+S. Rasp, M. S. Pritchard, and P. Gentine. Deep learning to represent sub-grid processes in climate
+models. Proceedings of the National Academy of Sciences , 115(39):9684–9689, September 2018.
+ISSN 0027-8424, 1091-6490. doi: 10.1073/pnas.1810286115. arXiv:1806.04731 [physics, stat].
+M. Reichstein, G. Camps-Valls, B. Stevens, M. Jung, J. Denzler, N. Carvalhais, and Prabhat. Deep
+learning and process understanding for data-driven earth system science. Nature , 566(7743):
+195–204, February 2019. ISSN 1476-4687. doi: 10.1038/s41586-019-0912-1.
+S. A. Rutledge and P. V . Hobbs. The mesoscale and microscale structure and organization of
+clouds and precipitation in midlatitude cyclones. xii: A diagnostic modeling study of precipitation
+development in narrow cold-frontal rainbands. Journal of Atmospheric Sciences , 41(20):2949 –
+2972, 1984. doi: 10.1175/1520-0469(1984)041 ⟨2949:TMAMSA ⟩2.0.CO;2.
+NASA visible earth. NASA visible earth. https://visibleearth.nasa.gov/ , 2024.
+Accessed 22 January 2024.
+G. Z ¨angl, D. Reinert, P. R ´ıpodas, and M. Baldauf. The ICON (ICOsahedral Non-hydrostatic)
+modelling framework of DWD and MPI-M: Description of the non-hydrostatic dynamical core.
+Quarterly Journal of the Royal Meteorological Society , 141(687):563–579, June 2014. doi:
+10.1002/qj.2378.
+L. Zheng, R. Lin, X. Wang, and W. Chen. The development and application of machine learning
+in atmospheric environment studies. Remote Sensing , 13(23), 2021. ISSN 2072-4292. doi:
+10.3390/rs13234839.
+A A PPENDIX
+ADDITIONAL FIGURES
+Figure 3 illustrates the underlying simulated dataset of this work. This figure shows the
+microphysical MMRs. These parameters are important input features for the ML parameterization
+developed in this work.
+Figure 4 shows the correlation between the considered input and output variables. It can be seen that
+the input and output show low correlation. Therefore, one needs to include domain knowledge, e.g.,
+physics-constraints and feature engineering into the model.
+Figure 5 illustrates the goodness of fit results individually for all the output variables, i.e., the
+microphysical tendencies.
+ADDITIONAL TABLES
+Table 2 lists the variables considered in this work. The variables added in the feature engineering
+approach are marked as ’Feature Input’. The bold marked inputs are the ten most important input
+features for the physics-informed MLP.
+COMPUTING RESOURCES
+We are only able to run the simulation for this short amount of time because of the substantial
+computing resources necessary for running such a simulation (12k node hours for 30 days
+simulation) and storing such a large volume of data (25 TB for the 20 days of high-resolution data
+when reduced to 3-hourly output).
+7Tackling Climate Change with Machine Learning workshop at ICLR 2024
+Figure 3: Map of MMRs obtained from the simulation on model level 70 corresponding to a height
+of about 3 kilometers. The upper figure shows water vapor (red), cloud liquid water (blue) and cloud
+ice (green). The lower figure shows rain (red), snow (blue) and graupel (green). Earth illustration
+from visible earth (2024).
+8Tackling Climate Change with Machine Learning workshop at ICLR 2024
+Table 2: Overview of all considered input and output features of the MLP model. The inputs marked
+as ’Feature input’ are the additional features that stem from the feature engineering approach. The
+inputs marked in bold text are the ten most important input features determined by Shapley values.
+TYPE SHORT NAME DESCRIPTION UNIT
+Input pf mig air pressure Pa
+Input ta mig temperature T
+Input omega vertical velocity m/s
+Input ua mig zonal wind m/s
+Input va mig meridional wind m/s
+Input qv mig cloud vapor MMR kg/kg
+Input qc mig cloud liquid water MMR kg/kg
+Input qi mig cloud ice MMR kg/kg
+Input qs mig snow MMR kg/kg
+Input qr mig rain MMR kg/kg
+Input qg mig graupel MMR kg/kg
+Feature Input diff qvqc rel. diff. water vapor / cloud liquid water MMRs 1
+Feature Input diff qvqr rel. diff. water vapor / rain MMRs 1
+Feature Input diff qiqv rel. diff. cloud ice / water vapor MMRs 1
+Feature Input diff qsqv rel. diff. snow / water vapor MMRs 1
+Feature Input diff qvqg rel. diff. water vapor / graupel MMRs 1
+Feature Input diff qcqi rel. diff. cloud liquid water / cloud ice MMRs 1
+Feature Input diff qcqr rel. diff. cloud liquid water / rain MMRs 1
+Feature Input diff qsqc rel. diff. snow / cloud liquid water MMRs 1
+Feature Input diff qgqc rel. diff. graupel / cloud liquid water MMRs 1
+Feature Input diff qrqs rel. diff. rain / snow MMRs 1
+Feature Input diff qiqr rel. diff. cloud ice / rain MMRs 1
+Feature Input diff qrqg rel. diff. rain / graupel MMRs 1
+Feature Input diff qiqs rel. diff. cloud ice / snow MMRs 1
+Feature Input diff qgqi rel. diff. graupel / cloud ice MMRs 1
+Feature Input diff qsqg rel. diff. snow / graupel MMRs 1
+Output tend tamig tendency of temperature T/s
+Output tend qvmig tendency of cloud vapor MMR kg/(kg ·s)
+Output tend qcmig tendency of cloud liquid water MMR kg/(kg ·s)
+Output tend qimig tendency of cloud ice MMR kg/(kg ·s)
+Output tend qrmig tendency of rain MMR kg/(kg ·s)
+Output tend qsmig tendency of snow MMR kg/(kg ·s)
+Output tend qgmig tendency of graupel MMR kg/(kg ·s)
+9Tackling Climate Change with Machine Learning workshop at ICLR 2024
+Figure 4: Pearson autocorrelation matrix for all raw input and output parameters. For an explanation
+of the variable short names, the reader is referred to Table 2. The color bar ranges from negative
+correlation (blue) over no correlation (white) to positive correlation (red).
+10Tackling Climate Change with Machine Learning workshop at ICLR 2024
+Figure 5: ML predictions vs. ground truth of the additional input variables (for the physics-informed
+MLP with feature engineering). The colors illustrate the density of the data on a logarithmic scale.
+11

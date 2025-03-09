@@ -1,0 +1,336 @@
+Learning Radiative Transfer Models for Climate Change Applications in
+Imaging Spectroscopy
+Shubhankar Deshpande1Brian D. Bue2David R. Thompson2Vijay Natraj2Mario Parente3
+Abstract
+According to a recent investigation, an estimated
+33-50% of the world’s coral reefs have under-
+gone degradation, believed to be as a result of
+climate change (Hoegh-Guldberg et al., 2018). A
+strong driver of climate change and the subse-
+quent environmental impact are greenhouse gases
+such as methane. However, the exact relation
+climate change has to the environmental condi-
+tion cannot be easily established. Remote sens-
+ing methods are increasingly being used to quan-
+tify and draw connections between rapidly chang-
+ing climatic conditions and environmental im-
+pact. A crucial part of this analysis is processing
+spectroscopy data using radiative transfer mod-
+els (RTMs) which is a computationally expensive
+process, and limits their use with high volume
+imaging spectrometers. This work presents an al-
+gorithm that can efﬁciently emulate RTMs using
+neural networks leading to a multifold speedup
+in processing time, and yielding multiple down-
+stream beneﬁts.
+1. Introduction
+Acquatic ecosystems such as coral reefs, kelp beds, seagrass
+and wetlands serve key roles to sustain the coastal marine
+populations. They serve as major sites of nutrient cycling,
+transport, and carbon storage. They occupy only 0.1% area
+of the ocean, but they are massive reservoirs of biodiversity
+(Roberts et al., 2002; Bruckner, 2002) and provide shelter
+to and support over 25% of all marine species on the planet
+(WWF). However the balance within these coastal ecosys-
+tems is fragile, and is being increasingly threatened due to
+1The Robotics Institute, Carnegie Mellon University, Pitts-
+burgh, PA, USA2Jet Propulsion Laboratory, California Institute
+of Technology, Pasadena, CA, USA3University of Massachusetts,
+Amherst, MA, USA. Correspondence to: Shubhankar Deshpande
+<shubhand@cs.cmu.edu >.
+Proceedings of the 35thInternational Conference on Machine
+Learning , Long Beach, California, PMLR 97, 2019. Copyright
+2019 by the author(s).climate change (Eakin et al., 2010; Nicholls et al., 2007)
+Among these include dangers such as ocean acidiﬁcation,
+industrial runoff, and overﬁshing (Hoegh-Guldberg et al.,
+2007). While these stressors are evident while analyzing ef-
+fects on a local scale, the data is insufﬁcient to characterize
+global scale effects. A large contributor to these stressors
+is Methane, which is a powerful greenhouse gas that is
+strongly linked with other trace gases as the cause of global
+warming, and is the focus of numerous air quality and public
+health policies (Duren et al., 2017). Many current methane
+monitoring methods are limited to regional or coarser scale
+resolution and often cannot detect individual sources. This
+is a gap that remote sensing1based techniques have success-
+fully been able to bridge (Hochberg et al., 2003).
+The ﬁeld of imaging spectroscopy itself has a long history
+that can be traced back to early instruments built at NASA’s
+Jet Propulsion Laboratory in the early 1980s (Gao et al.,
+2009). These instruments were built to measure the solar
+radiance after reﬂection from the earth’s surface. These
+measurements can then be analyzed to recover valuable
+atmospheric and surface properties. Recently, there has
+been a growing interest to use these instruments to assess
+the environmental effects of climate change including:
+Oceanic effects: Monitor ocean circulation, measure
+the ocean temperature and wave heights, and track sea
+ice (NOAA, 2009).
+Land effects: Track changes in land vegetation, defor-
+estation, and examine the health of indigenous plants
+and crops (Guo et al., 2013).
+Atmospheric pollution: Quantify worldwide emissions,
+concentrations of air pollutants, and their trends. (Na-
+tional Academies of Sciences & Medicine, 2018).
+Though these are examples scenarios in which imaging
+spectrometers have successfully been used till date, the
+near future presents an unprecedented opportunity for rapid
+progress in applications of remote sensing to beneﬁt society,
+due to recent computing advances. (National Academies of
+Sciences & Medicine, 2018).
+1The term remote sensing is used interchangeably with imaging
+spectroscopy henceforth.Learning RTMs for Climate Change Applications
+However, the process of recovering surface properties from
+imaging data collected by spectrometers is fraught with
+challenges. Of crucial concern among these is the accurate
+removal of atmospheric effects from the radiation incident
+on the sensor. These effects are introduced since the so-
+lar radiation on the Sun-surface-sensor path is subject to
+atmospheric effects such as scattering and absorption. Re-
+covering the true surface parameters requires inverting the
+measurement with a physical model of the atmospheric ra-
+diative transfer in a process called atmospheric correction.
+A fundamental component of this process is Radiative Trans-
+fer Models (RTMs) (Stamnes et al., 2017), which are respon-
+sible for solving the general equations of radiative transport
+based on known input parameters (such as solar radiance and
+surface characteristics). This is a computationally expensive
+process which has to be potentially be run on millions of
+spectra acquired by high bandwidth imaging spectrometers.
+Since these instruments produce too high a quantity of data
+to be processed with an RTM, typically RTMs are used to
+calculate lookup tables based on the atmospheric conditions
+observed during image acquisition. These lookup tables
+can then be used for interpolation during runtime instead
+of running the full forward RTM computation. Though this
+approach works in practice, we can only precompute values
+for a limited number of parameters, since the number of
+samples needed to represent the state space grows exponen-
+tially with the number of input variables. An alternative
+solution would be to speed up RTMs such that they could
+be efﬁciently used at runtime. This would yield multiple
+downstream beneﬁts during analysis, including enabling the
+remote sensing community to pursue new surface retrieval
+and optimal estimation (OE) approaches.
+2. Learning Radiative Transfer Models
+Recent work suggests using non parametric function esti-
+mation through models such as Gaussian processes (Mar-
+tino et al., 2017), or neural networks (Verrelst et al., 2016;
+Thompson et al., 2018a; Bue et al., 2019) for emulating
+RTMs. The training dataset would consist of data generated
+through RTMs over the required range of surface and atmo-
+spheric parameters. A function approximator trained on this
+datd could then act as the RTM for the process of inversion,
+without having to actually solve the underlying differential
+equation. To better model the dataset, we designed a neural
+network architecture that better models the underlying phys-
+ical parameter space. This section aims to introduce the core
+ideas behind the RTM emulation technique we designed.
+2.1. Decomposition of parameter space
+The radiative transfer function F(x)can be analytically
+decomposed into intermediate quantities that are easier to
+model, which include: solar illumination components, andtop of atmosphere reﬂectance (TOA) obs=y
+oeo, which is
+normalized for the solar illumination. The quantities oand
+eocan then be used to infer the corresponding radiance.
+Figure 1. Neural RTM
+2.2. Monochromatic subnetworks
+The observed radiance within any wavelength channel can
+be fully speciﬁed channel speciﬁc the parameters. Formally,
+absent any prior distribution that couples the inﬂuence of
+neighboring wavelengths, the radiance across channels be-
+come conditionally independent of each other given the
+channel parameters. This insight permits us to decompose
+the RTMF(x)into intermediate functions fi(x)k
+i=1fork
+different wavelength channels. Using this insight, we can
+train subnetworks that regress on radiance values in a single
+channel, instead of regressing across the entire wavelength
+spectrum. Another beneﬁt of this approach is that the partial
+derivatives of the radiance channels with respect to their
+surface reﬂectance are independent of each other, which
+simpliﬁes analytical Jacobians calculations during iterative
+gradient descent inversions (Thompson et al., 2018b).
+2.3. Weight Propagation
+The spectral responses for adjacent wavelengths are often
+correlated, and hence we use the converged weights from
+subnetworks of previous channels as priors for training the
+current subnetwork. These weights can then be ﬁne-tuned
+to estimate the radiances for the current channel. In com-
+parison to training subnetworks from scratch, this approach
+yields a substantial reduction in training time along with
+improved accuracy.Learning RTMs for Climate Change Applications
+3. Experiments
+We investigate the performance of the neural RTM using
+data collected by the PRISM (Mouroulis et al., 2008; 2014)
+imaging spectrometer. The state space consists of the sur-
+face reﬂectance sand the state vector xcontaining other
+parameters relevant to retrieval. A set of values were iden-
+tiﬁed for the input state vector that correspond to typical
+measurement conditions. For ground truth training data, we
+generated RTM output using libRadtran, with input parame-
+ters relevant to the experiment.
+Algorithm 1 Neural RTM Emulation
+Input:nxm matrix Xofnstate vectors and mparame-
+ters;nxk matrix Yof k-dimensional obsspectra
+associated with each state vector at wavelengths
+=ik
+i=1; convergence tolerance ; maximum
+number of training epochs epoch
+Output: Neural RTM model F(x)!yconsisting of k
+trained neural networks fieach mapping mdi-
+mensional state vector xto corresponding obs
+response yiat wavelength i
+fori= 1tokdo
+Letyi=Ybe theobsresponses at wavelength i
+associated with the n state vectors
+Partition (X;yi)into training, validation, and test sets
+Letfibe anL-layer neural network model with a set
+of weight matrices and bias vectors
+ifi= 1then
+Create new model for ﬁrst channel ( riby initializing
+weight matrices Wiand bias vectors bi
+else
+Propagate weight matrices and bias vectors from
+the previous model ri 1to current model fi(i.e.
+Wi=Wi 1andbi=bi 1
+fore= 1toepoch do
+Train current network model fion the training set,
+to minimize the obsprediction error for channel
+centered at wavelength i. Compute the average
+erroretestapplyingfito the test set
+ifetesthas converged or e=epoch then
+return Trained model fi
+return Trained neural RTM F(x)!y=fifx!yigk
+i=1
+Algorithm 1 describes the procedure used to train the neural
+RTM. We use a standard feed forward architecture with two
+hidden layers, and ReLU (Nair & Hinton, 2010) activation.
+The subnetwork weights corresponding to the ﬁrst channel
+were initialized (Glorot & Bengio, 2010) and the training of
+subsequent subnetworks used weight propagation. Subnet-
+works were optimized (Kingma & Ba, 2015), and trained
+until the mean absolute error converged to with 0.1%, or the
+maximum number of epochs nepoch were reached. Figure
+2, shows a plot of the obspredicted using the neural RTMvs the standard radiative transfer code (libRadtran), which
+matches to within 0.1% mean absolute error. The code used
+to train the neural RTM has been released2.
+Figure 2. Ground truth and predicted obsspectra
+4. Discussion
+We have shown that it is possible to use non parametric func-
+tion estimation models for the task of emulating radiative
+transfer. In the process we introduced a network architec-
+ture and training techniques that help to better model the
+underlying physical parameter space. This formulation of-
+fers a path to increase the interpolation accuracy of current
+approaches, reduce the runtime by several orders of mag-
+nitude, and will enable the imaging community to pursue
+new surface retrieval approaches. More broadly, the ﬁeld
+of remote sensing and earth science are ripe for impact due
+to the exponential growth rate in data generation coupled
+with recent developments in machine learning. We have
+presented one such example of research that will have po-
+tential impact in enabling the earth science community to
+understand, quantify and draw connections between rapidly
+changing climatic conditions and environmental impact.
+Acknowledgements
+We thank Michael Eastwood and Robert O. Green for pro-
+viding expertise in the theory and application of imaging
+spectroscopy and atmospheric correction methods. We fur-
+ther thank Terry Mullen for contributing to the analysis
+and generating RTM outputs. This work was undertaken in
+part at the Jet Propulsion Laboratory, California Institute of
+Technology, under contract with NASA.
+2https://github.com/dsmbgu8/isofit/Learning RTMs for Climate Change Applications
+References
+Bruckner, A. W. Life-saving products from coral reefs.
+Issues in Science and Technology , 18(3), 2002.
+Bue, B. D., Thompson, D. R., Deshpande, S., Eastwood, M.,
+Green, R. O., Mullen, T., Natraj, V ., and Parente, M. Neu-
+ral network radiative transfer for imaging spectroscopy.
+Atmospheric Measurement Techniques Discussions , 2019:
+1–16, 2019.
+Duren, R., Thorpe, A., and Sander, S. California baseline
+methane survey, interim phase 1 report. 2017.
+Eakin, C. M., Nim, C. J., Brainard, R. E., et al. Monitoring
+coral reefs from space. Oceanography , 23(4):118–133,
+2010. ISSN 10428275, 2377617X.
+Emde, C., Buras-Schnell, R., Kylling, A., et al. The librad-
+tran software package for radiative transfer calculations
+(version 2.0.1). Geoscientiﬁc Model Development , 9(5):
+1647–1672, 2016.
+Gao, B.-C., Montes, M. J., Davis, C. O., and Goetz, A. F.
+Atmospheric correction algorithms for hyperspectral re-
+mote sensing data of land and ocean. Remote Sensing
+of Environment , 113:S17 – S24, 2009. ISSN 0034-4257.
+Imaging Spectroscopy Special Issue.
+Glorot, X. and Bengio, Y . Understanding the difﬁculty of
+training deep feedforward neural networks. In AISTATS ,
+2010.
+Guo, H., Huang, Q., Li, X., Sun, Z., and Zhang, Y . Spa-
+tiotemporal analysis of urban environment based on the
+vegetationimpervious surfacesoil model. Journal of Ap-
+plied Remote Sensing , 8(1):1 – 17 – 17, 2013.
+Hochberg, E. J., Atkinson, M. J., and Andrfout, S. Spectral
+reﬂectance of coral reef bottom-types worldwide and im-
+plications for coral reef remote sensing. Remote Sensing
+of Environment , 85(2):159 – 173, 2003. ISSN 0034-4257.
+Hoegh-Guldberg, O., Mumby, P. J., Hooten, A. J., et al.
+Coral reefs under rapid climate change and ocean acid-
+iﬁcation. Science , 318(5857):1737–1742, 2007. ISSN
+0036-8075.
+Hoegh-Guldberg, O., M. Eakin, C., and Hodgson, G. e. a.
+Isrs consensus statement on coral bleaching climate
+change. 11 2018.
+Kingma, D. P. and Ba, J. Adam: A method for stochastic
+optimization. CoRR , abs/1412.6980, 2015.
+Martino, L., Vicent, J., and Camps-Valls, G. Automatic
+emulator and optimized look-up table generation for ra-
+diative transfer models. 2017 IEEE International Geo-
+science and Remote Sensing Symposium (IGARSS) , pp.
+1457–1460, 2017.Mouroulis, P., Green, R. O., and Wilson, D. W. Optical
+design of a coastal ocean imaging spectrometer. Opt.
+Express , 16(12):9087–9096, Jun 2008.
+Mouroulis, P., Gorp, B. V ., Green, R. O., et al. Portable re-
+mote imaging spectrometer coastal ocean sensor: design,
+characteristics, and ﬁrst ﬂight results. Appl. Opt. , 53(7):
+1363–1380, Mar 2014.
+Nair, V . and Hinton, G. E. Rectiﬁed linear units improve
+restricted boltzmann machines. In ICML , 2010.
+National Academies of Sciences, E. and Medicine. Thriving
+on Our Changing Planet: A Decadal Strategy for Earth
+Observation from Space . The National Academies Press,
+Washington, DC, 2018. ISBN 978-0-309-46757-5.
+Nicholls, R. J., Wong, P. P., Burkett, V ., Codignotto, J.,
+Hay, J., McLean, R., Ragoonaden, S., Woodroffe, C. D.,
+Abuodha, P., Arblaster, J., et al. Coastal systems and
+low-lying areas. 2007.
+NOAA. What is remote sensing?, Aug 2009. URL
+https://oceanservice.noaa.gov/facts/
+remotesensing.html .
+Roberts, C. M., McClean, C. J., and Veron, J. E. N. o.
+Marine biodiversity hotspots and conservation priorities
+for tropical reefs. Science , 295(5558):1280–1284, 2002.
+ISSN 0036-8075.
+Stamnes, K., Thomas, G. E., and Stamnes, J. J. Ra-
+diative Transfer in the Atmosphere and Ocean . Cam-
+bridge University Press, 2 edition, 2017. doi: 10.1017/
+9781316148549.
+Thompson, D., W. Boardman, J., and L. Eastwood, M. o.
+Imaging spectrometer stray spectral response: In-ﬂight
+characterization, correction, and validation. Remote Sens-
+ing of Environment , 204, 09 2018a.
+Thompson, D. R., Hochberg, E. J., Asner, G. P., et al.
+Airborne mapping of benthic reﬂectance spectra with
+bayesian linear mixtures. Remote Sensing of Environ-
+ment , 200:18 – 30, 2017. ISSN 0034-4257.
+Thompson, D. R., Natraj, V ., and others, R. O. G. Optimal
+estimation for imaging spectrometer atmospheric correc-
+tion. Remote Sensing of Environment , 216:355 – 373,
+2018b. ISSN 0034-4257.
+Verrelst, J., Sabater, N., Rivera, J. P., et al. Emulation of
+leaf, canopy and atmosphere radiative transfer models for
+fast global sensitivity analysis. Remote Sensing , 8:673,
+2016.
+WWF. Coral reefs. URL http://wwf.panda.org/
+our_work/oceans/coasts/coral_reefs/ .

@@ -1,0 +1,273 @@
+Published as a workshop paper at ”Tackling Climate Change with Machine Learning”, ICLR 2023
+ATTENTION -BASED DOMAIN ADAPTATION FORE-
+CASTING OF STREAMFLOW IN DATA-SPARSE REGIONS
+Roland Oruche
+Department of Electrical Engineering & Computer Science
+University of Missouri-Columbia
+Columbia, MO, 65201, USA
+rro2q2@umsystem.eduFearghal O’Donncha
+IBM Research Europe
+Dublin, Ireland
+feardonn@ie.ibm.com
+ABSTRACT
+Streamflow forecasts are critical to guide water resource management, mitigate
+drought and flood effects, and develop climate-smart infrastructure and gover-
+nance. Many global regions, however, have limited streamflow observations
+to guide evidence-based management strategies. In this paper, we propose
+an attention-based domain adaptation streamflow forecaster for data-sparse re-
+gions. Our approach leverages the hydrological characteristics of a data-rich
+source domain to induce effective 24hr lead-time streamflow prediction in a data-
+constrained target domain. Specifically, we employ a deep-learning framework
+leveraging domain adaptation techniques to simultaneously train streamflow pre-
+dictions and discern between both domains using an adversarial method. Exper-
+iments against baseline cross-domain forecasting models show improved perfor-
+mance for 24hr lead-time streamflow forecasting.
+1 I NTRODUCTION
+Accurate streamflow forecasts are critical to enable sustainable, climate-smart water resource man-
+agement strategies (Makkeasorn et al., 2008). Traditionally, engineers have depended on physics-
+based models, which describe hydrological phenomena using a series of partial differential equations
+restricted by empirical relationships, heuristics, and specialized knowledge. Although they provide a
+deep understanding of how water moves over land with respect to time and space, the intricate nature
+and uncertainty of these models pose a significant challenge for experienced users. Alternatively,
+machine learning (ML) has emerged as a core tool to develop prediction models that informs effec-
+tive water resource planning (Kratzert et al., 2019; Nearing et al., 2020). However, these models are
+data hungry and favor regions with well developed environmental monitoring programs providing
+plentiful observation data to train on.
+Transfer learning has shown potential to generalize streamflow forecasts to data-sparse regions. Pre-
+vious work has applied transfer learning techniques using pre-trained models from data-rich regions
+to data-sparse regions for flood prediction (Gang et al., 2021). In applications with limited ob-
+servational data, transductive transfer learning approaches such as unsupervised domain adaptation
+demonstrate improved streamflow prediction (Zhou & Pan, 2022) within local regions. Despite this,
+we seek to address the challenges of data sparsity in global regions by leveraging information from
+data-rich areas to induce transfer learning.
+This paper presents an attention-based domain adaptation streamflow forecaster targeting data-
+sparse regions. Our approach leverages a data-rich source domain to enable suitable forecasts in a
+data-constrained target domain by employing a sequence-to-sequence model for domain adaptation.
+Herein, we apply an attention mechanism to two separate, or private , encoder-decoder recurrent
+neural networks (RNN) in both the source and target domains. This simultaneously generates fu-
+ture streamflow sequences and distinguish between the source and target features using adversarial
+learning. We demonstrate the effectiveness of our approach on data from the US (source) and Chile
+(target) regions extracted from Catchment Attributes and Meteorology for Large-sample Studies
+datasets (Newman et al., 2015; Alvarez-Garreton et al., 2018). Our approach outperforms baseline
+transfer learning techniques on datasets with limited streamflow observations.
+1Published as a workshop paper at ”Tackling Climate Change with Machine Learning”, ICLR 2023
+Figure 1: Main architecture of the attention-based domain adaptation forecaster (best seen in color).
+An encoder-decoder with attention is trained privately for the source and target domains for sequence
+generation, and the domain discriminator classifies the origin of the extracted features.
+2 M ETHODS
+2.1 O VERALL PROCESS
+In this section, we detail our attention-based domain adaptation approach for effective streamflow
+forecasts in data-sparse regions. We built two separate, or private , sequence-to-sequence networks
+with an attention module for the source and target domains, and trained adversarially to refine do-
+main alignment and prediction. Figure 1 shows the end-to-end process of the model that aims to
+leverage rich data samples from the source domain, denoted as DS, to induce knowledge transfer
+on limited samples from a target domain, denoted as DT. We train a source sequence generator GS
+and a target sequence generator GTof streamflow predictions. In the context of adversarial transfer
+learning, we develop a discriminator function Dthat discerns between the domain origins through a
+binary classification method. We establish our optimization problem as a minimax training objective
+shown as:
+min
+GS,GTmax
+DLGS(DS;θS) +LGT(DT;θT)−λLD(DS,DT;D, θS, θT), (1)
+where θSandθTare the parameters of the source and target network, respectively, and λis a trade
+off parameter to balance the two objectives. We detail the methods of our approach in the following.
+2.2 I NPUT TO ENCODER NETWORK
+The prediction of streamflow can be determined by the hydrological features of a river basin that are
+independent of one another (Addor et al., 2017). Herein, we define dynamic inputs as the features
+of water catchments that are tracked throughout time (e.g., min and max air temperature, precipita-
+tion, vapor pressure) and static inputs as the catchment attributes that remain fixed (e.g., soil type,
+climatological variables). In order to find a suitable input representation for our domain adaptation
+scheme, we pass both dynamic and static inputs through a multi-layer perceptron MLP (·,·), where
+the two terms are the inputs and the parameters of the model. The MLP model creates a combined
+hidden representation, or embedding, for both dynamic and static inputs by projecting them into a
+common latent space. This output representation can be fed into the encoder model.
+We employ an encoder network that is privately built for the source and target domain. Given a time
+series of a historical input sequence of length Nand a set of future target sequences τ, the encoder
+extracts the embedded hydrological features from the historical input sequence for the first Ntime
+steps in each domain. We built the encoder using an RNN, specifically a long-short term memory
+(LSTM) network (Hochreiter & Schmidhuber, 1997), that takes an input of X= [xn]N
+n=1, where
+each input xnis the embedded dynamic and static inputs generated by the MLP at time step n. The
+encoder extracts features through the recurring cell states to create a set of hidden representations.
+The output of the encoder is fed into an attention layer, where attention vectors are computed with
+the decoder to make N+τfuture predictions.
+2Published as a workshop paper at ”Tackling Climate Change with Machine Learning”, ICLR 2023
+2.3 A TTENTION -DECODER NETWORK
+Attention is computed separately for the source and target networks and generates a similarity score
+score (hn,¯hs), where hnis the current state of the decoder at time nand¯hsis the set of hidden states
+of the encoder. A softmax function is then applied to normalize the similarities into probabilities to
+obtain our attention weights for each network, denoted as αn,s. A context vector cnat time nis then
+computed as the weighted sum of the encoder hidden states. In the case of a sequence-to-sequence
+model, we used an additive attention score from the work in (Bahdanau et al., 2014). The decoder
+network takes the context vector for each private network to produce the set of N+τstreamflow
+predictions over the target sequence for the source and target domains. In addition, we employ
+teacher forcing to enable the decoder to generate a set of future predictions ˆY= [ˆy]N+τ
+n=N+1overτ
+time steps.
+To compute the model’s training performance for the source loss LGSand target loss LGTin gener-
+ating a streamflow prediction, we use the Nash-Sutcliffe efficiency (NSE) (Nash & Sutcliffe, 1970),
+which is a statistical measurement that predicts the skill of a hydrological model. NSE is defined in
+Equation 2 as:
+NSE = 1−PN
+n=1(Qm,n−Qo,n)2
+PN
+n=1(Qo,n−¯Qo)2, (2)
+where Qm,nis the predicted streamflow generated by model mat time step n,Qo,nis the observed
+streamflow oat time step n, and ¯Qois the mean observed streamflow. The value of the NSE varies
+on the interval (−∞,1], where NSE = 1is desirable.
+2.4 D OMAIN DISCRIMINATOR
+In order to mitigate the domain shift between two global regions, we employ a domain adaptation
+technique using adversarial transfer learning to induce better distribution alignment between the
+source and target domain. We first map the context vectors cS,nandcT,nof the source and target
+networks at time step n, respectively, into a shared latent space to produce a feature vector hc. We
+then employ a discriminator to identify the origins of the two domains. The domain discriminator is
+a binary classifier D=MLP (hc;θD), where θDare the parameters of the discriminator function.
+The discriminator is trained to optimize the maximum loss in classifying between the two domains.
+The loss of the discriminator LDuses binary cross-entropy as its objective function.
+Adversarial training balances the training objectives of the sequence generators and the domain
+discriminator. We use the NSE objective function to minimize the loss of sequence generators LGS
+andLGT, and binary cross-entropy to maximize the loss for the domain discriminator LD, as shown
+in Equation 1. In other words, while Dtries to classify between the source and target domain using
+the attention module, GSandGTtries to confuse Dby producing features that are indistinguishable
+in the shared latent space. We employ a coefficient λmultiplied to the discriminator loss LDin
+order to balance the trade-off between the two objectives. In our experiments we set the coefficient
+λto be 0.1.
+3 E XPERIMENTS AND RESULTS
+We collected data from the CAMELS-US (Newman et al., 2015) and CAMELS-Chile (CAMELS-
+CL) (Alvarez-Garreton et al., 2018) as our source and target domains, respectively. The CAMELS-
+US is a large sample benchmark dataset that has covered temporal and geospatial information related
+hydrology across 671 basins in the United States, 531 of which were used for this experiment. The
+CAMELS-CL is also a sufficiently large benchmark dataset with 516 basins covering the country of
+Chile. To show the data sparsity, we downsized the CAMELS-CL dataset to 253 basins in the Chile
+region with approximately 10% of missing streamflow data. We split the dataset into a train set from
+October 1st, 1999 to September 30th, 2000, a validation set from October 1st, 1988 to September
+30th, 1989, and a test set from October 1st, 1989 to September 30th, 1999.
+We test our attention-based domain adaptation forecasting approach against baseline models on 24hr
+lead time streamflow prediction. Specifically, we employ an LSTM and GRU model from the open-
+3Published as a workshop paper at ”Tackling Climate Change with Machine Learning”, ICLR 2023
+source work of Kratzert et al. (2022) for network transfer learning by leveraging a pre-trained source
+model to induce transfer learning in the target domain. The hyperparameters of each model in this
+experiment consisted of 128 hidden units and 1 output regression layer with a dropout of 0.4 used
+for forecasting daily streamflow. We initialize the learning rate ηfor each model to 0.001 on the first
+epoch and adjust to 0.0005 over the remaining epochs. In addition, we use ADAM as the optimizer.
+Table 1: Streamflow metrics that measure the performance of hydrological models. We detail each
+metric with original references, equations, and the range of scores with desirable values.
+Metrics Equation Range
+Nash Sutcliffe Efficiency
+(Nash & Sutcliffe, 1970)1−PN
+n=1(Qm,n−Qo,n)2
+PN
+n=1(Qo,n−¯Qo)2(−∞,1]; values closer to
+1 are desirable.
+Kling-Gupta Efficiency
+(Gupta et al., 2009)1−p
+(r−1)2+ (α−1)2+ (β−1)2(−∞,1]; values closer to
+1 are desirable.
+α-NSE decomposition
+(Gupta et al., 2009)σm/σo(0,∞); values closer to
+1 are desirable.
+β-NSE decomposition
+(Gupta et al., 2009)(µm−µo)/σo(−∞,∞); values closer to
+0 are desirable.
+Table 1 describes the streamflow metrics to measure the performance of the aforementioned hydro-
+logical models. NSE Nash & Sutcliffe (1970) is used as the primary metric for each experiment (see
+Section 2.3). Kling-Gupta Efficiency (KGE) (Gupta et al., 2009) is the square root of squared sums
+of the linear correlation between observations and simulations r, the measurement of the flow vari-
+ability error α, and the bias term β. Metric α-NSE (Gupta et al., 2009) is the fraction of the standard
+deviations of predicted streamflow and observations. β-NSE (Gupta et al., 2009) is the difference
+of the mean predicted streamflow and mean observation divided by the standard deviation of the
+observations. In addition, we include the number of basins where NSE <0.
+Table 2: Model comparisons between our proposed method and baseline models using the hydro-
+logical streamflow measurements. The statistics were averaged across 5 runs.
+CAMELS-US to CAMELS-CL
+Model NSE KGE α-NSE β-NSE NSE <0
+LSTM-TL 0.32±0.01 0 .31±0.01 0 .59±0.01−0.10±0.01 66 .40±1.86
+GRU-TL 0.11±0.02 0 .08±0.02 0 .43±0.03−0.17±0.01 92 .60±5.00
+Our approach 0.37±0.02 0.41 ±0.03 0.68 ±0.03 –0.06 ±0.03 63.80 ±1.60
+Table 2 reports the median scores for all metrics except NSE< 0. The performance results for each
+model on 24hr lead-time streamflow prediction were averaged across 5 runs. Our attention-based
+domain adaptation approach shows greater performance compared to the baseline models across
+all hydrological metrics used in this experiment. Specifically, our approach outperformed both the
+network-based transfer learning RNNs in terms of median NSE and median KGE, showing 0.05-0.16
+NSE and 0.09-0.33 KGE score improvements. In terms of α-NSE and β-NSE, our approach showed
+a significant increase of performance compared to the two RNN transfer learning baselines at very
+small deviations. Lastly, we observed the number of basins with subpar NSE scores (i.e., NSE< 0):
+our approach reported approximately 4% fewer water basins than LSTM-TL and approximately 31%
+fewer basins than GRU-TL. In addition, we further demonstrate how the results of our median NSE
+scores more closely match the observed streamflow compared to the baselines in Figure 2. We note
+that the results are particularly impressive since we only used one year of training data rather than
+the full ten year dataset.
+We report an ablation study that compares our attention-based domain adaptation streamflow fore-
+caster with a sequence-to-sequence transfer learning model using only attention viz., Seq2Seq-TL .
+We implemented the Seq2Seq-TL model by pre-training on the source dataset and performing
+network-based transfer learning to the target dataset. We replicated the same hyperparameters in
+Seq2Seq-TL from our approach and compared the performance over 100 training epochs. From
+Figure 3, the plots clearly display the decrease in streamflow prediction in Seq2Seq-TL when adver-
+sarial training is not used. Hence, this verifies the robustness of our approach in inducing domain
+invariance for better feature alignment between the source and target domains.
+4Published as a workshop paper at ”Tackling Climate Change with Machine Learning”, ICLR 2023
+Figure 2: Comparisons on the prediction of streamflow between our attention-based domain adap-
+tation streamflow forecaster and the RNN baselines LSTM-TL and GRU-TL. The x-axis is the test
+period from October 1st, 1989 to September 30th 1999 and the y-axis is streamflow values in mm/d.
+Figure 3: Ablation study comparing the streamflow performance between our attention-based do-
+main adaptation method using adversarial training and a sequence-to-sequence model with only
+attention viz., Seq2Seq-TL . The results are trained over 100 epochs and averaged across 5 runs.
+4 I MPACT ON CLIMATE CHANGE AND CONCLUSION
+Streamflow forecasts are critical to guide water resource management in a changing climate. Climate
+change is expected to alter the timing and amount of precipitation, which in turn affects the timing
+and magnitude of streamflow. Therefore, accurate streamflow forecasts become even more critical as
+we face more frequent and severe weather events such as droughts and floods due to climate change.
+In many regions, access to clean water is often a challenge, and water resources management is
+critical for human health, food security, and economic development. Climate change may exacerbate
+existing water challenges and make it even harder to manage water resources sustainably. Climate-
+smart, accurate streamflow forecasts can be critical in these regions, as they can help to improve
+water resource management and support adaptation to changing conditions.
+In this paper, we propose a domain adaptation forecaster via attention for streamflow in data-sparse
+regions. In our approach, we built an encoder-decoder deep learning framework where attention is
+applied to capture salient hydrological features across water basins. We apply a domain discrimina-
+tor to discern between the origin of the source and target features through adversarial learning. The
+results on the CAMELS-CL region with approximately 10% missing streamflow data show that, on
+average, our model generalizes better ( 0.37NSE) compared to the transfer learning LSTM ( 0.32
+NSE) and GRU ( 0.11NSE) models.
+5Published as a workshop paper at ”Tackling Climate Change with Machine Learning”, ICLR 2023
+REFERENCES
+Nans Addor, Andrew J Newman, Naoki Mizukami, and Martyn P Clark. The camels data set:
+catchment attributes and meteorology for large-sample studies. Hydrology and Earth System
+Sciences , 21(10):5293–5313, 2017.
+Camila Alvarez-Garreton, Pablo A Mendoza, Juan Pablo Boisier, Nans Addor, Mauricio Galleguil-
+los, Mauricio Zambrano-Bigiarini, Antonio Lara, Crist ´obal Puelma, Gonzalo Cortes, Rene Gar-
+reaud, et al. The camels-cl dataset: catchment attributes and meteorology for large sample
+studies–chile dataset. Hydrology and Earth System Sciences , 22(11):5817–5846, 2018.
+Dzmitry Bahdanau, Kyunghyun Cho, and Yoshua Bengio. Neural machine translation by jointly
+learning to align and translate. arXiv preprint arXiv:1409.0473 , 2014.
+Zhao Gang, Pang Bo, Xu Zongxue, Cui Lizhuang, Wang Jingjing, Zuo Depeng, and Peng Dingzhi.
+Improving urban flood susceptibility mapping using transfer learning. Journal of Hydrology , pp.
+126777, 2021.
+Hoshin V Gupta, Harald Kling, Koray K Yilmaz, and Guillermo F Martinez. Decomposition of
+the mean squared error and nse performance criteria: Implications for improving hydrological
+modelling. Journal of hydrology , 377(1-2):80–91, 2009.
+Sepp Hochreiter and J ¨urgen Schmidhuber. Long short-term memory. Neural computation , 9(8):
+1735–1780, 1997.
+Frederik Kratzert, Daniel Klotz, Mathew Herrnegger, Alden K Sampson, Sepp Hochreiter, and
+Grey S Nearing. Toward improved predictions in ungauged basins: Exploiting the power of
+machine learning. Water Resources Research , 55(12):11344–11354, 2019.
+Frederik Kratzert, Martin Gauch, Grey Nearing, and Daniel Klotz. Neuralhydrology — a python
+library for deep learning research in hydrology. Journal of Open Source Software , 7(71):4050,
+2022. doi: 10.21105/joss.04050. URL https://doi.org/10.21105/joss.04050 .
+A Makkeasorn, Ni-Bin Chang, and Xiaobing Zhou. Short-term streamflow forecasting with global
+climate change implications–a comparative study between genetic programming and neural net-
+work models. Journal of Hydrology , 352(3-4):336–354, 2008.
+J Eamonn Nash and Jonh V Sutcliffe. River flow forecasting through conceptual models part i—a
+discussion of principles. Journal of hydrology , 10(3):282–290, 1970.
+Grey Nearing, Frederik Kratzert, Daniel Klotz, Pieter-Jan Hoedt, G ¨unter Klambauer, Sepp Hochre-
+iter, Hoshin Gupta, Sella Nevo, and Yossi Matias. A deep learning architecture for conservative
+dynamical systems: Application to rainfall-runoff modeling. AI for Earth Sciences Workshop at
+NeurIPS , 2020.
+AJ Newman, MP Clark, Kevin Sampson, Andrew Wood, LE Hay, A Bock, RJ Viger, D Blodgett,
+L Brekke, JR Arnold, et al. Development of a large-sample watershed-scale hydrometeorological
+data set for the contiguous usa: data set characteristics and assessment of regional variability in
+hydrologic model performance. Hydrology and Earth System Sciences , 19(1):209–223, 2015.
+Ruizhi Zhou and Yanling Pan. Flooddan: Unsupervised flood forecasting based on adversarial
+domain adaptation. In 2022 IEEE 5th International Conference on Big Data and Artificial Intel-
+ligence (BDAI) , pp. 6–12. IEEE, 2022.
+6

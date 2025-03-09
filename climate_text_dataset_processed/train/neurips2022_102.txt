@@ -1,0 +1,244 @@
+Deep learning-based bias adjustment of decadal
+climate predictions
+Reinel Sospedra-Alfonso
+Canadian Centre for Climate Modelling and Analysis
+Environment and Climate Change Canada, Canada
+reinel.sospedra-alfonso@ec.gc.caJohannes Exenberger
+Institute of Software Technology
+Graz University of Technology, Austria
+johannes.exenberger@tugraz.at
+Marie C. McGraw
+Cooperative Institute for Research in the Atmosphere
+Colorado State University, USA
+marie.mcgraw@colostate.eduTrung Kien Dang
+Saw Swee Hock School of Public Health
+National University of Singapore, Singapore
+kiendang@u.nus.edu
+Abstract
+Decadal climate predictions are key to inform adaptation strategies in a warming
+climate. Coupled climate models used for decadal predictions are, however, im-
+perfect representations of the climate system causing forecast biases. Biases can
+also result from a poor model initialization that, when combined with forecast
+drift, can produce errors depending non-linearly on lead time. We propose a deep
+learning-based bias correction approach for post-processing gridded forecasts to
+enhance the accuracy of decadal climate predictions.
+1 Motivation and problem statement
+Decadal or near-term climate prediction refers to climate forecasts on the range of a year to a decade.
+Unlike climate projections, which simulate the climate response to external forcing such as changes
+in greenhouse gas concentrations and aerosols, decadal predictions also simulate the climate response
+to unforced variations such as El Niño-Southern Oscillation (ENSO) and other modes of internal
+climate variability. As part of the Wold Climate Research Program (WCRP), the Decadal Climate
+Prediction Project (DCPP) [1] offers quasi-real-time decadal forecasts for potential users, whereas the
+World Meteorological Organization (WMO) Global Annual to Decadal Climate Update (GADCU) is
+produced annually to inform society on the state of the climate for the next 5 years [2].
+Decadal forecasts typically drift from their observation-based initial conditions toward the uncon-
+strained model climatology, which may be far from observations. Consequently, operational decadal
+predictions often require some form of data post-processing to attain skill. This is often done using
+simple linear methods. Given the importance of climate predictions for informed adaptation strategies,
+the exploration of novel post-processing methods to correct forecast bias and drift is an important
+step to improve adaptation. We propose a deep learning model as a data post-processing tool for
+gridded climate predictions to enhance forecast skill.
+2 Background and previous work
+While many studies describe adjustments of weather and subseasonal-to-seasonal (S2S) forecasts,
+there is limited work devoted to adjustments of decadal predictions, partly due to their relatively
+recent use, unique long-time range, drifts, and potential for erroneous trends. A simple approach is
+climatological bias correction, for which the difference between the modeled and observed clima-
+Tackling Climate Change with Machine Learning: workshop at NeurIPS 2022.(a)
+ (b)
+Figure 1: Annual averaged a) raw and b) trend corrected ensemble mean decadal forecasts (colored
+dots) of global mean surface temperature initialized from 1961 to 2015 obtained with CanESM5.
+Forecast years go from 1 (violet dots) to 10 (red dots). Also shown are the observation-based
+estimates (black curve), the ensemble mean assimilation runs used to initialize the forecasts (magenta
+curve), the ensemble mean historical simulations (gray curve), and the ensemble spread of historical
+simulations as a measure of uncertainty resulting from internal variability (gray band).
+tologies, taken over a common period, is removed from the forecast [1]. While this basic approach
+can provide substantial skill improvements compared to raw predictions, it is insufficient to correct
+erroneous variability and trends. For climate variables such as temperature that exhibit strong long-
+term changes, trend corrections depending on lead time are often used [3], whereas for variables with
+a small signal-to-noise ratio such as precipitation [4], a variance adjustment may be required [5].
+Other bias-correction methods include the use of linear dependence of the drift on the observed initial
+conditions [6], the use of polynomial representations of the forecast drift and ensemble variability [7],
+and a dynamic modeling of the drift [8]. Despite these efforts, a comprehensive method for decadal
+forecast adjustment is lacking, as the accuracy of the above methods typically depend on climate
+variables, skill measure, initial conditions, and lead time.
+As an example, Figure 1 shows raw and trend adjusted ensemble mean decadal forecasts of global
+mean air surface temperature obtained with version 5 of the Canadian Earth system model (CanESM5-
+DP) [9]. Also shown are the ERA5 [10] observation-based estimates, the ensemble mean of the
+constrained runs used to initialize the forecasts, and the ensemble mean of the unconstrained historical
+simulations. The latter reproduces the forced warming, but cannot reproduce the observed internal
+variability, thus highlighting the need for decadal predictions. The initial conditions are warmer
+than observed, leading to raw forecasts that have significant initial biases, and drift towards the
+unconstrained historical simulations. These biases are improved with climatological and linear trend
+correction, but all errors cannot be resolved with these simple methods.
+While machine learning and deep learning have been used for forecast adjustment, most research
+focuses on synoptic and subseasonal predictions. Approaches include the use of Kalman filters
+to adjust air quality forecasts [11], random forests for wind forecast adjustment [12], and weather
+and seasonal climate forecast adjustment [13]. An early approach using neural networks (NNs) for
+post-processing ARPS temperature forecasts is given in [14]. Rasp and Lerch [15] propose a NN
+to adjust ECMWF ensemble weather forecasts using a distributional regression architecture able
+to predict outputs with heteroscedastic variance. Kim et al. [16] use a long short term memory
+(LSTM) network with a single hidden layer for Madden-Julian Oscillation (MJO) forecast adjustment,
+reducing multi-model forecast errors up to 90%. Convolutional neural networks (CNNs) have been
+used in several works to correct gridded weather forecasts [17–20]. Lerch and Polsterer [21] combine
+a CNN with an autoencoder for ECMWF ensemble weather forecast adjustment. A generative model
+approach to bias correction of climate forecasts using a generative adversarial network (GAN) is
+described by François et al. [22].
+3 Data
+We use the 40-member ensemble of gridded global temperature and precipitation decadal predictions
+from CanESM5 contributing to the DCPP endorsed by phase 6 of the Coupled Model Intercomparison
+Project [CMIP6, 23]. The data includes retrospective forecasts initialized annually in 1960-2019 [24]
+and quasi-real-time forecasts initialized in 2020-2021 [25]. For forecast adjustment, we use several
+gridded observation-based products including air temperature reanalyses and station-based products
+examined in [26], and the Global Precipitation Climatology Project GPCP2.3 product [27]. When
+2(a)
+ (b)
+ (c)
+Figure 2: January sea surface temperature anomalies in the sub-polar North Atlantic from a)
+observation-based ERSSTv5 [32], and CanESM5-DP based b) raw and c) NN-based adjusted forecasts
+at 12-month lead averaged over the 2006–2018 test period. Anomalies are taken from temperature
+averaged over the training period, and range from below -1◦C (dark blue) to above 1◦C (dark red).
+possible, we use a blend of multiple observation-based products to reduce potential uncorrelated
+random errors that can degrade forecast skill regardless of model biases [26].
+4 Technical approach and methodology
+A convolutional architecture will be used to preserve spatial dependencies in the data. To consider
+temporal correlations, we combine this approach with a sequential neural network architecture, such
+as recurrent neural networks (RNN) [28]. We further plan to test other sequential architectures like
+self-attention [29] and 1D CNNs [30]. The model input are raw, uncorrected retrospective forecasts.
+The objective of the model is to learn and correct the systematic forecast errors using observational
+data, and output the adjusted forecasts. This trained model will then be used to adjust forecasts for
+future years. As a baseline, we will use corrections with linear models, which are currently employed
+to adjust operational decadal forecasts. Forecast adjustment can either be based on lead time or on
+forecast initialization year. Previous studies focus on correction methods with models that depend on
+lead time, however we will explore a model that learns from the forecast drift along the lead time
+dimension. This way, lead-time dependent bias patterns could be exploited during model training.
+Forecast bias correction can either be applied to every single ensemble member or the ensemble
+mean. We will explore both options, although recent research suggests that correcting the forecast
+ensemble mean may be preferable, since the noise component in the single members may obscure the
+forecasts systematic errors to be learned by the network [16].
+5 Expected outcome and impact
+Our main objective and expected outcome is two-fold, (1) to improve accuracy of operational
+decadal predictions, and (2) to gain further understanding of climate model biases for research and
+model development. We will train our model with retrospective forecasts contributing to the DCPP
+Component A, and use the trained network to improve the quasi-real-time predictions contributing to
+DCPP Component B. We will first focus on CanESM5-DP, which is known to have strong biases in
+the subpolar North Atlantic region severely limiting its forecast skill [31]. We anticipate significant
+improvements over this region, as suggested by Figure 2 showing preliminary results of adjusted
+temperature anomalies obtained with a simple dense feed-forward NN. The adjusted temperature and
+precipitation forecasts will be shared on a publicly accessed repository for dissemination and future
+use. We plan to extend our work to other coupled models contributing to DCPP, and also to those
+participating in the WMO-GADCU [2] that do not contribute to the DCPP. We also intend to include
+other key climate variables in our study, such as sea level pressure, and hydroclimatic variables such
+as soil moisture and snow water equivalent. Because operational near-term climate predictions inform
+current adaptation strategies to increase resilience in a warming climate, we expect more accurate
+decadal forecasts to have a significant impact on society and climate-sensitive socioeconomic sectors.
+3References
+[1] G. J. Boer, D. M. Smith, C. Cassou, F. Doblas-Reyes, G. Danabasoglu, B. Kirtman, Y . Kushnir,
+M. Kimoto, G. A. Meehl, R. Msadek, W. A. Mueller, K. E. Taylor, F. Zwiers, M. Rixen, Y .
+Ruprich-Robert, and R. Eade. “The Decadal Climate Prediction Project (DCPP) contribution
+to CMIP6”. In: Geosci. Mod. Dev. 9 (2016), pp. 3751–3777.
+[2] L. Hermanson, D. Smith, M. Seabrook, R. Bilbao, F. Doblas-Reyes, E. Tourigny, V . Lapin,
+V . V . Kharin, W. J Merryfield, R. Sospedra-Alfonso, P. Athanasiadis, D. Nicoli, S. Gualdi,
+N. Dunstone, R. Eade, A. Scaife, M. Collier, T. O’Kane, V . Kitsios, P. Sandery, K. Pankatz, H.
+Pohlmann, W. Muller, T. Kataoka, H. Tatebe, M. Ishii, Y . Imada, T. Kruschke, T. Koenigk, M. P.
+Karami, S. Yang, T. Tian, L. Zhang, T. Delworth, X. Yang, F. Zeng, Y . Wang, F. Counillon,
+N. Keenlyside, I. Bethke, J. Lean, J. Luterbacher, R. Kumar K., and A. Kumar. “WMO Global
+Annual to Decadal Climate Update: A prediction for 2021–2025”. In: Bulletin of the American
+Meteorological Society (2022), E117–E1129.
+[3] V . V . Kharin, G. J. Boer, W. J. Merryfield, J. F. Scinocca, and W.-S. Lee. “Statistical adjustment
+of decadal predictions in a changing climate”. In: Geophys. Res. Lett. 39 (2012).
+[4] S. G. Yeager, G. Danabasoglu, N. A. Rosenbloom, W. Strand, S. C. Bates, G. A. Meehl, A. R.
+Karspeck, K. Lindsay, M. C. Long, H. Teng, and N. S. Lovenduski. “Predicting near-term
+changes in the Earth system”. In: Bulletin of the American Metheorological Society (2018),
+pp. 1867–1886.
+[5] D. M. Smith, A. A. Scaife, R. Eade, P. Athanasiadis, A. Bellucci, I. Bethke, R. Bilbao,
+L. F. Borchert, L.-P. Caron, F. Counillon, G. Danabasoglu, T. Delworth, F. J. Doblas-Reyes,
+N. J. Dunstone, V . Estella-Perez, S. Flavoni, L. Hermanson, N. Keenlyside, V . Kharin, M.
+Kimoto, W. J. Merryfield, J. Mignot, T. Mochizuki, K. Modali, P.-A. Monerie, W. A. Muller,
+D. Nicoli, P. Ortega, K. Pankatz, H. Pohlmann, J. Robson, P. Ruggieri, R. Sospedra-Alfonso,
+D. Swingedouw, Y . Wang, S. Wild, S. Yeager, X. Yang, and L. Zhang. “North Atlantic climate
+far more predictable than models imply”. In: Nature 583 (2020), pp. 796–800.
+[6] N. S. Fuckar, D. V olpi, V . Guemas, and F. J. Doblas-Reyes. “A posteriori adjustment of
+near-term climate predictions: Accounting for the drift dependence on the initial conditions”.
+In:Geophys. Res. Lett. 41 (2014), pp. 5200–5207.
+[7] A. Pasternack, J. Bhend, M. A. Liniger, H. W. Rust, W. A. Muller, and U. Ulbrich. “Parametric
+decadal climate forecast recalibration (DeFoReSt 1.0)”. In: Geosci. Model Dev. 11 (2018),
+pp. 351–368.
+[8] B. T. Nadiga, T. Verma, W. Weijer, and N. M. Urban. “Enhancing skill of initialized decadal
+predictions using a dynamic model of drift”. In: Geophys. Res. Lett. 46 (2019), pp. 9991–9999.
+[9] R. Sospedra-Alfonso, W. J. Merryfield, G. J. Boer, V . V . Kharin, W.-S. Lee, C. Seiler, and
+J. R. Christian. “Decadal climate predictions with the Canadian Earth System Model version 5
+(CanESM5)”. In: Geosci. Model Dev. 14 (2021), pp. 6863–6891.
+[10] H. Hersbach, H. Hersbach, B. Bell, P. Berrisford, S. Hirahara, A. Horanyi, J. Munoz-Sabater,
+J. Nicolas, C. Peubey, R. Radu, D. Schepers, A. Simmons, C. Soci, S. Abdalla, X. Abellan,
+G. Balsamo, P. Bechtold, G. Biavati, J. Bidlot, M. Bonavita, G. De Chiara, P. Dahlgren, D. Dee,
+M. Diamantakis, R. Dragani, J. Flemming, R. Forbes, M. Fuentes, A. Geer, L. Haimberger,
+S. Healy, R. J. Hogan, E. Holm, M. Janiskova, S. Keeley, P. Laloyaux, P. Lopez, C. Lupu,
+G. Radnoti, P. de Rosnay, I. Rozum, F. Vamborg, S. Villaume, and J.-N. Thepaut. “The ERA5
+global reanalysis”. In: Quarterly Journal of the Royal Meteorological Society 146 (2020),
+pp. 1999–2049.
+[11] K. DeRidder, U. Kumar, D. Lauwaet, L. Blyth, and W. Lefebvre. “Kalman filter-based air
+quality forecast adjustment”. In: Atmospheric Environment 50 (2012), pp. 381–384.
+[12] A. Wang, L. Xu, Y . Li, J. Xing, X. Chen, K. Liu, Y . Liang, and Z. Zhou. “Random-forest
+based adjusting method for wind forecast of WRF model”. In: Computers and Geosciences
+155 (2021).
+[13] O. Watt-Meyer, N. D. Brenowitz, S. K. Clark, B. Henn, A. Kwa, J. McGibbon, W. A. Perkins,
+and C. S. Bretherton. “Correcting Weather and Climate Models by Machine Learning Nudged
+Historical Simulations”. In: Geophysical Research Letters 48(15) (2021).
+[14] C. Marzban. “Neural Networks for Postprocessing Model Output: ARPS”. In: Monthly Weather
+Review 131(6) (2003), pp. 1103–1111.
+[15] S. Rasp and S. Lerch. “Neural Networks for Postprocessing Ensemble Weather Forecasts”. In:
+Monthly Weather Review 146(11) (2018), pp. 3885–3900.
+4[16] H. Kim, Y . G. Ham, Y . S. Joo, and S. W. Son. “Deep learning for bias correction of MJO
+prediction”. In: Nature Communications 12(1) (2021).
+[17] L. Han, M. Chen, K. Chen, H. Chen, Y . Zhang, B. Lu, L. Song, and R. Qin. “A Deep Learning
+Method for Bias Correction of ECMWF 24–240 h Forecasts. Advances in Atmospheric
+Sciences”. In: Advances in Atmospheric Sciences 38(9) (2021), pp. 1444–1459.
+[18] S. Veldkamp, K. Whan, S. Dirksen, and M. Schmeits. “Statistical postprocessing of wind speed
+forecasts using Convolutional Neural Networks”. In: Monthly Weather Review 149(4) (2021),
+pp. 1141–1152.
+[19] A. Kudo. “Statistical Post-Processing for Gridded Temperature Prediction Using Encoder-
+Decoder-Based Deep Convolutional Neural Networks”. In: arXiv:2103.01479 (2021).
+[20] Fang Wang and Di Tian. “On Deep Learning-Based Bias Correction and Downscaling of
+Multiple Climate Models Simulations”. In: Climate Dynamics (2022).
+[21] Sebastian Lerch and Kai L. Polsterer. “Convolutional Autoencoders for Spatially-Informed
+Ensemble Post-Processing”. In: ICLR 2022 AI for Earth Sciences Workshop. 2022.
+[22] Bastien François, Soulivanh Thao, and Mathieu Vrac. “Adjusting Spatial Dependence of
+Climate Model Outputs with Cycle-Consistent Adversarial Networks”. In: Climate Dynamics
+57.11 (2021), pp. 3323–3353.
+[23] V . Eyring, S. Bony, G. A. Meehl, C. A. Senior, B. Stevens, R. J. Stouffer, and K. E. Taylor.
+“Overview of the Coupled Model Intercomparison Project Phase 6 (CMIP6) experimental
+design and organization”. In: Geoscientific Model Development 9 (2016), pp. 1937–1958.
+[24] R. Sospedra-Alfonso, W. Lee, W. J. Merryfield, N. C. Swart, J. N. S. Cole, V . V . Kharin, M.
+Lazare, J. F. Scinocca, N. P. Gillett, J. Anstey, V . Arora, J. R. Christian, Y . Jiao, W. G. Lee,
+F. Majaess, O. A. Saenko, C. Seiler, C. Seinen, A. Shao, L. Solheim, K. von Salzen, D. Yang,
+B. Winter, and M. Sigmond. CCCma CanESM5 model output prepared for CMIP6 DCPP
+dcppA-hindcast [data set] . Earth System Grid Federation. 2019. DOI:https://doi.org/10.
+22033/ESGF/CMIP6.3557 .
+[25] R. Sospedra-Alfonso, W. Lee, W. J. Merryfield, N. C. Swart, J. N. S. Cole, V . V . Kharin, M.
+Lazare, J. F. Scinocca, N. P. Gillett, J. Anstey, V . Arora, J. R. Christian, Y . Jiao, W. G. Lee,
+F. Majaess, O. A. Saenko, C. Seiler, C. Seinen, A. Shao, L. Solheim, K. von Salzen, D. Yang,
+B. Winter, and M. Sigmond. CCCma CanESM5 model output prepared for CMIP6 DCPP
+dcppA-hindcast [data set] . Earth System Grid Federation. 2019. DOI:https://doi.org/10.
+22033/ESGF/CMIP6.3560 .
+[26] G.J. Boer, R. Sospedra-Alfonso, P. Martineau, and V . V . Kharin. “Verification data and the
+skill of decadal predictions”. In: Front. Clim. 4 (2022).
+[27] R. F. Adler, G.J. Huffman, A. Chang, R. Ferraro, P. Xie, J. Janowiak, B. Rudolf, U. Schneider,
+S. Curtis, D. Bolvin, A. Gruber, J. Susskind, and P. Arkin. “The Version 2 Global Precipitation
+Climatology Project (GPCP) Monthly Precipitation Analysis (1979-Present)”. In: Journal of
+Hydrometeorology 4 (2003), pp. 1147–1167.
+[28] Junyoung Chung, Caglar Gulcehre, KyungHyun Cho, and Yoshua Bengio. “Empirical
+evaluation of gated recurrent neural networks on sequence modeling”. In: arXiv preprint
+arXiv:1412.3555 (2014).
+[29] Ashish Vaswani, Noam Shazeer, Niki Parmar, Jakob Uszkoreit, Llion Jones, Aidan N Gomez,
+Łukasz Kaiser, and Illia Polosukhin. “Attention is all you need”. In: Advances in neural
+information processing systems 30 (2017).
+[30] Serkan Kiranyaz, Onur Avci, Osama Abdeljaber, Turker Ince, Moncef Gabbouj, and Daniel
+J Inman. “1D convolutional neural networks and applications: A survey”. In: Mechanical
+systems and signal processing 151 (2021), p. 107398.
+[31] R. Sospedra-Alfonso and G. J. Boer. “Assessing the impact of initialization on decadal
+prediction skill”. In: Geophsical Researh Letters 47 (2020).
+[32] B. Huang, P. W. Thorne, V . F. Banzon, T. Boyer, G. Chepurin, J. H. Lawrimore, M. J. Menne,
+T. M. Smith, R. S. V ose, and H.-M. Zhang. “Extended Reconstructed Sea Surface Temperature
+version 5 (ERSSTv5), Upgrades, validations, and intercomparisons”. In: J. Climate 30 (2017),
+pp. 8179–8205.
+5

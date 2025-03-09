@@ -1,0 +1,286 @@
+Published as a workshop paper at ”Tackling Climate Change with Machine Learning”, ICLR 2023
+SEA LEVEL PROJECTIONS WITH MACHINE LEARNING
+USING ALTIMETRY AND CLIMATE MODEL ENSEMBLES
+Saumya Sinha˚
+University of Colorado
+Boulder, CO, USAJohn Fasullo
+National Center for Atmospheric Research
+Boulder, CO, USAR. Steven Nerem
+University of Colorado
+Boulder, CO, USA
+Claire Monteleoni
+University of Colorado
+Boulder, CO, USA
+ABSTRACT
+Satellite altimeter observations retrieved since 1993 show that the global mean
+sea level is rising at an unprecedented rate (3.4mm/year). With almost three
+decades of observations, we can now investigate the contributions of anthro-
+pogenic climate-change signals such as greenhouse gases, aerosols, and biomass
+burning in this rising sea level. We use machine learning (ML) to investigate fu-
+ture patterns of sea level change. To understand the extent of contributions from
+the climate-change signals, and to help in forecasting sea level change in the fu-
+ture, we turn to climate model simulations. This work presents a machine learning
+framework that exploits both satellite observations and climate model simulations
+to generate sea level rise projections at a 2-degree resolution spatial grid, 30 years
+into the future. We train fully connected neural networks (FCNNs) to predict
+altimeter values through a non-linear fusion of the climate model hindcasts (for
+1993-2019). The learned FCNNs are then applied to future climate model pro-
+jections to predict future sea level patterns. We propose segmenting our spatial
+dataset into meaningful clusters and show that clustering helps to improve predic-
+tions of our ML model.
+1 I NTRODUCTION
+With melting ice sheets and the growing warmth of the ocean water, the global mean sea level is
+rising at an extraordinary rate and is accelerating (0.08mm/year2) [17]. While, on average, the sea
+level has risen 10 cm over the last 30 years, there is a considerable variation in the regional rates of
+the sea level change [11]. These regional patterns are richer in information and can be very useful
+in examining the impact of climate-driven factors including greenhouse gases, industrial aerosols,
+and biomass burning in the sea level change. Studies in [5; 6; 7] have found the regional variations
+to be linked to aerosols and greenhouse gas emissions. Identifying how regional trends will evolve
+in the future is also beneficial for socioeconomic planning. Our work investigates the sea level at a
+2-degree or 180 x 90 (longitude x latitude) spatial resolution.
+Now that there are almost three decades of satellite altimeter records or observations1, we want to
+explore the rising rate of the sea level further and investigate how much of this rise can be attributed
+to climate-change signals. To do this, we turn to the climate models in order to provide a better
+understanding of the altimeter data and to help in forecasting future sea level change by learning
+more about the extent of the causal contributions from such factors. A climate model uses math-
+ematical equations to simulate complex physical and chemical processes of Earth systems such as
+the atmosphere, land, ocean, ice, and solar energy [8]. A recent study by Fasullo and Nerem (2018)
+with two climate model large ensembles showed that the forced responses of greenhouse gas and
+˚Corresponding author: Saumya Sinha, saumya.sinha@colorado.edu
+1We obtain our altimeter data for the period 1993-2019 from https://www.aviso.altimetry.fr/
+en/data/products/ocean-indicators-products/mean-sea-level.html
+1Published as a workshop paper at ”Tackling Climate Change with Machine Learning”, ICLR 2023
+aerosols have begun to emerge in the altimeter data patterns. This motivates us to include climate
+models in designing our machine learning (ML) pipeline.
+Our goal is to generate sea level projections 30 years into the future and at a 2-degree spatial res-
+olution utilizing the altimeter data as well as climate model simulations. Some past works have
+used satellite altimeter data and adopted ML techniques to perform sea level prediction. While
+tide-gauge data has also been used for similar tasks, satellite altimetry provides nearly global cover-
+age. Braakmann-Folgmann et al. (2017) used a combination of CNN + ConvLSTM layers to perform
+interannual sea level anomalies (SLA) prediction over the Pacific Ocean. [20] work with LSTM for
+South China Sea. In [1], the authors include ocean-atmospheric features like sea surface tempera-
+ture, salinity, surface atmospheric pressure to build support vector and LSTM models for the West
+Peninsular Malaysia coastline. [18] make use of gaussian processes and LSTM to predict sea level
+variation along the regional coastal zones. In [12], they compare various machine learning tech-
+niques to predict global mean sea level rise. However, none of these models go so far as to forecast
+sea level change 30years in advance. They also do not produce forecasts for the entire globe. Our
+work addresses the problem at a much bigger spatial scale that includes all the oceans and a much
+longer time horizon in the future. Our framework utilizes climate models to understand the causal
+effects of climate-change signals. We add interpretability to our model by explaining the contribu-
+tions of the climate model ensembles. We also present a way to segment spatial data and show the
+performance of our method for predicting the sea rise trend. We do a quantitative evaluation of the
+predictions on the past data and introduce a qualitative analysis of the predictions on the future data
+while also producing uncertainty estimates associated with the ML prediction.
+Pathways to Climate Impact Forecasting long-term sea level change is a complex problem given
+the natural variability of the ocean, the wide range of processes involved, and complex non-linear
+interactions playing a role in the sea level change. Through our work, we show the potential of
+machine learning in producing these forecasts 30 years in advance and over all oceans at a reasonably
+good spatial resolution. This is a promising step towards understanding the impact of climate change
+on the current sea level rise and how it can influence its future course. The longer horizon prediction
+in the future can be vital in providing us with more time to plan and adapt to the rising sea level.
+2 D ATASET AND PROBLEM FORMULATION
+Figure 1: Figure shows the sea level trend maps for the 6 climate model ensembles (on left) and satellite
+altimeter data (on right) for the period 1993-2019. Here the trend values are visualized in mm/year.
+Our altimeter dataset is a monthly sea surface height (SSH) data at 1/4-degree spatial resolution
+for the time period 1993-2019. For the same duration, we obtain monthly SSH at 1-degree spatial
+resolution from 6 different climate model ensembles. They are: CESM1 (large ensemble) [13],
+CESM2 (large ensemble) [3], MPIGE [15], GFDLESM2M [4], MPI-ESM1-2-HR [16] and MPI-
+ESM1-2-LR [10]. Model simulations for individual members of the model ensembles are averaged
+2Published as a workshop paper at ”Tackling Climate Change with Machine Learning”, ICLR 2023
+to create the sea surface height (SSH) variable we work with. The spatial SSH fields for both the
+altimeter data and climate models are regridded to a 2 degree, i.e a 180x90 grid (as it speeds up the
+computation while still keeping a reasonable resolution), and their global mean is removed as well.
+For every ocean grid point, a linear trend is fitted to the monthly SSH time series for the 1993-2019
+time period. This way, we obtain a single trend map, for all the climate model ensembles and the
+altimeter (see Figure 1). Working with trends helps to avoid the monthly variability of the SSH
+fields. This can be beneficial to our machine learning model as removing other variabilities can help
+it to learn from the climate-change signals better.
+We flattened the spatial grid to create our dataset. For every ocean lat/long there is a trend (in
+cm/year) provided by each of the 6 climate models, comprising the input (X) and also from the
+altimeter (ground truth), which is the label (Y) for our ML training. We frame our problem as
+a supervised machine learning task that utilizes both climate model hindcast trends, and altimeter
+trend while absorbing the biases that the climate models have away from the altimeter data. Figure 1
+shows that the climate models don’t reproduce the trend pattern in altimeter data very well and
+they also disagree with each other substantially. There is also a difference in variability between
+the altimeter and the climate models as can be observed in Figure 1 and we expect our method to
+address this. It is worth noting that we do not have altimeter records for all the latitudes. They are
+roughly present for latitudes [ ´70to +70] that give us 7,643data points excluding land grid points.
+While we have access to long periods of climate model simulations in the past as well as the fu-
+ture, our learning setup as described in [19] using an UNet-based spatiotemporal forecasting model
+trained on the climate model dataset did not perform very well in forecasting on the altimeter data.
+This is expected as there is a lot more variability in the altimeter trend as compared to the climate
+models (Figure 1). Moreover, with just a single altimeter trend map (1993-2019), we are limited
+by the data in the temporal dimension. This motivated us to exploit a reasonably dense spatial data
+instead and formulate our problem as described above.
+3 M ETHOD
+Our supervised machine learning pipeline is trained for the period 1993-2019. We get the supervi-
+sion from the altimeter trend and inputs or features to our ML model is provided by the 6 climate
+model hindcast trends for the same time period. In the inference phase, we predict trend projections
+for 30 years later. This is done by taking the climate model projected trends for 2023-2049 and
+passing them through the learned ML model to produce a projected altimeter trend. Our ML model
+is a fully connected neural network (FCNN) trained with mean squared error (MSE) as the loss. The
+MSE is weighted where the weights are the abspcosineqof the latitude of the grid points to give less
+weight to polar regions as compared to other regions.
+Clustering : We segment our spatial grid into clusters with various clustering methods and observe
+the performance of the ML model when trained conditioned on these clusters i.e a separate FCNN
+is trained for each cluster. The time series of the altimeter sea-surface height serves as the features
+for K-means clustering and Spectral clustering. We also perform a clustering scheme that is derived
+from our physical knowledge of the data (described in Figure 2). The spatial segmentations with
+all three clustering approaches can be seen in Figure 2. These approaches are compared to each
+other and also with a setup where the spatial grid is not segmented at all. We make use of k-fold
+cross-validation (k=5) to choose the best hyperparameters for each cluster, ending up with different
+FCNN architectures per cluster. To elaborate further, each of the red and purple clusters in the
+spectral clustering setting as seen in Figure 2(b), learns an FCNN consisting of 3 hidden layers with
+1024, 512, and 256 neurons respectively. For each of the other two smaller clusters, we use an
+FCNN with 2 hidden layers and 256, 128 neurons respectively.
+4 R ESULTS
+We report different metrics for past and future time periods.
+1) 1993-2019 (with ground truth available) : We show the RMSE scores for the three cluster-
+ing approaches and a no clustering setup (Table 1). Table 1 also shows the Pearson correlation
+scores between the ML predicted trend and the true altimeter trend for 1993-2019. Comparing their
+cross-validation scores (as described in 3) also gives a similar performance order. The RMSE and
+3Published as a workshop paper at ”Tackling Climate Change with Machine Learning”, ICLR 2023
+(a) K-means
+ (b) Spectral
+ (c) Hard-coded
+Figure 2: Clusters obtained from (a) K-means clustering, (b) Spectral clustering, and (c) a hard-coded clus-
+tering derived from our physical understanding where the North Atlantic Ocean is assigned a single cluster,
+latitudes from south up to -30 are assigned another cluster and the rest belong to the 3rd cluster.
+correlation scores are weighted as described in 3. We observe that K-means Clustering outperforms
+others. Kmeans andSpectral have similar scores, this may be due to the fact that they have al-
+most similar clusters except for a very small segmented region in the Southern Ocean in the spectral
+clusters. Their scores are also better than the Hardcoded clustering andNo clustering . We also
+examine each of the segmented regions by looking at each cluster’s RMSE and correlation scores.
+Table 1: Table comparing the performance in
+terms of weighted RMSE (in mm/year) and cor-
+relation for the clustering methods for 1993-2019.
+Method RMSE ÓCorrelationÒ
+No Clustering 0.57 0.9
+Spectral Clustering 0.48 0.93
+K-means Clustering 0.44 0.93
+Hardcoded Clustering 0.55 0.89We derive more insights by visualizing the dif-
+ference map between the true trend and predic-
+tion. The North Atlantic and Southern Ocean
+in general show higher differences. Some of
+the higher difference zones in the map could be
+caused by ocean eddies. Our ML model’s per-
+formance is much better in the Pacific, which is
+significant as it is a crucial area for socioeco-
+nomic impacts.
+Interpretability: In order to add interpretabil-
+ity to the models, we use SHAP [14] values to
+explain the contributions of the climate model
+ensembles which are feature inputs to our FCNNs. For Kmeans andSpectral clustering , on the
+”red” cluster of Figure 2(a,b) (which we are most interested in) SHAP values indicate the climate
+model CESM1 (large ensemble) to be the most important, followed by CESM2 (large ensemble)
+and MPIGE.
+2) 2023-2049 : It is harder to gauge the performance of any ML method without the ground truth.
+In this case, we do a qualitative analysis of the predicted trend in terms of cumulative variability and
+we expect our ML models to predict trends with variability similar to the variability of the 1993-
+2019 altimeter trend. We take the root mean square (RMS) of the trend to quantify the notion of
+variability in the trend. Figure 3(a) shows that the altimeter trend from 1993-2019 (which is referred
+to as persistence in climate literature) has a very high variability (1.28mm/year) . In figure 3(b), we
+show the future trend predictions obtained from the K-means clustering model and inspect its vari-
+ability. Figure 3(b) shows a high variability (1.24mm/year) in our predicted trend for 2023-2049,
+though it is still lesser than the altimeter trend variability of the past. If we look at the predicted
+variability concerning other clustering methods, we found that all of them including Hardcoded
+clustering predictions showed a higher variability (1.21mm/year) compared to the No clustering set-
+ting (0.99mm/year). This analysis strengthens our hypothesis to segment the spatial grid and learn
+an ML model conditioned on each segmented region for more optimal predictions that can capture
+better variability.
+Model uncertainty: Additionally, our framework provides uncertainty over the predictions given
+by the ML model. Our FCNN model includes dropout layers to reduce overfitting while training.
+We use the Monte Carlo dropout [9] approach where in the inference phase, we perform multiple
+forward passes (with different dropout masks) through our ML model and report the mean of the
+ensemble of predictions as the prediction outcome and their standard deviation as the model uncer-
+tainty (this is shown in Figure 3(c)).
+5 D ISCUSSION
+This work showcases the efficacy of machine learning for the crucial task of long-term sea level
+prediction on a 2-degree spatial grid leveraging the forecasts provided by climate model ensembles.
+4Published as a workshop paper at ”Tackling Climate Change with Machine Learning”, ICLR 2023
+(a)
+ (b)
+ (c)
+Figure 3: The trend estimates are in mm/year. Figure (a) shows the altimeter trend in 1993-2019 with RMS
+1.28mm/year, (b) shows the trend predicted with ML for the future 2023-2049 with RMS 1.24mm/year and (c)
+shows the ML model uncertainty in terms of the standard deviation (mm/year).
+Fully connected neural networks learn to map climate model projections to future trends and their
+superior performance, especially in the Pacific Ocean shows promise in this application. K-means
+clustering is found to have the lowest training RMSE, but the predictions generated for the future
+have lower variability as compared to the altimeter persistence. We need to investigate this further
+as we expect to see an increase in trend variability in the future that aligns with the climate model
+projections for 2023-2049 that show an increased variability as compared to their 30 years’ past
+values. We plan to use spatial smoothening2to our altimeter data to counter the influence of small-
+scale ocean eddies and potentially produce predictions with higher variability. The domain experts
+in our team will also analyze the ML model predictions and uncertainty further and compare it
+across all the clustering approaches. Our initial results look promising, furthering the need for more
+research on anthropogenic climate change and how it can impact future sea level rise.
+REFERENCES
+[1] Abdul-Lateef Balogun and Naheem Adebisi. Sea level prediction using arima, svr and lstm
+neural network: assessing the impact of ensemble ocean-atmospheric processes on models’
+accuracy. Geomatics, Natural Hazards and Risk , 12(1):653–674, 2021.
+[2] Anne Braakmann-Folgmann, Ribana Roscher, Susanne Wenzel, Bernd Uebbing, and J ¨urgen
+Kusche. Sea level anomaly prediction using recurrent neural networks. arXiv preprint
+arXiv:1710.07099 , 2017.
+[3] Gokhan Danabasoglu, J-F Lamarque, J Bacmeister, DA Bailey, AK DuVivier, Jim Edwards,
+LK Emmons, John Fasullo, R Garcia, Andrew Gettelman, et al. The community earth
+system model version 2 (cesm2). Journal of Advances in Modeling Earth Systems , 12(2):
+e2019MS001916, 2020.
+[4] John P Dunne, Jasmin G John, Elena Shevliakova, Ronald J Stouffer, John P Krasting, Sergey L
+Malyshev, PCD Milly, Lori T Sentman, Alistair J Adcroft, William Cooke, et al. Gfdl’s esm2
+global coupled climate–carbon earth system models. part ii: carbon system formulation and
+baseline simulation characteristics. Journal of Climate , 26(7):2247–2267, 2013.
+[5] John T Fasullo and R Steven Nerem. Altimeter-era emergence of the patterns of forced sea-
+level rise in climate models and implications for the future. Proceedings of the National
+Academy of Sciences , 115(51):12944–12949, 2018.
+[6] John T Fasullo, Peter R Gent, and R Steven Nerem. Sea level rise in the cesm large ensemble:
+The role of individual climate forcings and consequences for the coming decades. Journal of
+Climate , 33(16):6911–6927, 2020.
+[7] John T Fasullo, Peter R Gent, and RS Nerem. Forced patterns of sea level rise in the community
+earth system model large ensemble from 1920 to 2100. Journal of Geophysical Research:
+Oceans , 125(6):e2019JC016030, 2020.
+2https://www.ncl.ucar.edu/Document/Functions/Built-in/exp_tapersh.shtml
+5Published as a workshop paper at ”Tackling Climate Change with Machine Learning”, ICLR 2023
+[8] UCAR Center for Science Education. Climate modeling. https://scied.ucar.edu/
+learning-zone/how-climate-works/climate-modeling .
+[9] Yarin Gal and Zoubin Ghahramani. Dropout as a bayesian approximation: Representing model
+uncertainty in deep learning. In international conference on machine learning , pages 1050–
+1059. PMLR, 2016.
+[10] Marco A Giorgetta, Johann Jungclaus, Christian H Reick, Stephanie Legutke, J ¨urgen Bader,
+Michael B ¨ottinger, Victor Brovkin, Traute Crueger, Monika Esch, Kerstin Fieg, et al. Climate
+and carbon cycle changes from 1850 to 2100 in mpi-esm simulations for the coupled model
+intercomparison project phase 5. Journal of Advances in Modeling Earth Systems , 5(3):572–
+597, 2013.
+[11] BD Hamlington, SH Cheon, PR Thompson, MA Merrifield, RS Nerem, RR Leben, and K-Y
+Kim. An ongoing shift in pacific ocean sea level. Journal of Geophysical Research: Oceans ,
+121(7):5084–5097, 2016.
+[12] Kazi Md Abir Hassan, Md Atiqul Haque, and Sakif Ahmed. Comparative study of forecasting
+global mean sea level rising using machine learning. In 2021 International Conference on
+Electronics, Communications and Information Technology (ICECIT) , pages 1–4. IEEE, 2021.
+[13] Jennifer E Kay, Clara Deser, A Phillips, A Mai, Cecile Hannay, Gary Strand, Julie Michelle
+Arblaster, SC Bates, Gokhan Danabasoglu, James Edwards, et al. The community earth system
+model (cesm) large ensemble project: A community resource for studying climate change in
+the presence of internal climate variability. Bulletin of the American Meteorological Society ,
+96(8):1333–1349, 2015.
+[14] Scott M Lundberg and Su-In Lee. A unified approach to interpreting model predictions. Ad-
+vances in neural information processing systems , 30, 2017.
+[15] Nicola Maher, Sebastian Milinski, Laura Suarez-Gutierrez, Michael Botzet, Mikhail Dobrynin,
+Luis Kornblueh, J ¨urgen Kr ¨oger, Yohei Takano, Rohit Ghosh, Christopher Hedemann, et al. The
+max planck institute grand ensemble: enabling the exploration of climate system variability.
+Journal of Advances in Modeling Earth Systems , 11(7):2050–2069, 2019.
+[16] Wolfgang A M ¨uller, Johann H Jungclaus, Thorsten Mauritsen, Johanna Baehr, Matthias Bit-
+tner, R Budich, Felix Bunzel, Monika Esch, Rohit Ghosh, Helmut Haak, et al. A higher-
+resolution version of the max planck institute earth system model (mpi-esm1. 2-hr). Journal
+of Advances in Modeling Earth Systems , 10(7):1383–1413, 2018.
+[17] Robert S Nerem, Brian D Beckley, John T Fasullo, Benjamin D Hamlington, Dallas Mas-
+ters, and Gary T Mitchum. Climate-change–driven accelerated sea-level rise detected in the
+altimeter era. Proceedings of the national academy of sciences , 115(9):2022–2025, 2018.
+[18] Veronica Nieves, Cristina Radin, and Gustau Camps-Valls. Predicting regional coastal sea
+level changes with machine learning. Scientific Reports , 11(1):1–6, 2021.
+[19] Saumya Sinha, Claire Monteleoni, John Fasullo, and R Steven Nerem. Sea-level projections
+via spatiotemporal deep learning from altimetry and cesm large ensembles. In Fall Meeting
+2022 . AGU, 2022.
+[20] Qinting Sun, Jianhua Wan, and Shanwei Liu. Estimation of sea level variability in the china sea
+and its vicinity using the sarima and lstm models. IEEE Journal of Selected Topics in Applied
+Earth Observations and Remote Sensing , 13:3317–3326, 2020.
+6

@@ -1,0 +1,353 @@
+Decadal Forecasts with ResDMD: a Residual DMD Neural Network
+Eduardo Rodrigues1Bianca Zadrozny1Campbell Watson1David Gold2
+Abstract
+Operational forecasting centers are investing in
+decadal (1-10 year) forecast systems to support
+long-term decision making for a more climate-
+resilient society. One method that has previously
+been employed is the Dynamic Mode Decomposi-
+tion (DMD) algorithm – also known as the Linear
+Inverse Model – which ﬁts linear dynamical mod-
+els to data. While the DMD usually approximates
+non-linear terms in the true dynamics as a linear
+system with random noise, we investigate an ex-
+tension to the DMD that explicitly represents the
+non-linear terms as a neural network. Our weight
+initialization allows the network to produce sen-
+sible results before training and then improve the
+prediction after training as data becomes avail-
+able. In this short paper, we evaluate the proposed
+architecture for simulating global sea surface tem-
+peratures and compare the results with the stan-
+dard DMD and seasonal forecasts produced by
+the state-of-the-art dynamical model, CFSv2.
+1. Introduction
+In recent years there has been signiﬁcant effort by major
+dynamical modeling groups to perform decadal (1-10 year)
+forecasts (e.g., Yeager et al. (2018) and Vecchi (2015)).
+These forecasts can bridge the gap from seasonal forecasts
+(Kirtman et al., 2014) to multidecadal predictions (Eyring
+et al., 2016) and are speciﬁcally designed to forecast ﬂuctu-
+ations through knowledge of the current climate state and
+multi-year ocean variability. Although skill is limited by
+the predictability of phenomena like the El Ni ˜noSouthern
+Oscillation (ENSO), decadal forecasts can provide critical
+and actionable information on regional climate trends.
+Another strategy for decadal predictions that has received
+attention uses data to ﬁt a statistical model. A particular
+example of such an approach is found in (Newman, 2013),
+in which the Linear Inverse Model, also known as Dynamic
+1IBM Research2IBM Global Business Services. Correspon-
+dence to: Eduardo Rodrigues <edrodri@br.ibm.com >.
+Proceedings of the 38thInternational Conference on Machine
+Learning , PMLR 139, 2021. Copyright 2021 by the author(s).Mode Decomposition (DMD), is applied to make decadal
+forecasts. DMD has been used to successfully model cli-
+matic phenomena such as tropical diabatic heating and sea
+surface temperatures (SSTs; Huddart et al. (2017)). In its
+most basic form, DMD seeks to ﬁt a linear dynamical sys-
+tem of the form:
+d
+dtx=Ax (1)
+which has an exact solution given by:
+x(t0+t) =eAtx(t0) (2)
+The dynamics are characterized by the eigenvalues
+and eigenvectors of A, typically the leading eigen-
+value/eigenvector pairs.
+A common strategy in modeling environmental variables
+with DMD is to assume that the non-linear dynamics can be
+approximated by a linear system with random noise (New-
+man, 2013; Shin et al., 2020), usually Gaussian. In this
+paper, we seek a different strategy in which we explicitly
+model the non-linear term of the dynamics with a neural
+network. In particular, our neural network resembles a
+Resnet (He et al., 2016) with the difference that, instead of
+the identity, the bypass is the DMD solution. Initializing
+the non-linear path with small random weights makes the
+untrained network predict the DMD solution. After train-
+ing, however, results improve compared with this baseline
+(similar to (Rodrigues et al., 2018)).
+In the next sections, we present our proposed approach,
+which we call the Residual DMD Neural Network (Res-
+DMD), and apply it to predict sea surface temperature (SST),
+comparing it to the standard DMD and a state-of-art dynam-
+ical model, CFSv2.
+2. Background and Contributions
+In this section, we describe the architecture of our network
+and the rationale for its structure. We deﬁne what the initial-
+ization is and the beneﬁt of this choice. Finally, we describe
+the training procedure, which, in the current stage of this
+work, could be further optimized, but we leave this as future
+work.Decadal Forecasts with ResDMD: a Residual DMD Neural Network
+A multidimensional environmental variable x(typically an
+anomaly with respect to the long-term average, i.e. the
+climate mean), whose components extend over the spatial
+domain, can be modeled as:
+dx
+dt=Lx+N(x) (3)
+where Lis the linear part of the dynamics, and Nrepresents
+nonlinear terms. Nis usually, however, approximated by a
+linear operator, as in (Winkler et al., 2001). This approach
+has the major beneﬁt of easiness to compute, since it relies
+on the computationally efﬁcient singular value decompo-
+sition (SVD) algorithm. Nonetheless, one can only fully
+understand the system statistics by knowing the form of N.
+Here, we seek to approximate the nonlinear term Nas a neu-
+ral network trained with stochastic gradient descent (SGD).
+We leverage, however, the structure and procedure for train-
+ing the linear part from previous work (such as (Winkler
+et al., 2001) and (Newman, 2013)). The procedure for train-
+ing the linear part is the Dynamic Mode Decomposition
+(DMD), also known as Linear Inverse Model in the atmo-
+spheric sciences.
+One of the greatest advantages of the DMD method is to
+project the dynamics of the system being studied into a low-
+dimensional space, spanned by a set of spatially correlated
+modes that have the same linear behavior in time (Kutz et al.,
+2016). In discrete form the solution is given by:
+x(t0+nt) = nyx(t0) (4)
+b
+w wF(b)+brelu+
+Λnb
+t
+w wb
+t+nrelu+identity
+FResnet blockResnet block
+ResDMD block
+Figure 1. Comparison between Resnet block and ResDMD block.
+in which andare the eigenvectors and eigenvalues
+of the matrix ( A) approximating the system in Equation
+3. The pseudo inverse of , i.e. y, projects the state
+variable xinto a low dimension space. Its dimension size isgiven by the leading eigenvalues of A, whose number is a
+hyperparameter of the method.
+Our proposed model also operates initially in the same low
+dimensional space as the DMD model. Its ﬁrst step is to use
+the matrix to project the initial state vector, which in our
+case extends over the whole globe:
+b= yx (5)
+This approach has the advantage of reducing the risk of
+overﬁtting with high dimensional data as the dynamics are
+restricted to this low dimensional sub-space. The projection
+matrix is an optimizable parameter in our model which can
+be further optimized to best ﬁt observations during the SGD
+procedure.
+In order to approximate the non-linear terms of the dynam-
+ics, we use a neural network architecture (with parameters
+w)similar to the Resnet (He et al., 2016). The key assump-
+tion of Resnet is that it is easier to optimize the residual
+mapping than to optimize the original unreferenced signal.
+The reference in that neural network is the signal itself, i.e.
+an identity mapping (Figure 1 top). Our ResDMD archi-
+tecture is similar, but the reference in our case is the DMD
+solution (Figure 1 bottom).
+Initializing the weights of the projection matrices and 
+with the DMD matrices, and initializing the weights wto
+small random values effectively makes the SGD procedure
+look for a solution with a non-linear additive term close
+to the DMD solution. As one accumulates more and more
+observation data and trains the model, the network better
+approximates equation 3. In the next section, we evalu-
+ate ResDMD with SST forecasts compared to the standard
+DMD procedure and the CFSv2 model.
+Our model can be further stacked in larger networks, simi-
+larly to the very deep Resnet models. Additional restrictions,
+such as shared parameters between layers for instance, can
+be added. In this paper, we only show results with a single
+block to test the viability of the method.
+The training procedure is basically divided in two stages.
+First, we ﬁt a DMD model to the observed data (training set).
+The resulting matrices andare then used to initialize the
+corresponding weights of the neural network. In addition,
+the weights ware initialized with small random values so
+that the untrained network produces the DMD solution. The
+second stage corresponds to the SGD optimization proce-
+dure, in which we run through the training set again. In this
+stage, all parameters ( ,andw) are updated.Decadal Forecasts with ResDMD: a Residual DMD Neural Network
+3. Experiments
+In order to test the performance of the ResDMD, we trained
+and tested it with sea surface temperature (SST). This vari-
+able is known to be an important predictor for regional
+climate trends and consequential weather events (Kaper &
+Engler, 2013), and it is reasonably slow varying making
+it a good candidate for a ﬁrst target variable. We hereby
+compare performance of the ResDMD with the standard
+DMD and CFSv2 seasonal forecast ensemble.
+The SST dataset used in our experiments is the Extended Re-
+constructed Sea Surface Temperature, Version 5 (ERSSTv5)
+(Huang et al., 2017). It provides estimates of SSTs from
+1854 to present and is most reliable from 1950. Its spatial
+resolution is two degrees and is available monthly. We also
+use the CFSv2 seasonal forecasts as a benchmark for our
+predictions; it was not used as input to our model.
+Instead of directly predicting absolute values, a common
+practice in long range forecasts of SST and other climate
+variables is to predict anomalies from the expected value
+(Tippett et al., 2018). (The strong seasonality in this data
+can bias the evaluation metric.) We computed anomalies
+by subtracting a monthly climate mean (from the period
+1980 to 2010) from the corresponding training and testing
+sets. For ERSSTv5, the training set ranged from 1850-2010
+and the test set from 2011 to 2020. In addition, we com-
+puted CFSv2 forecast anomalies using the CFSv2 forecast
+climatologies from 1980 to 2010. This extra precaution
+aims to make the comparison with CFSv2 more realistic –
+computing forecast anomalies from observed climate means
+(in this case ERSSTv5) could hurt the CFSv2 performance
+by exposing model biases (Kumar et al., 2012) and confer
+an unfair advantage to our model.
+After training the standard DMD model and ResDMD with
+the training set, we evaluated the performance in the test
+set using the anomaly correlation coefﬁcient (ACC), which
+is commonly used to measure the skill of a forecast sys-
+tem (Owens & Hewson, 2018). ACC values closer to unity
+indicate higher skill of the forecast system. We also used
+an ACC difference ( ACC) to compare both the standard
+DMD and ResDMD to CFSv2. Positive values of ACC in-
+dicate the corresponding DMD model is better than CFSv2,
+and negative values indicate the opposite.
+4. Results
+In this section, we present some of the ACC maps we ob-
+tained in order to compare ResDMD with the standard DMD
+and CFSv2. The number of points for each spatial coordi-
+nate in those maps corresponds to the number of years in
+our test set (10 years) times twelve months.
+Figure 2 shows ACC values for the standard DMD (top)
+(a) Standard DMD
+(b) ResDMD
+Figure 2. ACC of SST forecast of 6 months lead time over the
+2010 to 2020 period
+and ResDMD (bottom) models. This particular example
+corresponds to predictions 6 months in advance (6-month
+lead time). Overall, ResDMD shows higher skill than the
+standard DMD. In particular regions of low correlation, such
+as the southern Atlantic Ocean, southern Indian Ocean and
+eastern Paciﬁc Ocean, ResDMD improves skill considerably
+(a) Standard DMD
+(b) ResDMD
+Figure 3. ACC of SST forecast of 9 months lead time over the
+2011 to 2020 period compared to CFSv2Decadal Forecasts with ResDMD: a Residual DMD Neural Network
+compared to the standard model. However, skill in the east-
+ern tropical Paciﬁc (where ENSO dynamics are observed)
+does not improve as much. In order to better understand this
+behaviour we compare results to CFSv2.
+Figure 3a–3b presents the ACC for the standard DMD
+ACC and CFSv2, and ResDMD and CFSv2, respectively.
+Positive values indicate the DMD models are more skillful
+than the CFSv2. Here, we are only showing ACC for 9-
+month lead times. Again, overall one can see that ResDMD
+performs signiﬁcantly better than the standard model. In
+addition, ResDMD also performs better in many places than
+the CFSv2. However, ResDMD has less skill in the eastern
+Paciﬁc/ENSO region compared to CFSv2, a pattern that is
+also observed at other lead times (not shown). A possible
+explanation for the lack of skill in this region is that the
+dynamics of the state variable – explicitly simulated by
+CFSv2 – may be driven by a forcing term, which is strong
+enough to change the internal dynamics of this variable.
+In order to tackle this issue, we are exploring additional
+predictors such as 150-mb geopotential height.
+Finally, we present longer range forecasts by the standard
+DMD and ResDMD (Figure 4) For 1-year lead time, the
+proposed ResDMD clearly performs better than the stan-
+dard DMD across most of the globe. For 5-year lead time,
+the ResDMD error increases is speciﬁc locations such as
+the southern Indian Ocean, however it remains more skill-
+ful overall than the standard DMD. The ResDMD errors
+continue to amplify with lead time, and we conjecture that
+at longer lead times (e.g., 7-10 years) the ResDMD is no
+longer appropriate. We are actively exploring deeper neural
+networks with additional regularization for these longer lead
+times which will have the effect of damping the forecast
+close to the climate mean, however.
+5. Final remarks
+In this paper, we proposed a novel extension to the DMD
+method (ResDMD) that models non-linear additive terms
+of a dynamical system as a neural network. Weight initial-
+ization is such that, before the SGD training, the prediction
+is already a sensible forecast. We have shown predictions
+of global SSTs compared to the standard DMD and CFSv2,
+with notable improvements in some regions.
+The objective of the ResDMD model is to make decadal
+forecasts which are becoming increasingly important for cli-
+mate change policy and to underpin other decision-making.
+We believe that data-driven methods, such the one proposed
+here, will be an important tool along with physically-driven
+methods to perform such forecasts. We expect to combine
+these two types of methods (i.e., a hybrid physical-statistical
+approach) in forthcoming work to address the shortcomings
+of the ResDMD approach.
+(a) Standard DMD - 1 year lead time
+(b) ResDMD - 1 year lead time
+(c) Standard DMD - 5 years lead time
+(d) ResDMD - 5 years lead time
+(e) Standard DMD - 10 years lead time
+(f) ResDMD - 10 years lead time
+Figure 4. ACC of SST forecastDecadal Forecasts with ResDMD: a Residual DMD Neural Network
+References
+Eyring, V ., Bony, S., Meehl, G. A., Senior, C. A., Stevens,
+B., Stouffer, R. J., and Taylor, K. E. Overview of the cou-
+pled model intercomparison project phase 6 (cmip6) ex-
+perimental design and organization. Geoscientiﬁc Model
+Development , 9(5):1937–1958, 2016.
+He, K., Zhang, X., Ren, S., and Sun, J. Deep residual learn-
+ing for image recognition. In Proceedings of the IEEE
+conference on computer vision and pattern recognition ,
+pp. 770–778, 2016.
+Huang, B., Thorne, P. W., Banzon, V . F., Boyer, T., Chep-
+urin, G., Lawrimore, J. H., Menne, M. J., Smith, T. M.,
+V ose, R. S., and Zhang, H.-M. Extended reconstructed
+sea surface temperature, version 5 (ersstv5): upgrades,
+validations, and intercomparisons. Journal of Climate , 30
+(20):8179–8205, 2017.
+Huddart, B. et al. Seasonal and decadal forecasts of atlantic
+sea surface temperatures using a linear inverse model.
+Clim Dyn , 49:1833–1845, 2017.
+Kaper, H. and Engler, H. Mathematics and climate . SIAM,
+2013.
+Kirtman, B. P., Min, D., Infanti, J. M., Kinter, J. L., Paolino,
+D. A., Zhang, Q., Van Den Dool, H., Saha, S., Mendez,
+M. P., Becker, E., et al. The north american multimodel
+ensemble: phase-1 seasonal-to-interannual prediction;
+phase-2 toward developing intraseasonal prediction. Bul-
+letin of the American Meteorological Society , 95(4):585–
+601, 2014.
+Kumar, A., Chen, M., Zhang, L., Wang, W., Xue, Y ., Wen,
+C., Marx, L., and Huang, B. An analysis of the nonstation-
+arity in the bias of sea surface temperature forecasts for
+the ncep climate forecast system (cfs) version 2. Monthly
+weather review , 140(9):3003–3016, 2012.
+Kutz, J. N., Brunton, S. L., Brunton, B. W., and Proctor, J. L.
+Dynamic mode decomposition: data-driven modeling of
+complex systems . SIAM, 2016.
+Newman, M. An empirical benchmark for decadal fore-
+casts of global surface temperature anomalies. Journal of
+Climate , 26(14):5260–5269, 2013.
+Owens, R. and Hewson, T. Ecmwf forecast user guide.
+Reading: ECMWF , 10:m1cs7h, 2018.
+Rodrigues, E., Oliveira, I., Cunha, R., and Netto, M. Deep-
+downscale: A deep learning strategy for high-resolution
+weather forecast. In 2018 IEEE 14th International Con-
+ference on e-Science (e-Science) , pp. 415–422, 2018. doi:
+10.1109/eScience.2018.00130.Shin, J., Park, S., Shin, S.-I., Newman, M., and Alexander,
+M. A. Enhancing enso prediction skill by combining
+model-analog and linear inverse models (ma-lim). Geo-
+physical Research Letters , 47(1):e2019GL085914, 2020.
+Tippett, M. K., Trenary, L., DelSole, T., Pegion, K., and
+LHeureux, M. L. Sources of bias in the monthly cfsv2
+forecast climatology. Journal of Applied Meteorology
+and Climatology , 57(5):1111–1122, 2018.
+Vecchi, G. Gfdl ﬂor: Experimental high-resolution coupled
+seasonal to decadal prediction system, 2015. URL
+https://www.gfdl.noaa.gov/wp-content/
+uploads/files/administrative/2015_
+marine_workshop/vecchi_06032015.pdf .
+Winkler, C. R., Newman, M., and Sardeshmukh, P. D. A
+linear model of wintertime low-frequency variability. part
+i: Formulation and forecast skill. Journal of climate , 14
+(24):4474–4494, 2001.
+Yeager, S., Danabasoglu, G., Rosenbloom, N., Strand, W.,
+Bates, S., Meehl, G., Karspeck, A., Lindsay, K., Long,
+M., Teng, H., et al. Predicting near-term changes in the
+earth system: A large ensemble of initialized decadal
+prediction simulations using the community earth system
+model. Bulletin of the American Meteorological Society ,
+99(9):1867–1886, 2018.

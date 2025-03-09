@@ -1,0 +1,368 @@
+Published as a workshop paper at ”Tackling Climate Change with Machine Learning”, ICLR 2024
+ENABLING CLEAN ENERGY RESILIENCE WITH
+MACHINE LEARNING -EMPOWERED
+UNDERGROUND HYDROGEN STORAGE
+Alvaro Carbonero, Shaowen Mao & Mohamed Mehana
+Los Alamos National Laboratory
+Los Alamos, New Mexico, USA
+{alvaro.carbonero, shaowen.mao, mzm }@lanl.gov
+ABSTRACT
+To address the urgent challenge of climate change, there is a critical need to tran-
+sition away from fossil fuels towards sustainable energy systems, with renewable
+energy sources playing a pivotal role. However, the inherent variability of renew-
+able energy, without effective storage solutions, often leads to imbalances between
+energy supply and demand. Underground Hydrogen Storage (UHS) emerges as a
+promising long-term storage solution to bridge this gap, yet its widespread imple-
+mentation is impeded by the high computational costs associated with high fidelity
+UHS simulations. This paper introduces UHS from a data-driven perspective and
+outlines a roadmap for integrating machine learning into UHS, thereby facilitating
+the large-scale deployment of UHS.
+1 I NTRODUCTION
+Renewable energy, a key player in combating climate change, is gaining increasing global adoption
+Energy 2020 (2010); United nations (2015). In 2022, renewables contributed 13.1 %to the US’s
+primary energy consumption U.S. Energy Information Administration (EIA) (2022) and 21.5 %to
+its utility-scale electricity generation. Furthermore, by 2024, countries like Spain, Germany, and Ire-
+land are expected to generate over 40 %of their annual electricity from wind and solar photovoltaics
+U.S. Energy Information Administration (EIA) (2023). Despite these strides, renewable energy
+sources face challenges due to unpredictable variations in atmospheric conditions and geographic
+limitations, leading to fluctuations in energy supply.
+Underground hydrogen (H 2) storage (UHS) is emerging as a vital technology for mitigating the
+intermittency of renewable energy sources Zivar et al. (2021); Tarkowski & Uliasz-Misiak (2022).
+When there’s a surplus in renewable energy production, excess electricity is converted into H 2and
+stored in geological formations. During times of high demand or low renewable energy generation,
+the stored H 2is then retrieved and utilized to meet energy needs. UHS, unlike batteries typically
+used for short-term storage Raad et al. (2022), is capable of storing significant amounts of energy
+over longer periods. This capability is crucial for counteracting seasonal energy fluctuations and
+maintaining a consistent energy supply year-round.
+UHS shares similarities with other subsurface applications such as hydrocarbon development
+Christie & Blunt (2001) and geological carbon sequestration (GCS) Moridis et al. (2023); Wen
+et al. (2023). However, it is distinguished by more complex operational conditions. In hydrocarbon
+development, the process is typically focused on extraction, while GCS is solely about injection. In
+contrast, UHS operates on a cyclic basis, incorporating both injection and extraction stages. This
+complexity in operational conditions introduces greater uncertainty in H 2storage performance. Tra-
+ditionally, the prediction of UHS performance relies on high-fidelity physics-based reservoir simu-
+lations Lysyy et al. (2021); Feldmann et al. (2016); Hogeweg et al. (2022); Okoroafor et al. (2023).
+These simulations accurately predict the H 2movement and pressure changes in geological forma-
+tions during UHS operations. However, they are extremely computationally intensive, thus delaying
+the pace of large-scale UHS deployment. To accelerate UHS prediction, turning to surrogate mod-
+eling via machine learning (ML) offers a promising strategy.
+1Published as a workshop paper at ”Tackling Climate Change with Machine Learning”, ICLR 2024
+Figure 1: Temporal evolution of the spatial distribution of H 2saturation and reservoir pressure in a
+2D UHS simulation. H 2is injected and withdrawn from a central well in a depleted gas reservoir
+over ten annual cycles comprising a 6-month injection stage followed by a 6-month withdrawal
+stage. The initial two subfigures (top row) depict the heterogeneous porosity and permeability of
+the geological formation. Subsequent figures show the H 2saturation and pressure distributions at
+various time points during UHS operations. ‘Early’ of a stage refers to two months after its onset, and
+‘end’ of a stage to six months. Porosity is dimensionless; permeability is in millidarcys ( 10−15m2);
+H2saturation is dimensionless; pressure is in bars ( 105Pa).
+Currently, there is a knowledge gap in the literature when it comes to developing ML surrogate
+models for UHS–with only two articles on the subject up to our knowledge Mao et al. (2024); Chen
+et al. (2024). This gap is attributed not only to the fact that UHS is an emerging field but also to
+the inherent complexity of UHS operational conditions. It is important to note that the knowledge
+and techniques used in surrogate modeling for GCS do not directly apply to UHS due to its distinct
+and intricate operational dynamics. In this study, we outline the unique challenges of applying ML
+to UHS and propose ideas for developing accurate and efficient UHS ML models, supporting risk
+assessment and storage optimization of future UHS operations.
+2 D ATA GENERATION
+UHS simulations are conducted by solving partial differential equations (PDEs) the details of which
+can be found in Appendix A. While data for these simulations can be generated using reservoir sim-
+ulators with specific input configurations, there is a hope that future work will make such datasets
+publicly available. The computational cost of these simulations increases significantly with refined
+grids or an increased number of components in the system. For our preliminary studies, we uti-
+lized tNavigatorDynamics (2023) to perform 1000 2D UHS simulations in depleted gas reservoirs,
+varying porosity and permeability heterogeneity. Each simulation includes ten annual cycles of six-
+month H 2injection followed by six months of withdrawal. These simulations were parallelized
+across four 64-core CPU servers, taking approximately five days to complete. An example is de-
+picted in Figure 1. See Appendix B.1 for more details on the data produced, and Figure 4 for a
+simulation conducted in a different type of geological formation. It should be noted that data gen-
+eration of more realistic systems, such as ones that are not 2D, that will require significantly more
+computing power.
+2Published as a workshop paper at ”Tackling Climate Change with Machine Learning”, ICLR 2024
+3 R OADMAP TOWARDS ML FOR UHS
+We outline the required capabilities for a UHS ML model, reference GCS research with potential
+applicability to UHS, and identify their limitations due to the complexity of UHS operations.
+3.1 M ODEL PARAMETERS
+A UHS ML model receives many uncertain input parameters, and predicts many output parame-
+ters. The uncertain input parameters for UHS models include geological and operational parame-
+ters. Geological parameters typically involve reservoir depth, thickness, permeability, porosity, and
+geothermal gradient. Operational parameters commonly cover the injection-withdrawal scheme,
+injection pressure, production pressure, the number of storage cycles, and cushion gas type and vol-
+ume (the cushion gas is injected before H 2cycling to provide pressure support for H 2recovery).
+Theoutput parameters crucial for UHS projects fall into two categories. The first involves spatial
+distributions of key variables, including H 2saturation, reservoir pressure, and surface deformation.
+The second includes scalar metrics for evaluating storage performance, such as H 2recovery factor,
+purity of produced H 2, gas-water ratio, and well injectivity.
+3.2 T RANSLATING GCS METHODS TO UHS
+There is abundant research that applies ML to GCS. The methods developed can be divided into
+deep learning architectures, such as graph neural networks Ju et al. (2023), and neural operators,
+such as nested Fourier Neural Operators (FNO) Wen et al. (2023). Since GCS and UHS simulations
+involve the same set of PDEs (with different boundary conditions at the well), a good first stride
+towards ML for UHS is translating these frameworks to the UHS setting. Nonetheless, we foresee
+three challenges when translating GCS models to UHS.
+3.3 C HALLENGES TO OVERCOME
+The first challenge involves developing successful auto-regressive models . An auto-regressive
+model uses its previous outputs as inputs to generate future predictions. This contrasts with the
+static models commonly found in GCS literature Wen et al. (2022); Diab & Al-Kobaisi (2023),
+which directly predict a specific point in time by taking the desired time as an input parameter.
+Auto-regressive models offer advantages, including the ability to extrapolate over time with reason-
+able accuracy, something static models cannot do. By leveraging time extrapolation and decreasing
+the simulated time, models can be trained over a wider range of uncertain input parameters Time
+extrapolation can allow for training over a wider range of uncertain input parameters by decreasing
+simulation time. Additionally, they can leverage monitoring data from ongoing UHS projects to
+enhance future predictions without model retraining or tuning, helping with subsequent operational
+optimization. However, there is a common concern for the performance of auto-regressive models
+due to their potential to accumulate errors over time, a problem that could be compounded by the
+complex operational dynamics of UHS. Nonetheless, we provide preliminary results in Appendix B
+that, despite error accumulation, auto-regressive models perform comparatively well to static ones
+in the UHS setting.
+The second challenge is modifying GCS architectures to predict scalar values . Unlike GCS,
+predicting the temporal evolution of the spatial distribution of H 2saturation, reservoir pressure, and
+surface deformation is insufficient for UHS projects. To evaluate the risks and optimize the storage
+operations, models also need to predict scalar values that are critical UHS performance metrics, such
+as those mentioned in Section 3.1. We are assessing the possibility of tweaking the decoders of GCS
+models to predict both spatial distributions and scalar values.
+The third challenge lies in creating models that produce real-time high-resolution UHS predic-
+tions . Although GCS methods exist, such as nested FNOs, UHS may demand high resolution in
+larger spaces than GCS. Cushion gasses increase the size of the gas plume, cyclic injection schemes
+complicate the plume’s behavior, and deployment in geological formations with preferential paths
+increase plume migration. Dealing with these factors may demand high-resolution in larger areas
+than in GCS operations. We elaborate on this in Appendix C.
+3Published as a workshop paper at ”Tackling Climate Change with Machine Learning”, ICLR 2024
+ACKNOWLEDGMENTS
+This work was supported by Los Alamos National Laboratory Technology Evaluation & Demon-
+stration funds and Laboratory Directed Research and Development (LDRD) program. This work
+was supported by the Environmental Management-Minority Serving Institution Partnership Pro-
+gram (EM-MSIPP) Graduate Fellowship. This research used resources provided by the Los Alamos
+National Laboratory Institutional Computing Program, which is supported by the U.S. Department
+of Energy National Nuclear Security Administration under Contract No. 89233218CNA000001.
+REFERENCES
+Fangxuan Chen, Bailian Chen, Shaowen Mao, Mohamed Malki, and Mohamed Mehana. Integrating
+capacity and efficiency for optimal hydrogen storage site selection in saline aquifers. Energy &
+Fuels , 2024.
+Michael Andrew Christie and Martin J Blunt. Tenth spe comparative solution project: A comparison
+of upscaling techniques. SPE Reservoir Evaluation & Engineering , 4(04):308–317, 2001.
+Waleed Diab and Mohammed Al-Kobaisi. U-deeponet: U-net enhanced deep operator network for
+geologic carbon sequestration. arXiv preprint arXiv:2311.15288 , 2023.
+Rock Flow Dynamics. tnavigator, Dec 2023. URL https://rfdyn.com/ .
+Energy 2020. European Commission. In A strategy for competitive, sustainable and secure energy ,
+2010.
+Felix Feldmann, Birger Hagemann, Leonhard Ganzer, and Mikhail Panfilov. Numerical simulation
+of hydrodynamic and gas mixing processes in underground hydrogen storages. Environmental
+Earth Sciences , 75:1–15, 2016.
+Sebastian Hogeweg, Gion Strobel, and Birger Hagemann. Benchmark study for the simulation of
+underground hydrogen storage operations. Computational Geosciences , 26(6):1367–1378, 2022.
+Xin Ju, Franc ¸ois P Hamon, Gege Wen, Rayan Kanfar, Mauricio Araya-Polo, and Hamdi A Tchelepi.
+Learning co 2plume migration in faulted reservoirs with graph neural networks. arXiv preprint
+arXiv:2306.09648 , 2023.
+Maksim Lysyy, Martin Fernø, and Geir Ersland. Seasonal hydrogen storage in a depleted oil and
+gas field. International Journal of Hydrogen Energy , 46(49):25160–25174, 2021.
+Shaowen Mao, Bailian Chen, Mohamed Malki, Fangxuan Chen, Misael Morales, Zhiwei Ma, and
+Mohamed Mehana. Efficient prediction of hydrogen storage performance in depleted gas reser-
+voirs using machine learning. under review , 2024.
+GJ Moridis, MT Reagan, T Huang, and TA Blasingame. Practical aspects and implications of
+long-term co2 sequestration in saline aquifers using vertical wells. In SPE Latin America and
+Caribbean Petroleum Engineering Conference , pp. D021S011R001. SPE, 2023.
+Esuru Rita Okoroafor, Luiz Sampaio, Firdovsi Gasanzade, Yulman Perez Claro, Jimin D Zhou,
+Sarah D Saltzer, Sebastian Bauer, and Anthony R Kovscek. Intercomparison of numerical sim-
+ulation models for hydrogen storage in porous media using different codes. Energy Conversion
+and Management , 292:117409, 2023.
+Seyed Mostafa Jafari Raad, Yuri Leonenko, and Hassan Hassanzadeh. Hydrogen storage in saline
+aquifers: Opportunities and challenges. Renewable and Sustainable Energy Reviews , 168:112846,
+2022.
+R Tarkowski and B Uliasz-Misiak. Towards underground hydrogen storage: A review of barriers.
+Renewable and Sustainable Energy Reviews , 162:112451, 2022.
+United nations. Agreement, P. United Nations Treaty Collect , pp. 1–27, 2015.
+U.S. Energy Information Administration (EIA). Monthly Energy Review, 2022.
+4Published as a workshop paper at ”Tackling Climate Change with Machine Learning”, ICLR 2024
+U.S. Energy Information Administration (EIA). Renewable Energy Market Update-Outlook for
+2023 and 2024, 2023.
+Gege Wen, Zongyi Li, Kamyar Azizzadenesheli, Anima Anandkumar, and Sally M Benson. U-
+fno—an enhanced fourier neural operator-based deep-learning model for multiphase flow. Ad-
+vances in Water Resources , 163:104180, 2022.
+Gege Wen, Zongyi Li, Qirui Long, Kamyar Azizzadenesheli, Anima Anandkumar, and Sally M
+Benson. Real-time high-resolution co 2 geological storage prediction using nested fourier neural
+operators. Energy & Environmental Science , 16(4):1732–1741, 2023.
+Davood Zivar, Sunil Kumar, and Jalal Foroozesh. Underground hydrogen storage: A comprehensive
+review. International journal of hydrogen energy , 46(45):23436–23462, 2021.
+5Published as a workshop paper at ”Tackling Climate Change with Machine Learning”, ICLR 2024
+A T HE GOVERNING EQUATIONS OF STATE OF AN UHS SIMULATION
+The mass balance equations dictate the behavior of H 2, water and the cushion gas in the subsurface
+and are explicitly stated below.
+∂
+∂t
+X
+β∈{A, G}ϕSβρβXk
+β
+− ∇ ·
+X
+β∈{A, G}ρβXk
+βFβ
+=qkfork=H2, water, C
+where C is the cushion gas being used, A and G are the aqueous and gaseous phases respectively, ϕ
+is porosity, Sβis the saturation of phase β,ρβis the density of phase β,Xk
+βis the mass fraction of
+component kin phase β,qkis the source/sink term of component k, and Fβis the advective mass
+flux of phase β. The latter value is obtained from Darcy’s law:
+Fβ=−K·Krβ
+µβ·(∇Pβ−ρβG))
+where Kis the rock’s intrinsic permeability, Krβthe relative permeability of phase β,µβis the
+viscosity of phase β,Pβis the pressure of phase, and Gis the gravitation accelerator vector.
+B C OMPARING STATIC AND AUTO -REGRESSIVE MODELS USING U-NET
+In this appendix, we compare the performance of static and auto-regressive models using U-net, a
+popular image-to-image model. Our objective is to show brief experimental data that auto-regressive
+models do not accumulate a significant amount of error and that auto-regressive models can extrapo-
+late in time successfully. We trained four U-net models to predict H 2saturation or pressure following
+the static or the auto-regressive frameworks.
+B.1 D ATASET
+The dataset consists of the simplest setup for UHS. There are 1000 simulations, each with a unique
+porosity and permeability map with fixed operational parameters. The task is to predict the progres-
+sion of the H 2plume and pressure. Every simulation goes up to 10 years with a time output every
+2 months. Every 6 months, the simulation changes between injection and withdrawal. Each simula-
+tion is 2D in a 7680m x 7680m grid with the well always located in the middle. To approximate a
+2D behavior, the simulator gives the reservoir a thickness of 100m. Even though the simulation was
+produced with 256 resolution, the dataset’s resolution was downgraded to 64 resolution to speed up
+training in these preliminary results.
+The dataset is split into 4 parts as follows:
+• Training dataset: this dataset consists of 700 simulations with simulation time going up to
+7 years.
+• Validation set 1 (time extrapolation): this dataset consists of the 700 simulations used in
+the training set and using the leftover 3 years of simulation time.
+• Validation set 2 (geological extrapolation): this dataset consists of 150 simulations not used
+in the training set with simulation time going up to 7 years.
+• Validation set 3 (geological and time extrapolation): this dataset consists of the 150 simu-
+lations used in validation set 2 and using the leftover 3 years of simulation time.
+The leftover 150 simulations of the 1000 total simulations are reserved as a testset, but we will
+not do experimentation on them in this paper. For performance comparisons between static and
+auto-regressive models, we only use Validation set 2 .
+The input parameters are indicated in Table 1 and as follows. Distance to well: Since the well is
+always located in the middle, the distance to well channel is transformed so that values near the well
+are highest, and then normalized to values between 0 and 1. Our experiments show that this channel
+is very important for good predictions. Cycle stage: The channel is a broadcast of 1 if the time step
+being predicted is of injection, and -1 otherwise. Our experiments show that this channel is very
+important for good predictions.
+6Published as a workshop paper at ”Tackling Climate Change with Machine Learning”, ICLR 2024
+Table 1: The types of input the models take as well as their unit and transformation.
+Type of input Unit Transformation In static model? In auto-reg. model?
+Porosity / Mean 0, variance 1 Yes Yes
+Permeability mD Mean 0, variance 1 Yes Yes
+H2saturation / None NoYes (if part
+of output)
+Pressure 105Pa Mean 0, variance 1 NoYes (if part of
+output)
+Distance to well m See above Yes Yes
+Cycle indicator / See above Yes Yes
+Time 2 months Divided by 60 Yes No
+Table 2: Model training results.
+Model Training error Validation error
+H2saturation, auto-regressive 0.000237 0.000373
+H2saturation, static 0.00216 0.00269
+Pressure, auto-regressive 0.0224 0.0544
+Pressure, static 0.00873 0.0158
+B.2 U- NET ARCHITECTURES
+All four models share the same architecture. Each model has three down/upsampling layers, with
+initial embedding size of 64 and ReLU activation functions. The models for H 2saturation have a
+final sigmoid activation layer while pressure models have a final tanhshrink activation layer. The
+error function is mean absolute error (MAE) for all of them.
+B.3 T RAINING AND RESULTS
+Each model is trained with a batch size of 64. The initial learning rate is 0.0001, halved every 25
+epochs. Training is set for 200 epochs, but training is halted if 10 consecutive epochs pass with no
+improvements in training error. The model gets saved whenever a new average validation error is
+achieved, which is calculated every 10 epochs. This helps guarantee that the output model does not
+overfit. In static models, only Validation set 2 is used to decide whether to save the model as the
+other validation sets test extrapolation in time. We noticed in our experiments that static models are
+prone to overfitting, so we added L2 regularization. The models were trained on an A100 GPU with
+40GB of memory.
+See Table 2 for the results. Of note is that auto-regressive models perform significantly better when
+they are fed perfect information, which is the case during training. Auto-regressive models outper-
+form static models in validation error by 86.1%and71.0%in H 2saturation and pressure respec-
+tively. Nonetheless, as we will see, this gap in performance changes in long roll-outs.
+B.4 A CCUMULATION OF ERROR IN AUTO -REGRESSIVE MODELS
+To contrast error accumulation in auto-regressive models against static model errors, we will show
+three different types of plots. The first two types of plots are the progression of the models against
+time. The last type shows the difference in MAE of auto-regressive models and static models against
+time. We recognize that this comparison cannot definitively settle whether auto-regressive models
+can perform as well as static models despite error accumulation. Nonetheless, we believe that our
+results are promising and point to the need for further studies to create architectures or training
+schemes tailored to the auto-regressive setting. For this proposal, we will do this only for 5 randomly
+chosen simulations from the validation set. Nonetheless, we hope to do more thorough studies in
+the future. See Figure 2 for the results.
+7Published as a workshop paper at ”Tackling Climate Change with Machine Learning”, ICLR 2024
+(a) H 2auto-regressive’s MAE against time
+ (b) Pressure auto-regressive MAE against time
+(c) H 2static MAE against time
+ (d) Pressure static MAE against time
+(e) H 2, auto minus static MAE against time
+ (f) Pressure, auto minus static MAE against time
+Figure 2: Comparison between static and auto-regressive models. Five simulations were randomly
+selected from the validation set for the comparison. There are 42 time steps in each plot, where
+one time step is equivalent to 2 months. Figures 2a, 2c, 2e concern H 2saturation models, while
+Figures 2b, 2d, 2f concern pressure models. Figures 2e, 2f plot time steps against the MAE of the
+auto-regressive model minus the MAE of the static model.
+8Published as a workshop paper at ”Tackling Climate Change with Machine Learning”, ICLR 2024
+(a) H 2auto-regressive
+ (b) Pressure auto-regressive
+Figure 3: Demonstration of extrapolation in time of auto-regressive models. Figure 3a demonstrates
+this for the H 2model, while Figure 3b demonstrates it for the pressure model.
+Auto-regressive versus static: In Figures 2e, 2f we compare the numerical difference between
+auto-regressive models and static models directly by plotting time steps against the MAE of auto-
+regressive models minus the MAE of static models. If the values are negative, then the auto-
+regressive model had better performance than the static model. Thus, it is surprising to see an
+uneven result. Figure 2e shows that H 2auto-regressive models outperformed static models, while
+2f shows the opposite for pressure. Surprisingly, the difference for H2models widens as time steps
+increases despite the accumulation of error in auto-regressive models.
+H2models: Figure 2c hints that as time steps increases, the predictions get harder and harder to do
+for H 2static models. This might be because as the plume increases, the task to predict the intricacies
+of the plume get harder. Moreover, as time progresses, the hydrogen plume settles into progressively
+more static positions, thus making it harder for a static model to capture the fine differences between
+different time steps. This difficulty does not seem to arise in the auto-regressive model which have
+a weak upward trend when compared to the upward trend of the auto-regressive model.
+Pressure models: Figure 2d shows no upward trend on the pressure static model, but surpris-
+ingly, Figure 2b shows only a weak upward trend in the pressure auto-regressive model. This hints
+at the fact that accumulation of error is not significant enough to make the pressure static model
+significantly outperform the pressure auto-regressive model.
+Conclusions: This brief empirical result motivates the need for further study on the true difference
+in performance between auto-regressive models and static models in the setting of UHS. Static
+models seem to struggle when predicting large time steps. While auto-regressive models have much
+better training errors, it seems that this difference in performance disappears in long-term predictions
+probably due to the accumulation of error. Thus, there seems to be two possible directions for further
+study: either to make static models that do well in large time steps, or to make auto-regressive
+architectures or training schemes that accumulate less error. The latter has the additional operational
+benefits we mentioned in Section 3.
+B.5 E XTRAPOLATION OVER TIME IN AUTO -REGRESSIVE MODELS
+In this section, we provide brief empirical evidence that auto-regressive models can extrapolate in
+time successfully. Figure 3 shows the error of auto-regressive models up to time step 60. Since the
+last time step in the training set is 42, this shows that the models are able to do reasonably well when
+extrapolating in time. It is worth noting that Figure 3a seems to have a persistent upward trend,
+while this trend seems to be absent in Figure 3b. This behavior hints at the fact that H 2models have
+significantly different behaviors than pressure models. Their difference in unit magnitude, where H 2
+values range from 0 to 1 and pressure values range from negative to positive values, might provide
+an explanation.
+9Published as a workshop paper at ”Tackling Climate Change with Machine Learning”, ICLR 2024
+Figure 4: A 2D UHS simulation that captures the H 2plume and pressure as time progresses. H 2
+is injected and withdrawn in cycles of 6 months each, where the simulator further subdivides each
+6 month stage into 3 parts. By start of a stage, we mean 2 months after it has started as this is the
+earliest when the simulator saves data. By end of a stage, we mean 6 months after it has started. The
+simulation is carried out in a different type of mapping than in Figure 1. This figure illustrates the
+preferential paths that the hydrogen plume takes, making the plume go far from the well. Coarsening
+the image in the outer parts of the plume would delete the preferential paths of the plume. This can
+potentially obstruct the model learning the true behavior of the plume in these kinds of geological
+formations.
+C H IGH-RESOLUTION MODELING FOR H2PLUME DYNAMICS
+Geological formations are commonly characterized by two types of heterogeneity: fluvial and Gaus-
+sian fields. In Gaussian fields, properties such as porosity and permeability are distributed based on
+a normal (Gaussian) distribution. This distribution leads to gradual and predictable variations in
+these properties throughout the formation. Conversely, fluvial fields derive their heterogeneity from
+the sediment deposition processes of rivers and streams. This results in intricate patterns of sand
+bodies, silt, and clay, exhibiting a wide range of properties that reflect the dynamic interplay of
+water flow and sediment transport. Due to the complex nature of these deposits, fluvial fields often
+feature preferential flow paths with high porosity and permeability. An illustration of fluvial field
+heterogeneity is shown Figure 4.
+Compared to CO 2, H2exhibits lower viscosity and higher diffusivity in subsurface environments. In
+fluvial fields characterized by highly permeable channels, the footprint of an H 2plume can expand
+significantly, resulting in the gas plume front extending far from the injection well. The preliminary
+injection of cushion gas prior to H 2cycling can further enlarge the gas plume. To precisely model
+the plume’s shape, a high-resolution computational grid is necessary across a broad section of the
+simulation domain. The approach of applying drastic local grid refinement near the well, as com-
+monly done in previous geological carbon storage (GCS) projects, may not be adequate for UHS
+modeling, due to the distinct behavior of H 2in the subsurface.
+10

@@ -1,0 +1,766 @@
+Wildfire Forecasting with Satellite Images and Deep Generative Model
+Thai Nam Hoang1, 2, Sang T. Truong3, Chris Schmidt2
+1Beloit College
+2SSEC, University of Wisconsin, Madison
+3Stanford University
+thoang5@wisc.edu, sttruong@cs.stanford.edu, chris.schmidt@ssec.wisc.edu
+Abstract
+Wildfire prediction has been one of the most critical tasks that
+humanities want to thrive at. While it plays a vital role in pro-
+tecting human life, it is also difficult because of its stochastic
+and chaotic properties. We tackled the problem by interpret-
+ing a series of wildfire images into a video and used it to
+anticipate how the fire would behave in the future. However,
+creating video prediction models that account for the inher-
+ent uncertainty of the future is challenging. The bulk of pub-
+lished attempts are based on stochastic image-autoregressive
+recurrent networks, which raise various performance and ap-
+plication difficulties such as computational cost and limited
+efficiency on massive datasets. Another possibility is to use
+entirely latent temporal models that combine frame synthesis
+with temporal dynamics. However, due to design and training
+issues, no such model for stochastic video prediction has yet
+been proposed in the literature. This paper addresses these is-
+sues by introducing a novel stochastic temporal model whose
+dynamics are driven in a latent space. It naturally predicts
+video dynamics by allowing our lighter, more interpretable la-
+tent model to beat previous state-of-the-art approaches on the
+GOES-16 dataset. Results are compared using various bench-
+marking models.
+Introduction
+Weather forecasting has been an essential task of hu-
+mankind. Since 1975, the US Government has utilized the
+Geostationary Operational Environmental Satellite (GOES)
+to produce data that can enhance weather and climate mod-
+els, thus allowing for more precise and quicker weather
+forecasting and a better knowledge of long-term climate
+conditions (NASA 2015; Dunbar and Garner 2021). Using
+informative GOES data can help with wildfire prediction
+and detection, as current data has shown, more and more
+wildfires are happening. The increase in severity, frequency,
+and duration of wildfires brought on by anthropogenic cli-
+mate change and rising global temperatures has resulted in
+the emission of significant amounts of greenhouse gases,
+the destruction of forests and their related habitats, as well
+as damage to infrastructure and property (Marlon et al.
+2012; Abatzoglou and Williams 2016; Vil `a-Vilardell et al.
+2020).
+Copyright © 2023, Association for the Advancement of Artificial
+Intelligence (www.aaai.org). All rights reserved.Even though previous projects on fire detection have been
+done, most of them attempted to tackle segmentation
+(Khyrashchev and Larionov 2020; Pereira et al. 2021; Zhang
+et al. 2021). Although these methods may not serve the
+whole idea of wildfire prediction and prevention, they tend
+to recognize the fire once it has happened, and the larger it
+grows, the easier they can segment. Additionally, they have
+only tried to use traditional rasterized satellite images in
+which images are patched into traditional RGB 3-channel.
+Therefore they could not capture very early predictors of
+small wildfire.
+An advantage of GOES compared to other satellites is that
+GOES uses an Advanced Baseline Imager (ABI) that takes
+the image of the Earth with 16 spectral bands (two visi-
+ble channels, four near-infrared channels, and ten infrared
+channels) with a fast scan time of 12 slices per hour and
+a higher resolution of 0.5-2km (Schmit et al. 2017; NOAA
+2017b). We can utilize the robustness of ABI images to cre-
+ate a temporal-like dataset that serves as baseline data for
+making predictions.
+For the purpose of synthesizing images, generating adversar-
+ial networks (GANs) can be taken into account. The network
+introduces a generator and discriminator for unsupervised
+adversarial training, which indirectly “learns” the dataset
+through a minimax game (Goodfellow et al. 2014). The dis-
+criminator distinguishes genuine pictures from a training set
+from synthetic phony ones created by the generator. Starting
+from this idea, we can evolve to generating video frames
+instead of a single image. This idea can be classified as
+stochastic video prediction. However, it is a daunting task as
+most approaches are usually based on image-autoregressive
+models (Babaeizadeh et al. 2017; Denton and Fergus 2018;
+Weissenborn, T ¨ackstr ¨om, and Uszkoreit 2019), which were
+pixel-wise tackles built around Recurrent Neural Networks
+(RNNs) where each generated frame is fed back into the
+model to produce the next frame. The performance of this
+approach, however, relies heavily on the capability of its en-
+coders and decoders, as each generated frame has to be re-
+encoded in a latent space. Such techniques may have nega-
+tive impact on performance and have limited application, es-
+pecially when dealing with massive amounts of data (Gregor
+et al. 2018; Rubanova, Chen, and Duvenaud 2019).Another technique is to separate the dynamic of the state
+representations from the produced frames, which are de-
+coded separately from the latent space. This becomes
+computationally interesting when combined with a low-
+dimensional latent space and eliminating the relationship
+mentioned above between frame generation and temporal
+dynamics. Furthermore, such models are more interpretable
+than autoregressive models and may be used to create a com-
+plete representation of a system’s state, for example, in rein-
+forcement learning applications (Gregor et al. 2018). These
+State-Space Models (SSMs), however, are more challeng-
+ing to train since they need non-trivial inference systems
+(Krishnan, Shalit, and Sontag 2016) and careful dynamic
+model construction (Karl et al. 2016). As a result, most ef-
+fective SSMs are only assessed on minor or contrived toy
+tasks.
+In this paper, we present a novel stochastic dynamic model
+for video prediction that successfully harnesses the struc-
+tural and computational advantages of SSMs operating on
+low-dimensional latent spaces. Its dynamic component gov-
+erns the system’s temporal evolution through residual up-
+dates of the latent state, which are conditioned on learned
+stochastic variables. This approach enables us to execute
+an efficient training strategy and analyze complex high-
+dimensional data such as movies in an interpretable man-
+ner. This residual principle is related to recent breakthroughs
+in the relationship between residual networks and Ordi-
+nary Differential Equations (ODEs). As illustrated in our
+research, this interpretation offers additional possibilities,
+such as creating videos at varied frame rates. As evi-
+denced by comparisons with competing baselines on rele-
+vant benchmarks, the proposed technique outperforms ex-
+isting state-of-the-art models on the task of stochastic video
+prediction.
+Related Works
+Video synthesis encompasses a wide range of tasks,
+from super-resolution (Caballero et al. 2016), interpola-
+tion between distant frames (Jiang et al. 2017), generation
+(Tulyakov et al. 2017), video-to-video translation (Wang
+et al. 2018), and conditioning video prediction, which is the
+subject of this study.
+Deterministic models
+Beginning with RNN-based sequence generating models
+(Graves 2013), a variety of video prediction algorithms
+based on LSTMs (Long Short-Term Memory networks
+(Hochreiter and Schmidhuber 1997)) and its convoluted
+variation of ConvLSTMs (Shi et al. 2015) were developed
+(Srivastava, Mansimov, and Salakhutdinov 2015; De Bra-
+bandere et al. 2016; Wichers et al. 2018; Jin et al. 2020).
+Computer vision algorithms are indeed frequently aimed
+at high-dimensional video sequences and employ domain-
+specific approaches such as pixel-level transformations, and
+optical flow (Walker, Gupta, and Hebert 2015; Walker
+et al. 2016; V ondrick and Torralba 2017; Lu, Hirsch, and
+Scholkopf 2017; Fan, Zhu, and Yang 2019) to assist the
+generation of high-quality predicting outputs. Such algo-rithms are deterministic, limiting their efficacy by failing to
+produce high-quality long-term video frames (Babaeizadeh
+et al. 2017; Denton and Fergus 2018). Another approach is
+to apply adversarial losses (Goodfellow et al. 2014) in sharp-
+ening the resulting frames (V ondrick and Torralba 2017; Lu,
+Hirsch, and Scholkopf 2017; Wu et al. 2020). Adversarial
+losses, conversely, are famously challenging to train. As a
+result, mode collapse develops, restricting generational di-
+versity.
+Stochastic and image-autoregressive models
+Other methods manipulate pixel-level autoregressive gen-
+eration and concentrate on precise probability maximiza-
+tion (Oord et al. 2016; Kalchbrenner et al. 2016; Weis-
+senborn, T ¨ackstr ¨om, and Uszkoreit 2020). Flow normal-
+ization has also been studied using invertible transforma-
+tions between the observation and latent spaces (Kingma
+and Dhariwal 2018; Kumar et al. 2019). However, they ne-
+cessitate the careful construction of sophisticated tempo-
+ral production systems that manage high-dimensional data,
+resulting in exorbitant temporal generation costs. For the
+inference of low-dimensional latent state variables, Varia-
+tional Auto-encoders are utilized in more efficient continu-
+ous models (V AEs (Kingma and Welling 2013)). Stochastic
+variables were integrated into ConvLSTM in (Babaeizadeh
+et al. 2017). In order to sample random variables that are
+supplied to a predictor LSTM, both (He et al. 2018) and
+(Denton and Fergus 2018) utilized a prior LSTM condi-
+tioned on previously produced frames. Finally, (Lee et al.
+2018) merged the ConvLSTM with learned prior, sharpen-
+ing the resulting videos with an adversarial loss. However,
+all of these approaches are image-autoregressive in that they
+feed their predictions back into the latent space, connect-
+ing the frame synthesis and temporal models together and
+increasing their computing cost. (Minderer et al. 2019) of-
+fered an autoregressive VRNN model based on learned im-
+age key points rather than raw frames, which is similar to
+our approach. It is unknown to what degree this adjustment
+will alleviate the issues mentioned above, instead, we ad-
+dress these concerns by focusing on video dynamics and
+proposing a state-space model that operates on a limited la-
+tent space.
+State-space model
+Numerous latent state-space models, often trained using
+deep variational inference, have been suggested for se-
+quence modelization (Bayer and Osendorfer 2014; Fraccaro
+et al. 2016; Hafner et al. 2018). These initiatives, which em-
+ploy locally linear or RNN-based dynamics, are intended for
+low-dimensional data since learning such models on com-
+plex data is either difficult or it concentrates on control or
+planning tasks. On the other hand, the utterly latent tech-
+nique is the first to have been successfully applied to com-
+plex high-dimensional data such as videos due to a tem-
+poral model based on residual updates of its latent state.
+It is part of a recent development that connects differen-
+tial equations with neural networks (Lu et al. 2017; Long
+et al. 2017), leading to the integration of ODEs, which are
+seen as continuous residual networks (He et al. 2016). Onthe other hand, follow-ups and similar research are confined
+to low-dimensional data, prone to overfitting, and unable to
+manage stochasticity within a sequence. Another line of re-
+search examines stochastic differential equations using neu-
+ral networks (Ryder et al. 2018; De Brouwer et al. 2019),
+but is confined to continuous Brownian noise, whereas video
+generation also involves the modeling of punctual stochastic
+events.
+Methods
+We are concerned with the challenge of stochastic video pre-
+diction, attempting to forecast future frames of a video given
+the initial conditioning frames.
+Latent Residual Dynamic Model
+Letx0:T={x0, x1, . . . , x T−1}be a sequence of Tvideo
+frames, where each state xt∈Rb×m×nis a satellite im-
+age, where b= 10 is the number of band (”channel”), and
+m= 1500 andn= 2500 are the maximum image sizes. We
+want to generate xT:T+h, where his the forecasting hori-
+zon. One way to achieve this goal is to use a parameter-
+ized autoregressive model fθthat maps one state to another:
+xt+1=fθ(xt). We introduce latent variables ydriven by
+a dynamic temporal model to achieve this. Each frame xt
+is then solely generated from the corresponding latent state
+yt, making the dynamics independent from the previously
+generated frames.
+Based on (Franceschi et al. 2020), we suggest using a
+stochastic residual network to describe the transition func-
+tion of the latent dynamic of y. State yt+1is selected to
+be deterministically dependent on the preceding state yt
+and conditionally dependent on an auxiliary random vari-
+ablezt+1. These auxiliary variables represent the video dy-
+namics’ unpredictability. They have a learned factorized
+Gaussian prior that is solely affected by the initial state.
+The model is depicted in Figure (1) and defined as fol-
+lows:
+
+
+y1∼ N(0, I),
+zt+1∼ N(µθ(yt), σθ(yt)I),
+yt+1=yt+fθ(yt, zt+1),
+xt∼ G(gθ(yt))(1)
+where µθ, σθ, fθ, gθare neural nets, and G(gθ(yt))is a prob-
+ability distribution parameterized by gθ(yt). Note that y1is
+assumed to have a standard Gaussian prior and, in our V AE
+setting, will be inferred from conditioning frames for the
+prediction.
+The residual update rule is based on the Euler Differentiation
+Technique for differential equations. The state of the sys-
+temytis updated by its first-order movement, i.e, the resid-
+ualfθ(yt, zt+1). This fundamental idea makes our temporal
+model lighter and more interpretable than a normal RNN.
+Equation (1), on the other hand, differs from a discretized
+ODE because of the introduction of the stochastic discrete-
+time variable z. Nonetheless, we recommend that the Eulerx0 x1 x2 x3y0z1
+y1z2
+y2z3
+y3
+Figure 1: Generative model p
+x0z1
+y0 y1 y2z2
+y3z3
+x3 x1 x2
+Figure 2: Inference model q
+step size ∆talways be less than 1to get the temporal model
+closer to continuous dynamics. With1
+∆t∈Nto synchronize
+the step size with the video frame rate, the updated dynamics
+are as follows:
+yt+∆t=yt+ ∆t·fθ(yt, z⌊t⌋+1) (2)
+The auxiliary variable ztis held constant between two in-
+teger time steps in the formulation. It should be noted that
+during training or testing, a different ∆tmight be utilized.
+Due to the chance that each intermediate latent state may be
+decoded in the observation space, our model can generate
+videos at any frame rate. This capacity allows us to assess
+the learned dynamic’s quality while challenging its ODE in-
+spiration by evaluating its generalization to the continuous
+limit. For the rest of this section, we consider that ∆t= 1
+generalization to a smaller ∆tis straightforward as Figure
+(1) remains unchanged.
+Content Variable
+Some video sequence components, such as the terrain, can
+be static or include very slightly variations, such as mov-
+ing clouds. Since they may not affect the dynamics thus
+we model them separately, as (Denton and Birodkar 2017;
+Yingzhen and Mandt 2018) have done. We calculate a con-
+tent variable wthat remains constant throughout the gener-
+ation process and is passed into the frame generator alongwithyt. It allows the dynamical element of the model to
+solely concentrate on movement, making it lighter and in-
+creasing stability. Furthermore, it enables us to use archi-
+tectural developments in neural networks, such as skip con-
+nections (Ronneberger, Fischer, and Brox 2015), to generate
+more realistic frames.
+This content variable is a deterministic function cψof a fixed
+number k < T of frames x(k)
+c= (xi0, xi2, . . . , x ik):
+(
+w=cψ(x(k)
+c) =cψ(xi0, xi2, . . . , x ik)
+xt∼ G(gθ(yt))(3)
+During testing, x(k)
+c are the last kconditioning
+frames.
+In contrast to the dynamic variables yandz, this content
+variable has no probabilistic prior. As a result, the informa-
+tion it carries is only confined in the structure rather than in
+the loss function as well. To avoid leaking temporal informa-
+tion in w, we propose sampling these k frames evenly inside
+x0:Tduring training. We also built cψas a permutation in-
+variant function (Zaheer et al. 2017) composed of an MLP
+fed with the sum of each frame representation, as shown in
+(Santoro et al. 2017).
+Due to the absence of prior and architectural limitations, w
+can contain as much non-temporal information as feasible
+while still excluding dynamic information. On the contrary,
+yandzshould only include temporal information that w
+cannot capture owing to their high standard Gaussian pri-
+ors.
+This content variable may be deleted from our model, result-
+ing in a more traditional deep state-space model.
+Variational Inference and Architecture
+Following the generative model depicted in Figure (1), the
+conditional joint probability of the full model, given a con-
+tent variable w, can be written as:
+p(x0:T, z1:T, y0:T|w)
+=p(y0)TY
+t=1p(zt, yt|yt−1)TY
+t=0p(xt|yt, w)(4)
+with
+p(zt, yt|yt−1) =p(zt|yt−1)p(yt|yt−1, zt) (5)
+According to Equation (1), p(yt|yt−1, zt) =δ(yt−yt−1−
+fθ(yt−1, zt)), where δis the Dirac delta function centered at
+0. Hence in order to optimize the likelihood of the observed
+videos p(x0:T|w), we need to infer latent variables y0and
+z1:T. This can be done with deep variational inference using
+the inference model parameterized by ϕas shown in Figure
+(2), which comes down to considering a variational distribu-
+tionqZ,Ydefined and factorized as follows:qZ,Y≜q(z1:T, y0:T|x0:T, w)
+=q(y0|x0:k)TY
+t=1q(zt|x0:t)q(yt|yt−1, zt)
+=q(y0|x0:k)TY
+t=1q(zt|x0:t)p(yt|yt−1, zt)(6)
+where q(yt|yt−1, zt) =p(yt|yt−1, zt)begin the aforemen-
+tioned Dirac delta function. This yields the following evi-
+dence lower bound (ELBO):
+logp(x0:T|w)≥ L(x0:T;w, θ, ϕ )
+≜−DKL[q(y0|x0:k)∥p(y0)]
++E(˜z1:T,˜y0:T)∼qZ,YTX
+t=0logp(xt|˜yt, w)
+−TX
+t=1DKL[q(zt|x0:t)∥p(zt|˜yt−1](7)
+where DKLdenotes the Kullback-Leibler (KL) diver-
+gence.
+The sum of KL divergence expectations implies consider-
+ing the full past sequence of inferred states for each time
+step due to the dependence on conditionally determinis-
+tic variable y1:T. Optimizing L(x0:T;w, θ, ψ )with respect
+to model parameter θand variational parameters ϕcan
+be done efficiently by sampling a single full sequence of
+states from qZ,Yper example, and computing gradients by
+backpropagation (Rumelhart, Hinton, and Williams 1986),
+troughing all inferred variables, using reparameterization
+trick (Kingma and Welling 2013). We classically choose
+q(y0|x0:k)andq(zt|x0:t)to be factorized Gaussian so that
+all KL divergences can be computed analytically.
+We include an L2regularization term on residual fθapplied
+toy, which stabilizes the temporal dynamics of the residual
+network, as noted by (Behrmann et al. 2019; de B ´ezenac,
+Ayed, and Gallinari 2019; Rousseau, Drumetz, and Fablet
+2019). Given a set of videos X, the complete optimization
+problem, where Lis defined as in Equation (7), is then given
+as:
+arg max
+θ,ϕ,ψX
+x∈X
+Ex(k)
+cL(x0:T;cψ(x(k)
+c), θ, ϕ)
+−λE(˜z1:T,˜y0:T)∼qZ,YTX
+t=1∥fθ(yt−1,zt)∥2(8)
+The first latent variables are inferred with the conditioning
+frames and are then predicted with the dynamic model. In
+contrast, each frame of the input sequence is considered forinference during training, which is done as follows. Firstly,
+each frame xtis independently encoded into a vector-valued
+representation ˜xt, with ˜xt=hψ(xt).y0is then inferred us-
+ing an MLP on the first kencoded frames ˜x0:k. Each ztis
+inferred in a feed-forward fashion with an LSTM on the en-
+coded frames. Inferring zthis way experimentally performs
+better than, e.g., inferring them from the whole sequence
+x0:T; we hypothesize that this follows from the fact that this
+filtering scheme is closer to the prediction setting, where the
+future is not available.
+Experiments
+Training
+In this section, we qualitatively investigate the dynamics and
+latent space learned by our model.
+The stochastic nature and originality of the video predic-
+tion task make it challenging to evaluate ordinarily (Lee
+et al. 2018): because the task is stochastic, comparing the
+ground truth and a predicted video is insufficient. We, there-
+fore, follow the standard strategy (Denton and Fergus 2018;
+Lee et al. 2018), which consists of sampling a specific num-
+ber (here, 100 samples) of probable futures from the tested
+model and reporting the highest performing sample against
+the genuine video for each test sequence. We show this
+disparity for two generally used metrics that are computed
+frame-by-frame and averaged over time: Peak Signal-to-
+Noise Ratio (PSNR, higher is better ) and Structured Simi-
+larity (SSIM, higher is better ) (Hor ´e and Ziou 2010). PSNR
+penalizes inaccuracies in projected dynamics since it is a
+pixel-wise measurement derived from L2distance, but it
+may also favor fuzzy predictions. To avoid this problem,
+SSIM compares local frame patches, although this results in
+some dynamics information being lost. We considered these
+two measures to be complementary since they capture dis-
+tinct sizes and modalities.
+We present experimental results on the GOES data that is
+briefly presented in the following section. We also com-
+pare our model against SVG (Denton and Fergus 2018) and
+StructVRNN (Minderer et al. 2019). SVG has the most simi-
+lar training and architecture among the models. To make fair
+comparisons using this technique, we employed the same
+neural architecture as SVG for our encoders and decoders.
+Unless otherwise indicated, our model is evaluated with the
+same ∆tas in training, as shown in Equation (2).
+Dataset
+We used GOES-16 CONUS (ABI-L1b-RadC) infrared ABI
+spectral bands (band 7 - 16) (NASA 2017), specifically at
+night from 22:00:00 to 5:00:00 CST (UTC-5) or 5:00:00 to
+12:00:00 UTC. The dataset can be pulled directly from AWS
+s3 (AWS 2022). We set the data from day 80 to day 135 of
+the year 2022, which is 56 days or eight weeks. For each
+band, there will be a total of 4704 slices.
+Preprocessing
+Initially, each slice will be 1500×2500 . Since a single slice
+sizes around 3-4Mb, we decided to crop to 256×256to,Listing 1 Normalization
+1def normalization(crop: da.Array) -> da.
+Array:
+2 stack_len, _, _ = crop.shape
+3
+4 dif_max = da.nanmax(crop, axis=(1,
+2))
+5 dif_min = da.nanmin(crop, axis=(1,
+2))
+6
+7 new_crop_stack = []
+8 for iin range (stack_len):
+9 curr = crop[i]
+10 new_crop_stack.append((curr -
+dif_min[i]) / (dif_max[i] -
+dif_min[i]))
+11
+12 new_crop_stack = da.stack(
+new_crop_stack, axis=0)
+13 return new_crop_stack
+first of all, cut down the size and, as it follows, speed up
+the calculation. Doing so will center our focus on the Mid
+and Southern regions of the US where wildfires typically
+erupt during spring and summer. Each pixel represents the
+value of radiance of brightness in each band. Firstly, we have
+to convert the other band’s radiance temperature into band
+7’s radiance temperature. We then calculate its brightness
+temperature by applying the Planck function, and the spec-
+tral bandpass correction into radiance temperature (NOAA
+2017a):
+BT=fk2
+log
+fk1
+Lv+ 1−bc1
+×1
+bc2(9)
+where Lvis the radiance, fk1andfk2are coefficients of
+the Planck function derived from physical constants (i.e., the
+speed of light, the Boltzmann constant, and the Planck con-
+stant) and the bandpass central wavenumber, and bc1and
+bc2are the spectral response function offset and scale cor-
+rection terms. These four coefficients are included in the
+product metadata as variables: planck_fk1 ,planck_fk2 ,
+planck_bc1 , and planck_bc2 (NOAA 2019).
+Next, we will calculate the radiance of band bin band 7
+(NOAA 2017a):
+Rad binb7=fk1
+exp
+fk2
+BT×bc2+bc1
+−1(10)
+After that, we normalized every band into the domain of
+[0,1]to evenly cut down the size. Notice here we used
+dask.array to store chunks instead of numpy , which can
+cause bottleneck while calculating the data (1):
+We treated each band slice as a single channel for our
+image. Therefore a single ”image” can have 10 ”chan-
+nels.” To explore the data’s stochastic characteristics, weFigure 3: Ground truth (conditioning frames) and generated frames from our model.
+Figure 4: Band 7 and crop region
+can stack them to create a ”video” with 12 frames in to-
+talvideo.shape = (12, 10, 256, 256) . Finally,
+videos are compressed as .npz files to reduce the size and
+increase the flexibility in storing.
+Results and Discussion
+We trained the model on our GOES-16 dataset. The dataset
+is highly stochastic as the cloud can change its direction any-
+time. We set the size of both the state-space variable yand
+auxiliary variable zto20. For the Euler step shown in Equa-
+tion (2), we set it to 2. We used 2conditioning frames to gen-
+erate the next hframes, as shown in Figure (5). Our method
+averages 40.43on PSNR and 0.934on SSIM. As discussed
+by (Villegas et al. 2017), expanding network capacity can
+enhance the performance of such variational models. How-
+ever, this is outside the scope of our work.
+Here, we challenge the ODE inspiration of our model. Equa-
+tion (2) amounts to learning a residual function fz⌊t⌋+1over
+t∈[⌊t⌋,⌊t⌋+ 1]. We aim to test whether this dynamic is
+close to its continuous generalization:
+Figure 5: PSNR and SSIM scores with respect to tthe
+dataset.
+Figure 6: Loss vs. epochs over timeFigure 7: Average negative PSNR vs. epochs over time
+dy
+dx=fz⌊t⌋+1(y) (11)
+which is a piecewise ODE. To this end, we refine this Eu-
+ler approximation during testing by using∆t
+2; if this main-
+tains the performance of our model, then the dynamic rule of
+the latter is close to the piecewise ODE, as shown in Figure
+(5).
+Conclusion and Future Works
+We provide a unique dynamic latent model for stochastic
+video prediction that decouples frame synthesis and dynam-
+ics, unlike previous image-autoregressive models. This tem-
+poral model is based on residual updates of a tiny latent
+state and has outperformed RNN-based models. This con-
+fers numerous desired qualities for our strategy, including
+temporal economy and latent space interpretability. We em-
+pirically illustrate the proposed model’s performance and
+benefits, which beats previous state-of-the-art approaches
+for stochastic video prediction. To the best of our knowl-
+edge, this is the first paper to offer a latent dynamic model
+that scales for video prediction. The suggested model is
+particularly innovative compared to current work on neu-
+ral networks and ODEs for temporal modeling; it is the first
+residual model to scale to complex stochastic data such as
+videos.
+This study also verifies the model’s effectiveness on wild-
+fire prediction where high sensitivity is required and early
+prediction could be obtained. Experiments showed that the
+proposed architecture achieved relatively competitive recon-
+structed accuracy and reliable recognition. However, there
+might still be limitations in terms of comprehensive wildfire
+prediction even though fire regions could be synthesized in
+precise detail. Besides, various weather conditions such as
+fog and snow may also hinder data capability.
+The major principles of our method (state-space, residual
+dynamic, static content variable) may be applied to differ-ent models. We will supply a large amount of data for fu-
+ture studies, from GOES-16 (East) and GOES-17 (West),
+to increase variety in wildfire circumstances. Furthermore,
+instead of employing ten bands, we may enhance our gen-
+eral characteristic of picture slices by mixing all visible and
+near-infrared bands with infrared to produce a full 16-band
+image. This gives the output a more distinct and realistic
+appearance, therefore the produced frames will have more
+informative values.
+Acknowledgements
+We would like to thank all members, including students
+and staffs of 2022 Undergraduate Student Programmer at
+SSEC for helful discussions and comments, as well as
+William Roberts for his help in processing the GOES-16
+dataset.
+References
+Abatzoglou, J. T.; and Williams, A. P. 2016. Impact of an-
+thropogenic climate change on wildfire across western US
+forests. Proceedings of the National Academy of Sciences .
+AWS. 2022. AWS S3 Explorer NOAA GOES-16. ”Ac-
+cessed: 2022-18-07”.
+Babaeizadeh, M.; Finn, C.; Erhan, D.; Campbell, R. H.; and
+Levine, S. 2017. Stochastic Variational Video Prediction.
+Bayer, J.; and Osendorfer, C. 2014. Learning Stochastic Re-
+current Networks.
+Behrmann, J.; Grathwohl, W.; Chen, R. T. Q.; Duvenaud,
+D.; and Jacobsen, J.-H. 2019. Invertible Residual Networks.
+In Chaudhuri, K.; and Salakhutdinov, R., eds., Proceedings
+of the 36th International Conference on Machine Learning ,
+volume 97 of Proceedings of Machine Learning Research ,
+573–582. PMLR.
+Caballero, J.; Ledig, C.; Aitken, A.; Acosta, A.; Totz, J.;
+Wang, Z.; and Shi, W. 2016. Real-Time Video Super-
+Resolution with Spatio-Temporal Networks and Motion
+Compensation.
+De Brabandere, B.; Jia, X.; Tuytelaars, T.; and Van Gool, L.
+2016. Dynamic Filter Networks.
+De Brouwer, E.; Simm, J.; Arany, A.; and Moreau, Y . 2019.
+GRU-ODE-Bayes: Continuous modeling of sporadically-
+observed time series.
+de B ´ezenac, E.; Ayed, I.; and Gallinari, P. 2019. Optimal
+Unsupervised Domain Translation.
+Denton, E.; and Fergus, R. 2018. Stochastic Video Genera-
+tion with a Learned Prior.
+Denton, E. L.; and Birodkar, v. 2017. Unsupervised Learn-
+ing of Disentangled Representations from Video. In Guyon,
+I.; Luxburg, U. V .; Bengio, S.; Wallach, H.; Fergus, R.; Vish-
+wanathan, S.; and Garnett, R., eds., Advances in Neural
+Information Processing Systems , volume 30. Curran Asso-
+ciates, Inc.
+Dunbar, B.; and Garner, R. 2021. GOES Overview and His-
+tory.
+Fan, H.; Zhu, L.; and Yang, Y . 2019. Cubic LSTMs for
+Video Prediction.Fraccaro, M.; Sønderby, S. K.; Paquet, U.; and Winther, O.
+2016. Sequential Neural Models with Stochastic Layers.
+Franceschi, J.-Y .; Delasalles, E.; Chen, M.; Lamprier, S.; and
+Gallinari, P. 2020. Stochastic Latent Residual Video Predic-
+tion. In Proceedings of the 37th International Conference
+on Machine Learning . arXiv.
+Goodfellow, I. J.; Pouget-Abadie, J.; Mirza, M.; Xu, B.;
+Warde-Farley, D.; Ozair, S.; Courville, A.; and Bengio, Y .
+2014. Generative Adversarial Networks.
+Graves, A. 2013. Generating Sequences With Recurrent
+Neural Networks.
+Gregor, K.; Papamakarios, G.; Besse, F.; Buesing, L.; and
+Weber, T. 2018. Temporal Difference Variational Auto-
+Encoder.
+Hafner, D.; Lillicrap, T.; Fischer, I.; Villegas, R.; Ha, D.;
+Lee, H.; and Davidson, J. 2018. Learning Latent Dynamics
+for Planning from Pixels.
+He, J.; Lehrmann, A.; Marino, J.; Mori, G.; and Sigal, L.
+2018. Probabilistic Video Generation using Holistic At-
+tribute Control.
+He, K.; Zhang, X.; Ren, S.; and Sun, J. 2016. Deep Residual
+Learning for Image Recognition. In 2016 IEEE Conference
+on Computer Vision and Pattern Recognition (CVPR) , 770–
+778.
+Hochreiter, S.; and Schmidhuber, J. 1997. Long Short-Term
+Memory. Neural Computation , 9.
+Hor´e, A.; and Ziou, D. 2010. Image Quality Metrics: PSNR
+vs. SSIM. In 2010 20th International Conference on Pattern
+Recognition , 2366–2369.
+Jiang, H.; Sun, D.; Jampani, V .; Yang, M.-H.; Learned-
+Miller, E.; and Kautz, J. 2017. Super SloMo: High Quality
+Estimation of Multiple Intermediate Frames for Video Inter-
+polation. 2018 IEEE Conference on Computer Vision and
+Pattern Recognition (CVPR) .
+Jin, B.; Hu, Y .; Tang, Q.; Niu, J.; Shi, Z.; Han, Y .; and Li, X.
+2020. Exploring Spatial-Temporal Multi-Frequency Analy-
+sis for High-Fidelity and Temporal-Consistency Video Pre-
+diction.
+Kalchbrenner, N.; Oord, A. v. d.; Simonyan, K.; Danihelka,
+I.; Vinyals, O.; Graves, A.; and Kavukcuoglu, K. 2016.
+Video Pixel Networks.
+Karl, M.; Soelch, M.; Bayer, J.; and van der Smagt, P. 2016.
+Deep Variational Bayes Filters: Unsupervised Learning of
+State Space Models from Raw Data.
+Khyrashchev, V .; and Larionov, R. 2020. Wildfire seg-
+mentation on satellite images using Deep Learning. 2020
+Moscow Workshop on Electronic and Networking Technolo-
+gies (MWENT) .
+Kingma, D. P.; and Dhariwal, P. 2018. Glow: Generative
+Flow with Invertible 1x1 Convolutions. In Bengio, S.; Wal-
+lach, H.; Larochelle, H.; Grauman, K.; Cesa-Bianchi, N.;
+and Garnett, R., eds., Advances in Neural Information Pro-
+cessing Systems , volume 31. Curran Associates, Inc.
+Kingma, D. P.; and Welling, M. 2013. Auto-Encoding Vari-
+ational Bayes.Krishnan, R. G.; Shalit, U.; and Sontag, D. 2016. Structured
+Inference Networks for Nonlinear State Space Models.
+Kumar, M.; Babaeizadeh, M.; Erhan, D.; Finn, C.; Levine,
+S.; Dinh, L.; and Kingma, D. 2019. VideoFlow: A Condi-
+tional Flow-Based Model for Stochastic Video Generation.
+Lee, A. X.; Zhang, R.; Ebert, F.; Abbeel, P.; Finn, C.; and
+Levine, S. 2018. Stochastic Adversarial Video Prediction.
+Long, Z.; Lu, Y .; Ma, X.; and Dong, B. 2017. PDE-Net:
+Learning PDEs from Data.
+Lu, C.; Hirsch, M.; and Scholkopf, B. 2017. Flexible spatio-
+temporal networks for video prediction. 2017 IEEE Confer-
+ence on Computer Vision and Pattern Recognition (CVPR) .
+Lu, Y .; Zhong, A.; Li, Q.; and Dong, B. 2017. Beyond Finite
+Layer Neural Networks: Bridging Deep Architectures and
+Numerical Differential Equations.
+Marlon, J. R.; Bartlein, P. J.; Gavin, D. G.; Long, C. J.; An-
+derson, R. S.; Briles, C. E.; Brown, K. J.; Colombaroli, D.;
+Hallett, D. J.; Power, M. J.; Scharf, E. A.; and Walsh, M. K.
+2012. Long-term perspective on wildfires in the Western
+USA. Proceedings of the National Academy of Sciences .
+Minderer, M.; Sun, C.; Villegas, R.; Cole, F.; Murphy, K.;
+and Lee, H. 2019. Unsupervised Learning of Object Struc-
+ture and Dynamics from Videos.
+NASA. 2015. GOES Environmental Satellites.
+NASA. 2017. ABI Bands Quick Information Guides. ”Ac-
+cessed: 2022-18-07”.
+NOAA. 2017a. GOES-R Calibration Working Group and
+GOES-R Series Program, (2017): NOAA GOES-R Series
+Advanced Baseline Imager (ABI) Level 1b Radiances.
+NOAA. 2017b. Instruments: Advanced Baseline Imager
+(ABI).
+NOAA. 2019. GOES R Series Product Definition and Users’
+Guide.
+Oord, A. v. d.; Kalchbrenner, N.; Vinyals, O.; Espeholt, L.;
+Graves, A.; and Kavukcuoglu, K. 2016. Conditional Image
+Generation with PixelCNN Decoders.
+Pereira, G. H. d. A.; Fusioka, A. M.; Nassu, B. T.; and
+Minetto, R. 2021. Active fire detection in Landsat-8 im-
+agery: A large-scale dataset and a deep-learning study. IS-
+PRS Journal of Photogrammetry and Remote Sensing , 178:
+171–186.
+Ronneberger, O.; Fischer, P.; and Brox, T. 2015. U-Net:
+Convolutional Networks for Biomedical Image Segmenta-
+tion.
+Rousseau, F.; Drumetz, L.; and Fablet, R. 2019. Residual
+Networks as Flows of Diffeomorphisms.
+Rubanova, Y .; Chen, R. T. Q.; and Duvenaud, D. 2019. La-
+tent ODEs for Irregularly-Sampled Time Series.
+Rumelhart, D. E.; Hinton, G. E.; and Williams, R. J. 1986.
+Learning representations by back-propagating errors.
+Ryder, T.; Golightly, A.; McGough, A. S.; and Prangle, D.
+2018. Black-box Variational Inference for Stochastic Differ-
+ential Equations.Santoro, A.; Raposo, D.; Barrett, D. G. T.; Malinowski, M.;
+Pascanu, R.; Battaglia, P.; and Lillicrap, T. 2017. A simple
+neural network module for relational reasoning.
+Schmit, T. J.; Griffith, P.; Gunshor, M. M.; Daniels, J. M.;
+Goodman, S. J.; and Leblair, W. J. 2017. A Closer Look at
+the ABI on the GOES-R Series. Bulletin of the American
+Meteorological Society , 98.
+Shi, X.; Chen, Z.; Wang, H.; Yeung, D.-Y .; Wong, W.-k.;
+and Woo, W.-c. 2015. Convolutional LSTM Network: A
+Machine Learning Approach for Precipitation Nowcasting.
+Srivastava, N.; Mansimov, E.; and Salakhutdinov, R. 2015.
+Unsupervised Learning of Video Representations using
+LSTMs.
+Tulyakov, S.; Liu, M.-Y .; Yang, X.; and Kautz, J. 2017.
+MoCoGAN: Decomposing Motion and Content for Video
+Generation.
+Villegas, R.; Yang, J.; Hong, S.; Lin, X.; and Lee, H. 2017.
+Decomposing Motion and Content for Natural Video Se-
+quence Prediction.
+Vil`a-Vilardell, L.; Keeton, W. S.; Thom, D.; Gyeltshen, C.;
+Tshering, K.; and Gratzer, G. 2020. Climate change effects
+on wildfire hazards in the wildland-urban-interface – blue
+pine forests of Bhutan. Forest Ecology and Management ,
+461.
+V ondrick, C.; and Torralba, A. 2017. Generating the future
+with Adversarial Transformers. 2017 IEEE Conference on
+Computer Vision and Pattern Recognition (CVPR) .
+Walker, J.; Doersch, C.; Gupta, A.; and Hebert, M. 2016.
+An Uncertain Future: Forecasting from Static Images using
+Variational Autoencoders.
+Walker, J.; Gupta, A.; and Hebert, M. 2015. Dense Optical
+Flow Prediction from a Static Image.
+Wang, T.-C.; Liu, M.-Y .; Zhu, J.-Y .; Liu, G.; Tao, A.; Kautz,
+J.; and Catanzaro, B. 2018. Video-to-Video Synthesis. In
+Bengio, S.; Wallach, H.; Larochelle, H.; Grauman, K.; Cesa-
+Bianchi, N.; and Garnett, R., eds., Advances in Neural Infor-
+mation Processing Systems , volume 31. Curran Associates,
+Inc.
+Weissenborn, D.; T ¨ackstr ¨om, O.; and Uszkoreit, J. 2019.
+Scaling Autoregressive Video Models.
+Weissenborn, D.; T ¨ackstr ¨om, O.; and Uszkoreit, J. 2020.
+Scaling Autoregressive Video Models. In International Con-
+ference on Learning Representations .
+Wichers, N.; Villegas, R.; Erhan, D.; and Lee, H. 2018. Hi-
+erarchical Long-term Video Prediction without Supervision.
+Wu, Y .; Gao, R.; Park, J.; and Chen, Q. 2020. Future Video
+Synthesis with Object Motion Prediction.
+Yingzhen, L.; and Mandt, S. 2018. Disentangled Sequential
+Autoencoder. In Proceedings of the 35th International Con-
+ference on Machine Learning , volume 80 of Proceedings of
+Machine Learning Research , 5670–5679. PMLR.
+Zaheer, M.; Kottur, S.; Ravanbakhsh, S.; Poczos, B.;
+Salakhutdinov, R.; and Smola, A. 2017. Deep Sets.
+Zhang, J.; Zhu, H.; Wang, P.; and Ling, X. 2021. Att Squeeze
+U-Net: A lightweight network for forest fire detection and
+recognition. IEEE Access , 9.

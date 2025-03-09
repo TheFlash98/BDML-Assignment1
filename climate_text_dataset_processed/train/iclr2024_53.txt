@@ -1,0 +1,493 @@
+Published as a workshop paper at ”Tackling Climate Change with Machine Learning”, ICLR 2024
+PROBABILISTIC ELECTRICITY PRICE FORECASTING
+THROUGH CONFORMALIZED DEEP ENSEMBLES
+Alessandro Brusaferri∗, Andrea Ballarino
+National Research Council of Italy, STIIMA Institute, Milan, Italy
+{alessandro.brusaferri,andrea.ballarino }@stiima.cnr.it
+Luigi Grossi, Fabrizio Laurini
+University of Parma, Parma, Italy
+{luigi.grossi,fabrizio.laurini }@unipr.it
+ABSTRACT
+Probabilistic electricity price forecasting (PEPF) is subject of increasing interest,
+following the demand for proper prediction uncertainty quantification, to support
+the operation in complex power markets with increasing share of renewable gen-
+eration. Distributional neural networks ensembles (DE) have been recently shown
+to outperform state of the art PEPF benchmarks. Still, they require reliability
+improvements, as fail to pass the coverage tests at various steps on the prediction
+horizon. In this work, we tackle this issue by extending the DE framework with the
+introduction of a Conformal Prediction based technique. Experiments have been
+conducted on multiple market regions, achieving day-ahead probabilistic forecasts
+with better hourly coverage.
+1 I NTRODUCTION
+The availability of trustworthy day-ahead electricity price forecasting (EPF) systems is crucial for
+the effective operation in modern power markets. Beside being exploited by the companies to antic-
+ipate price movements and perform bidding strategies, EPF is a key enabler of further high-stakes
+decision-making stages, such as optimal generation management (Fusco et al., 2023), energy-aware
+planning and scheduling (Ramin et al., 2018), etc. In fact, EPF is a complex task exhibiting quite
+peculiar characteristics as compared to other traded commodities (Ciarreta et al., 2022). Latent non-
+linear relationships to conditioning variables (such as load, generation and weather conditions) are
+typically involved, including meshed short and long-term seasonalities, as well as sensible volatil-
+ity, usually orders of magnitude larger than in other utility tradings (Wagner et al., 2022). Over the
+years, a broad set of approaches have been investigated to perform EPF, from traditional statistical
+models to machine learning techniques. More detailed descriptions and comparisons can be found
+in (Weron, 2014), (Lago et al., 2021) and references therein.
+An increasing research interest is being devoted to neural network (NN) based probabilistic EPF
+(PEPF) (see e.g. Mashlakov et al. (2021) and references therein). Specifically, PEPF is aimed to
+characterize the underlying model uncertainty in the target space (Nowotarski & Weron, 2018). This
+is essential for supporting the operation inside electricity markets of increasing volatility (Brusaferri
+et al., 2019). Critical deviations have been injected by the repercussions of the steep gas price
+variations on the power plants. The increasing penetration of renewable sources in the generation
+mix, fundamental to contrast the global warming, is introducing further short-term price fluctuations
+to be promptly tackled. Additional variables such as the CO 2certificate prices interact with the
+power price features (Madadkhani & Ikonnikova, 2024). Ensembles of distributional NNs (i.e.,
+Deep Ensembles) parameterizing flexible Johnson’s SU distributions have been recently proposed
+for this purpose, outperforming the state of the art PEPF benchmarks including both conventional
+Gaussian forms and the widely applied quantile regression on NN ensembles (Marcjasz et al., 2023).
+Despite the significant performances achieved, such models still require calibration improvements.
+Indeed, they fail to pass the coverage tests at various hours on the prediction horizon.
+∗Corresponding author
+1Published as a workshop paper at ”Tackling Climate Change with Machine Learning”, ICLR 2024
+Figure 1: Hourly Kupiec test: (top)-PI 0.8; (bottom)-PI 0.6
+In this work, we aim to tackle this open issue by extending the Deep Ensembles framework with the
+introduction of a Conformal Prediction (CP) based technique. Specifically, we target the approxi-
+mation of the feature conditioned day-ahead prices distribution through a discrete set of quantiles
+(e.g., deciles), coupled in prediction intervals (PIs) of increasing coverage degree around the me-
+dian. To this end, we leverage the asymmetric CP formulation proposed by (Romano et al., 2019)
+for regression tasks, developed through a daily recalibrated multi-horizon time series setup. Overall,
+this enhance local PIs reliability (i.e., sample-wise efficiency) beyond the CP marginal coverage.
+2 M ETHODS
+The proposed PEPF approach consists of the following major ingredients. Each ensemble compo-
+nent is designed to provide day-ahead price predictions over the whole horizon h∈ {t+1, ..., t+H}
+given the input conditioning set xtat time t. The latter can involve both past values of the target
+series and a set of exogenous variables. Considering the observations reported in (Lago et al., 2021),
+we employ feed-forward maps (labelled DNN hereafter), leaving a further investigation of alterna-
+tive architectures for future extensions. To first estimate the conditional quantiles to be calibrated,
+we exploit both a quantile regression setup and samples from distributional NNs. In principle, the
+former enables flexible non-parametric approximations, but suffers potential quantiles overfitting
+and overconfidence in the extremes under finite date regimes (Nowotarski & Weron, 2018). The
+latter can mitigate such issues by leveraging the parametric form, but requires a careful selection of
+the density for each task at hand. Therefore, a dedicated experimental comparison is deemed useful
+to assess their capabilities in practical conditions. The output layers of the NNs and the loss func-
+tions are specialized accordingly, i.e. providing the predicted quantiles averaged by the pinball score
+in the former, parameterizing the target distribution then passed through a negative log-likelihood
+2Published as a workshop paper at ”Tackling Climate Change with Machine Learning”, ICLR 2024
+in the latter. A uniform vincentization technique is exploited for both cases to aggregate the en-
+semble since it typically leads to sharper bounds than the alternative probability aggregation, beside
+marginalizing the different local minimizers reached by the training algorithm (Wang et al., 2023).
+Moreover, a post-hoc sorting operator has been included before combination to achieve conditional
+quantile non-crossing. The quantiles predicted by the DE are then incrementally conformalized over
+the test set following a daily retraining (i.e., recalibration). Details about how NNs recalibration is
+commonly employed in EPF can be found in (Lago et al., 2021). The whole procedure is first
+executed across a sub-sequence of samples close to the first test date to acquire the initial bag of
+calibration scores. It then progresses in a rolling window fashion. To compute the scores and the
+conformalized quantiles, we employ the asymmetric technique introduced by (Romano et al., 2019),
+which can be easily adapted to the multi-horizon forecasting setup proposed in (Stankeviciute et al.,
+2021) as Ch
+1−α(xt) = [qh
+α/2(xt)−lh
+1−α/2(Ict), qh
+1−α/2(xt) +uh
+1−α/2(Ict)], where Ch
+1−α(xt)rep-
+resents (1- α)-level PI at prediction step hgiven the input features. lh
+1−α/2anduh
+1−α/2depict the
+(1-α/2)-th empirical quantiles of qh
+α/2(xi)−yh
+i:i∈ Ictandyh
+i−qh
+1−α/2(xi) :i∈ Ictrespectively,
+computed on the calibration subset Ictfor test time t.{qh
+γ(xj)}γ∈Γ, qh
+γ(xj)≤qh
+γ′(xj)∀γ < γ′
+represent the discrete set Γof the quantiles predicted by the DE, while yh
+tare the true values. The
+PI bounds at specific coverage levels are straight derived as the predicted quantiles in the set Γare
+defined by balanced pairs (e.g., distribution deciles, percentiles, etc).
+The motivations behind such methodological choices are summarized hereafter. First of all, more
+flexibility in compensating the upper/lower bands is deemed useful for addressing the complex
+shapes typically involved in PEPF applications, such as sensible heteroskedasticity, skewness and
+fat tails (Marcjasz et al., 2023). Secondly, while in principle CP yields marginal coverage despite
+the accuracy of the underlying model, the latter impacts the local reliability of the prediction inter-
+vals (Angelopoulos & Bates, 2022). Hence, updating the DE by exploiting the last observations can
+support probabilistic performances beside point accuracy. While more computationally demand-
+ing, online DE retraining is feasible for PEPF applications. For instance, it is commonly employed
+within the widely adopted Quantile Regression Averaging (QRA) method. The investigation of con-
+formalized quantile regression methods without DE recalibration (as e.g. in Jensen et al. (2022))
+and further on-line adaptive CP wrappers (as e.g., Zaffran et al. (2022)) is left to future works.
+3 E XPERIMENTS AND RESULTS
+As case studies, we focused on both the German market (GE) from (Marcjasz et al., 2023) and the
+different bidding zones constituting the Italian day-ahead markets (namely NORD, CNOR, CSUD,
+SUD, SARD, SICI) made available by (Golia et al., 2023), providing a compelling setup for com-
+parative evaluations under heterogeneous conditions. The exogenous set for the GE market includes
+the day-ahead load and renewable generation forecast as well as the most recent gas closing prices.
+The Italian datasets comprise the hourly load and wind generation predictions. In both cases, we
+added a weekday indication, encoded in cyclical sine-cosine form. See the Appendix A.2 for further
+details on the datasets structure (e.g, involved market price lags, pre-processing, etc.).
+The proposed approach is compared to several state of the art DNN based PEPF methods, including
+QRA, Deep Quantile Regression (QR) and Distributional NNs. In addition to the Johnson’s SU (Jsu)
+proposed in (Marcjasz et al., 2023), we deploy a Student’s t (Stu) to investigate the impact of the
+different distributional setups on the case studies. Moreover, we implement CP techniques on both
+Normal distributions and conventional absolute residuals (see e.g., Kath & Ziel (2021)) to assess
+the benefit of the more flexible quantile-level corrections introduced. To setup the backbone DE
+framework, we have built upon the configurations and analysis reported in (Marcjasz et al., 2023)
+for the baseline distributional and quantile regression based methods. In particular, we adopt a set
+of 4 DNNs including 2 hidden layers with softplus activations. Training is performed by means of
+Adam with early-stopping, starting from different random initializations. The number of units and
+the learning rate are tuned by cross-validation. The CP calibration subset involve 182 samples (i.e.,
+the preceding 6 months) as in the QRA benchmark to achieve comparable results. Further details
+regarding the experimental setups are reported in Appendix A.4.
+To evaluate the probabilistic forecasting performances achieved on the test sets, we follow the ap-
+proach employed in (Marcjasz et al., 2023), which conforms to the common practices in the PEPF
+3Published as a workshop paper at ”Tackling Climate Change with Machine Learning”, ICLR 2024
+Table 1: Average Pinball score over the quantiles on the test sets
+CP QRA Norm Jsu Stu QR CQN CQJ CQS CQR
+GE 1.549 1.557 1.489 1.467 1.473 1.474 1.483 1.457 1.463 1.462
+NORD 1.847 1.861 1.855 1.823 1.809 1.806 1.852 1.827 1.810 1.804
+CNOR 1.963 1.979 2.007 1.925 1.952 1.927 1.989 1.920 1.943 1.922
+CSUD 1.994 1.996 2.050 1.977 1.990 1.976 2.033 1.964 1.968 1.963
+SUD 2.176 2.170 2.209 2.164 2.178 2.130 2.184 2.138 2.152 2.110
+SARD 2.258 2.261 2.282 2.262 2.234 2.275 2.266 2.252 2.218 2.255
+SICI 4.433 4.440 4.646 4.396 4.428 4.341 4.581 4.346 4.362 4.295
+Figure 2: DM test on average Pinball scores
+field (see e.g. Nowotarski & Weron (2018) and references therein for further details). Calibration is
+first analyzed by means of the Kupiec test (with significance level 0.05) for unconditional coverage,
+on both extreme and central PIs, for each day-ahead hour. Then, the average Pinball loss across the
+deciles and the Winkler’s score for the related miscoverage levels are employed as proper scoring
+rules. Statistical significance is evaluated via the multivariate Diebold and Mariano (DM) test on the
+differences in the loss norms between competing models.
+The calibration tests of the benchmark methods, shown in Figure 1, appear consistent with the re-
+sults reported in previous studies. We observe worse coverage of Jsu and Stu on GE than other
+cases, which could be due to the reduced heterogeneity in the DE components impacting the quan-
+tification of forecast uncertainty (Brusaferri et al., 2022). It can be noted that the behaviour of the
+benchmarks differs between the regional markets, as shown e.g. in the Kupiec plots of NORD vs
+SICI. This could be related to task specific characteristics (e.g., volatility extent) and requires further
+investigations, e.g. by exploring alternative parameterized densities and datasets. The introduction
+of conformal inference has lead to improved hourly reliability on both distributional and QR set-
+tings. While the conventional CP on absolute residuals already provides adequate coverage, the
+effect of a more flexible approach is observed by assessing sharpness beyond calibration through the
+scoring rules. In fact, the former results in symmetric average bands around the model predictions,
+thus lacking the capability to adapt the PIs width on simpler/harder test conditions as required for
+sample-wise efficiency. Beside being more reliable, the conformalized models have preserved stable
+and in some cases improved scores, as shown in Table 1 and Figure 2. Among the alternative config-
+urations, the parameterized Normal form CQN (Conformalized Quantile Normal) has obtained the
+worst performances, while CQR (Conformalized Quantile Regression) shows slightly better capabil-
+ities than CQJ (Conformalized Quantile Johnson’s SU) and CQS (Conformalized Quantile Student’s
+t). Such observations may be motivated by the major adaptivity, beyond the predetermined distribu-
+tion forms, in characterizing complex uncertainty patterns following the specific applications needs.
+Besides, from the inspection of the Winkler’s score (in Appendix A.5), it appears that CP tends
+to contribute more to the correction of the PIs closed to the tails, which could be related to the
+behaviour of the semi-parametric quantiles estimation stage in regions with limited observations.
+However, these are just initial explanations and worth further empirical analysis.
+4 C ONCLUSION
+The goal of PEPF, as probabilistic forecasting in general, is to maximize sharpness while respect-
+ing reliability requirements. In this work we addressed the limited hourly calibration of the state
+4Published as a workshop paper at ”Tackling Climate Change with Machine Learning”, ICLR 2024
+of the art Deep Ensemble based methods for PEPF by exploiting a flexible Conformal Prediction
+framework, achieving improved coverage in the German market and on different bidding zones of
+the Italian market with heterogeneous characteristics. Still, we envision several avenues of future
+research, including the integration of further adaptive CP wrappers to hold coverage under data
+and concept drifts, mechanisms for fine-tuning of the coverage levels, CP on early-stopping for im-
+proving sample-efficiency, as well as further DE architectures, baseline models and datasets. The
+deployment of computationally cheaper deep ensemble approaches represents an important issue
+to be addressed, to reduce the resource consumption of multiple network training during recalibra-
+tion. Furthermore, we plan to implement eXplainable AI techniques (e.g., SHAP) to investigate the
+major features affecting the probabilistic predictions. Despite the specific energy forecasting tasks
+addressed in this study, the developed approach can be extended to further applications, such as
+day-ahead electricity load forecasting.
+REFERENCES
+Anastasios N. Angelopoulos and Stephen Bates. A gentle introduction to conformal prediction and
+distribution-free uncertainty quantification, 2022.
+Vineeth Balasubramanian, Shen-Shyang Ho, and Vladimir V ovk. Conformal Prediction for Reliable
+Machine Learning: Theory, Adaptations and Applications . Morgan Kaufmann Publishers Inc.,
+San Francisco, CA, USA, 1st edition, 2014. ISBN 0123985374.
+Alessandro Brusaferri, Matteo Matteucci, Pietro Portolani, and Andrea Vitali. Bayesian deep
+learning based method for probabilistic forecast of day-ahead electricity prices. Applied
+Energy , 250:1158–1175, 2019. ISSN 0306-2619. doi: https://doi.org/10.1016/j.apenergy.
+2019.05.068. URL https://www.sciencedirect.com/science/article/pii/
+S0306261919309237 .
+Alessandro Brusaferri, Matteo Matteucci, Stefano Spinelli, and Andrea Vitali. Probabilistic electric
+load forecasting through bayesian mixture density networks. Applied Energy , 309:118341, 2022.
+ISSN 0306-2619. doi: https://doi.org/10.1016/j.apenergy.2021.118341. URL https://www.
+sciencedirect.com/science/article/pii/S0306261921015907 .
+Aitor Ciarreta, Blanca Martinez, and Shahriyar Nasirov. Forecasting electricity prices using bid
+data. International Journal of Forecasting , 2022. ISSN 0169-2070. doi: https://doi.org/
+10.1016/j.ijforecast.2022.05.011. URL https://www.sciencedirect.com/science/
+article/pii/S0169207022000711 .
+Andrea Fusco, Domenico Gioffr `a, Alessandro Francesco Castelli, Cristian Bovo, and Emanuele
+Martelli. A multi-stage stochastic programming model for the unit commitment of conven-
+tional and virtual power plants bidding in the day-ahead and ancillary services markets. Ap-
+plied Energy , 336:120739, 2023. ISSN 0306-2619. doi: https://doi.org/10.1016/j.apenergy.
+2023.120739. URL https://www.sciencedirect.com/science/article/pii/
+S0306261923001034 .
+Silvia Golia, Luigi Grossi, and Matteo Pelagatti. Machine learning models and intra-daily market
+information for the prediction of italian electricity prices. Forecasting , 5(1):81–101, 2023. ISSN
+2571-9394. doi: 10.3390/forecast5010003. URL https://www.mdpi.com/2571-9394/
+5/1/3 .
+Vilde Jensen, Filippo Maria Bianchi, and Stian Normann Anfinsen. Ensemble conformalized quan-
+tile regression for probabilistic time series forecasting. IEEE Transactions on Neural Networks
+and Learning Systems , pp. 1–12, 2022. doi: 10.1109/TNNLS.2022.3217694.
+Christopher Kath and Florian Ziel. Conformal prediction interval estimation and applications to
+day-ahead and intraday power markets. International Journal of Forecasting , 37(2):777–799,
+2021. ISSN 0169-2070. doi: https://doi.org/10.1016/j.ijforecast.2020.09.006. URL https:
+//www.sciencedirect.com/science/article/pii/S0169207020301473 .
+Jesus Lago, Grzegorz Marcjasz, Bart De Schutter, and Rafał Weron. Forecasting day-ahead electric-
+ity prices: A review of state-of-the-art algorithms, best practices and an open-access benchmark.
+5Published as a workshop paper at ”Tackling Climate Change with Machine Learning”, ICLR 2024
+Applied Energy , 293:116983, 2021. ISSN 0306-2619. doi: https://doi.org/10.1016/j.apenergy.
+2021.116983. URL https://www.sciencedirect.com/science/article/pii/
+S0306261921004529 .
+Shiva Madadkhani and Svetlana Ikonnikova. Toward high-resolution projection of electricity
+prices: A machine learning approach to quantifying the effects of high fuel and co2 prices.
+Energy Economics , 129:107241, 2024. ISSN 0140-9883. doi: https://doi.org/10.1016/j.eneco.
+2023.107241. URL https://www.sciencedirect.com/science/article/pii/
+S0140988323007399 .
+Grzegorz Marcjasz, Michał Narajewski, Rafał Weron, and Florian Nov. Distributional neural net-
+works for electricity price forecasting. Energy Economics , 125:106843, 2023. ISSN 0140-9883.
+doi: https://doi.org/10.1016/j.eneco.2023.106843. URL https://www.sciencedirect.
+com/science/article/pii/S0140988323003419 .
+Aleksei Mashlakov, Toni Kuronen, Lasse Lensu, Arto Kaarna, and Samuli Honkapuro. Assess-
+ing the performance of deep learning models for multivariate probabilistic energy forecasting.
+Applied Energy , 285:116405, 2021. ISSN 0306-2619. doi: https://doi.org/10.1016/j.apenergy.
+2020.116405. URL https://www.sciencedirect.com/science/article/pii/
+S0306261920317748 .
+Jakub Nowotarski and Rafał Weron. Recent advances in electricity price forecasting: A re-
+view of probabilistic forecasting. Renewable and Sustainable Energy Reviews , 81:1548–1568,
+2018. ISSN 1364-0321. doi: https://doi.org/10.1016/j.rser.2017.05.234. URL https://www.
+sciencedirect.com/science/article/pii/S1364032117308808 .
+D. Ramin, S. Spinelli, and A. Brusaferri. Demand-side management via optimal production schedul-
+ing in power-intensive industries: The case of metal casting process. Applied Energy , 225:622–
+636, 2018. ISSN 0306-2619. doi: https://doi.org/10.1016/j.apenergy.2018.03.084. URL https:
+//www.sciencedirect.com/science/article/pii/S0306261918304227 .
+Yaniv Romano, Evan Patterson, and Emmanuel Candes. Conformalized quantile regression. In
+H. Wallach, H. Larochelle, A. Beygelzimer, F. d'Alch ´e-Buc, E. Fox, and R. Garnett (eds.),
+Advances in Neural Information Processing Systems , volume 32. Curran Associates, Inc.,
+2019. URL https://proceedings.neurips.cc/paper_files/paper/2019/
+file/5103c3584b063c431bd1268e9b5e76fb-Paper.pdf .
+Kamile Stankeviciute, Ahmed M. Alaa, and Mihaela van der Schaar. Conformal time-series fore-
+casting. In M. Ranzato, A. Beygelzimer, Y . Dauphin, P.S. Liang, and J. Wortman Vaughan
+(eds.), Advances in Neural Information Processing Systems , volume 34, pp. 6216–6228. Cur-
+ran Associates, Inc., 2021. URL https://proceedings.neurips.cc/paper_files/
+paper/2021/file/312f1ba2a72318edaaa995a67835fad5-Paper.pdf .
+Andreas Wagner, Enislay Ramentol, Florian Schirra, and Hendrik Michaeli. Short- and long-term
+forecasting of electricity prices using embedding of calendar information in neural networks.
+Journal of Commodity Markets , pp. 100246, 2022. ISSN 2405-8513. doi: https://doi.org/
+10.1016/j.jcomm.2022.100246. URL https://www.sciencedirect.com/science/
+article/pii/S2405851322000046 .
+Xiaoqian Wang, Rob J. Hyndman, Feng Li, and Yanfei Kang. Forecast combinations: An over 50-
+year review. International Journal of Forecasting , 39(4):1518–1547, 2023. ISSN 0169-2070. doi:
+https://doi.org/10.1016/j.ijforecast.2022.11.005. URL https://www.sciencedirect.
+com/science/article/pii/S0169207022001480 .
+Rafał Weron. Electricity price forecasting: A review of the state-of-the-art with a look into the fu-
+ture. International Journal of Forecasting , 30(4):1030–1081, 2014. ISSN 0169-2070. doi: https:
+//doi.org/10.1016/j.ijforecast.2014.08.008. URL https://www.sciencedirect.com/
+science/article/pii/S0169207014001083 .
+Margaux Zaffran, Olivier Feron, Yannig Goude, Julie Josse, and Aymeric Dieuleveut. Adaptive
+conformal predictions for time series. In Kamalika Chaudhuri, Stefanie Jegelka, Le Song,
+Csaba Szepesvari, Gang Niu, and Sivan Sabato (eds.), Proceedings of the 39th International
+6Published as a workshop paper at ”Tackling Climate Change with Machine Learning”, ICLR 2024
+Conference on Machine Learning , volume 162 of Proceedings of Machine Learning Research ,
+pp. 25834–25866. PMLR, 17–23 Jul 2022. URL https://proceedings.mlr.press/
+v162/zaffran22a.html .
+A A PPENDIX
+A.1 C ONFORMAL PREDICTION
+Conformal Prediction (CP) provides a general framework to obtain prediction intervals
+C(Dn, α, x n+1)≡ C(xn+1), at any test point xn+1, from black-box models with marginal cov-
+erage guarantees under finite sample settings. Formally, this is stated as: P(yn+1∈ C(xn+1))≥
+1−α,withα-error probability, given a dataset Dn≡ {(xi, yi)}n
+i=1,yi∈Rresponse variable and
+features vector xi= [xi(1), ..., x i(d)]involving continuous or discrete components. Moreover, CP
+is fully distribution-free, as opposed to distributional neural networks techniques (parameterizing
+e.g. Gaussian, Student’s t, mixtures, etc.), thus retaining validity for arbitrary latent distributions.
+Clearly, this is trivial without efficiency requirement (e.g., C(xn+1) =R⇒P(.) = 1 ). Hence, the
+goal is to achieve sharp interval closed to the equality P(yn+1∈ C(xn+1))≈1−α.
+The core concepts behind CP are the conformity scores and the exchangeability assumption. The
+former are exploited to assess the degree of ”conformity” (thus the name of the approach) of the
+trained model prediction with reference to an held-out calibration bag (split CP). For continuous
+target values, the absolute score S(xi, yi) =|yi−f(xi)|is conventionally employed, where f(xi)
+represents the model sample prediction. The latter simply states that the target (arbitrary) joint
+distribution is invariant to observations permutation, thus representing a weaker assumption than
+the i.i.d. commonly employed in machine learning applications. Then, by computing the empirical
+quantiles of the order statistic obtained by ranking the conformity scores (depicted in Figure 3), it
+is easy to show that for any t-th test sample:
+P(|yt−f(xt)| ≤ S ⌈(n+1)(1−α)⌉)) = (1)
+P(yt∈f(xt)± S⌈(n+1)(1−α)⌉)| {z }
+C1−α(xt)) =⌈(n+ 1)(1 −α)⌉
+(n+ 1)(2)
+Besides, using a random tie-breaking rule (to avoid ties in the absolute residuals ranking), it has
+been shown that: P(yt∈ C1−α(xt))≤1−α+ 1/(n+ 1). Further details on CP and related proofs
+are reported in (Balasubramanian et al., 2014) and references therein.
+A.2 D ATASETS
+The German dataset spans observations from 1/1/2015 to 31/12/2020, with out-of-sample test start-
+ing on 27/6/2019. The last 364 days before the beginning of the recalibration warm-up (which starts
+on 27/12/2018) are employed as validation data for hyper-parameters tuning. As input features, we
+included the subset selected with frequency 100% during the experiments performed in (Marcjasz
+et al., 2023). The motivation behind such choice is twofold. On the one hand, we aim to explore a
+group similar to the one employed in the previous work. On the other hand, we target the assessment
+of the different PEPF models under consistent input variables. In fact, the authors reported sensible
+variations both in terms of the hyper-parameters chosen (including NNs input features selection via
+Figure 3: Empirical quantiles of the conformity scores.
+7Published as a workshop paper at ”Tackling Climate Change with Machine Learning”, ICLR 2024
+indicator variables) and the consequent test performances (see Marcjasz et al. (2023) for further de-
+tails). To summarize, we adopted: the price values over the previous 2 days t-1,t-2, i.e., 48 lags; the
+day-ahead load forecasts available at time t; the renewable energy sources predictions for the target
+datetas well as the previous day t-1; the most recent closing gas price available, i.e. at t-2; the
+weekday encoding. Still, a deepen dataset analysis and feature selection may lead to better average
+performances. We leave such investigation to future extensions.
+The Italian datasets cover the period from 10/1/2015 to 31/8/2019. For each region, the test set starts
+from 31/8/2018 onwards, while the validation subset covers the last year of observations before the
+first test recalibration. Considering the analysis reported in (Golia et al., 2023), we have included
+in the input features the price settlements across the different hours of the last 7 days (hence 168
+values). As introduced in Section 3, the feature set involves also each of the 24 values for both
+day-ahead load and wind generation forecasts, as well as the weekday.
+The weekday input is represented by means the cyclical feature encoding in sine-cosine form, com-
+puting the components in the vector ct= [sin(2πdt/6),cos(2πdt/6)], where dt∈[0, ...,6]in-
+dexes the day of the week for the predicted sample at time t. The investigation of alternative tech-
+niques (e.g., one-hot encoding) is left to future studies. The targets include the price values for each
+of the day-ahead 24 hours at stage t.
+The samples are generated from the time series through a moving window. A Z-Score normalization
+is applied within each recalibration run, fitted by involving only the past values. Besides, a batch
+normalization in inserted after the DNN input layer.
+A.3 A VERAGE PINBALL SCORE
+The average Pinball loss across the discrete set γ∈Γof target quantiles is computed as follows:
+X
+tX
+hX
+γ(yh
+t−qh
+γ(xt))γ1{yh
+i> qh
+γ(xt)}+ (qh
+γ(xt)−yh
+i)(1−γ)1{yh
+t≤qh
+γ(xt)} (3)
+where tdefined the sample index, hthe step in the prediction horizon, 1{.}the indicator function,
+xtthe input features, yh
+tthe true values and qh
+γ(xt)the predicted quantiles. It is worth noting that
+the average Pinball score, computed over the distribution percentiles, is commonly employed in
+PEPF as a cheap discrete approximation to the continuous ranked probability score (CRPS) (see e.g.
+Nowotarski & Weron (2018)).
+A.4 E XPERIMENTAL SETUP
+The experiments have been performed by leveraging Tensoflow, including the Tensorflow Probabil-
+ity library which provides several utilities to implement distributional NNs. In principle, a broad
+amount of potential configurations might be considered during the setup of the learning framework
+and the hyper-parameters experiments. Since our goal is not to obtain the best NNs architecture
+but to evaluate the introduction of the conformal inference framework under coherent backbone DE
+setups, we performed a restricted grid search cross-valudation. Considering the outcomes of the
+analysis performed in (Marcjasz et al., 2023), we have adopted the following arrangements for the
+present work (complementing the subset already reported in Section 3). The batch size has been set
+to 64. Dropout and ℓ1/ℓ2regularizations have not been included in the layers since almost never
+chosen by the hyper-parameter tuner in (Marcjasz et al., 2023). As the different output layer’s param-
+eterizations and loss functions may require specific complexities and rates, the hidden unit size and
+the learning tuning are searched in the discrete sets nh∈[64, 128, 512, 640, 768, 896, 960] and lr∈
+[1e-5, 1e-4, 1e-3, 1e-2] respectively. Clearly the selections equal in the subsequent conformal infer-
+ence stages (as e.g. in Jsu/CQJ). NNs training is performed by a maximum number of 800 epochs,
+including an early stopping callback on the validation loss with a patience of 50 epochs. During
+the daily recalibration of out-of-sample test experiments, the oldest sample in the moving window
+is discarded, while leaving a 20% subset to evaluate the loss for early stopping. The output quan-
+tiles of the distributional NNs are estimated by generating 10000 samples for each test prediction.
+Table 2 reports the hidden units and learning rate employed for the test set experiments, as selected
+by the grid search procedure for each bidding zones. Large nhhave been chosen in most cases, as
+in the experiments performed by (Marcjasz et al., 2023). We did not observe sensible differences in
+8Published as a workshop paper at ”Tackling Climate Change with Machine Learning”, ICLR 2024
+Table 2: Hyperparameters selected by the grid-search procedure for each zone
+GE CP/QRA Norm/CQN Jsu/CQJ Stu/CQS QR/CQR
+nh 768 896 896 640 640
+lr 1e-3 1e-3 1e-3 1e-3 1e-4
+NORD CP/QRA Norm/CQN Jsu/CQJ Stu/CQS QR/CQR
+nh 512 768 640 640 896
+lr 1e-3 1e-3 1e-3 1e-3 1e-4
+CNOR CP/QRA Norm/CQN Jsu/CQJ Stu/CQS QR/CQR
+nh 768 960 896 896 896
+lr 1e-3 1e-3 1e-4 1e-3 1e-4
+CSUD CP/QRA Norm/CQN Jsu/CQJ Stu/CQS QR/CQR
+nh 640 960 896 768 960
+lr 1e-3 1e-3 1e-4 1e-3 1e-4
+SUD CP/QRA Norm/CQN Jsu/CQJ Stu/CQS QR/CQR
+nh 768 896 896 960 960
+lr 1e-4 1e-3 1e-4 1e-4 1e-4
+SARD CP/QRA Norm/CQN Jsu/CQJ Stu/CQS QR/CQR
+nh 896 960 960 640 896
+lr 1e-3 1e-3 1e-3 1e-3 1e-3
+SICI CP/QRA Norm/CQN Jsu/CQJ Stu/CQS QR/CQR
+nh 768 768 512 960 896
+lr 1e-4 1e-5 1e-3 1e-3 1e-5
+validation losses among closed configurations (e.g., 640 vs 896). Still, the specific selections may
+be influenced by local minimizers reached by the training algorithm. These are marginalized by the
+Deep Ensemble during testing. However, such topic worth further exploration, which is foreseen
+within future extensions, e.g. by different model ensembling techniques.
+A.5 A DDITIONAL RESULTS
+Table 4 reports the test set Winkler’s scores computed for each of the PI 1−αobtained from the ap-
+proximated distribution deciles. The multivariate DM tests performed on the Winkler’s scores are
+displayed in Figure 4. The overall results are consistent with the Pinball scores reported in Section 3.
+As introduced above, we observe a stronger impact of conformal inference on the QR baseline in
+broader PIs. This is visible e.g., in the DM plots of the Winkler’s PI with α= 0.2vsα= 0.6regard-
+ing NORD and CSUD regions. Besides the probabilistic forecasting performances, Table 3 reports
+the point prediction Mean Absolute Errors, while the outputs of the related DM tests are depicted
+in Figure 5. We observe that conformal inference has lead to a slight improvement of the MAE in
+some cases (see e.g. CNOR), as the median prediction can be updated after quantiles correction by
+the sorting procedure. The impact on point prediction accuracy of more flexible distribution param-
+eterization have been reported also in (Marcjasz et al., 2023). The gap in the MAE on GE could be
+related to the reduced input features set. To provide further insights on the different price behaviours
+addressed by the models among the regional markets, we plot in Figure 6 extracts from GE, NORD
+9Published as a workshop paper at ”Tackling Climate Change with Machine Learning”, ICLR 2024
+Figure 4: DM test on Winkler’s scores
+Figure 5: DM test on MAE
+Table 3: Mean Absolute Error computed on the test sets
+CP QRA Norm Jsu Stu QR CQN CQJ CQS CQR
+GE 3.799 3.794 3.758 3.724 3.725 3.726 3.755 3.720 3.718 3.717
+NORD 4.655 4.659 4.705 4.609 4.581 4.547 4.705 4.608 4.580 4.547
+CNOR 4.918 4.952 5.047 4.851 4.908 4.830 5.046 4.848 4.906 4.828
+CSUD 4.992 4.982 5.127 4.949 4.966 4.934 5.124 4.942 4.958 4.927
+SUD 5.414 5.407 5.528 5.440 5.447 5.384 5.525 5.426 5.444 5.373
+SARD 5.653 5.624 5.745 5.632 5.584 5.672 5.741 5.627 5.580 5.654
+SICI 10.91 10.86 11.41 10.98 10.99 10.86 11.40 10.96 10.96 10.84
+and SICI. The deciles predicted by the CQR model are reported besides the target series. Clearly,
+the price in each zone assume specific shapes and values, which depends on the generation mix (e.g.,
+share of wind power generation in the southern part of Italy) and the different power demands. We
+leave to (Golia et al., 2023) and references therein for further details on the specific characteristics
+of the different Italian bidding area, and to (Madadkhani & Ikonnikova, 2024) for a recent detailed
+analysis of the German power market.
+10Published as a workshop paper at ”Tackling Climate Change with Machine Learning”, ICLR 2024
+Table 4: Winkler’s score on the PI 1−αfor each bidding zone
+GE CP QRA Norm Jsu Stu QR CQN CQJ CQS CQR
+α=0.2 20.27 20.62 18.07 17.52 17.77 17.71 17.99 17.30 17.53 17.50
+α=0.4 14.43 14.57 13.68 13.45 13.51 13.52 13.62 13.36 13.40 13.41
+α=0.6 11.39 11.45 11.08 10.94 10.97 11.00 11.03 10.88 10.91 10.91
+α=0.8 9.27 9.28 9.13 9.04 9.05 9.06 9.09 8.97 9.00 9.00
+NORD CP QRA Norm Jsu Stu QR CQN CQJ CQS CQR
+α=0.2 22.64 23.07 22.36 22.08 21.94 22.07 22.25 22.16 21.84 21.89
+α=0.4 16.95 17.19 17.02 16.73 16.56 16.58 16.96 16.78 16.60 16.54
+α=0.6 13.71 13.79 13.80 13.56 13.45 13.43 13.78 13.60 13.48 13.45
+α=0.8 11.31 11.34 11.41 11.19 11.11 11.06 11.41 11.22 11.13 11.08
+CNOR CP QRA Norm Jsu Stu QR CQN CQJ CQS CQR
+α=0.2 24.30 24.64 24.65 23.60 24.18 23.87 24.30 23.59 23.94 23.70
+α=0.4 18.13 18.32 18.50 17.71 17.97 17.79 18.25 17.68 17.88 17.74
+α=0.6 14.56 14.66 14.90 14.29 14.46 14.29 14.75 14.23 14.39 14.26
+α=0.8 11.96 12.03 12.27 11.78 11.91 11.75 12.18 11.72 11.87 11.72
+CSUD CP QRA Norm Jsu Stu QR CQN CQJ CQS CQR
+α=0.2 24.88 25.07 25.42 24.60 25.04 24.66 24.92 24.36 24.37 24.14
+α=0.4 18.38 18.45 18.96 18.27 18.40 18.29 18.73 18.17 18.13 18.15
+α=0.6 14.78 14.77 15.21 14.64 14.73 14.62 15.10 14.55 14.59 14.57
+α=0.8 12.14 12.12 12.47 12.03 12.07 12.00 12.42 11.93 11.99 11.97
+SUD CP QRA Norm Jsu Stu QR CQN CQJ CQS CQR
+α=0.2 27.48 27.21 27.37 26.62 27.18 26.00 26.86 26.18 26.60 25.45
+α=0.4 20.18 20.12 20.45 19.93 20.12 19.60 20.09 19.66 19.79 19.35
+α=0.6 16.09 16.07 16.39 16.07 16.13 15.80 16.19 15.85 15.93 15.68
+α=0.8 13.17 13.16 13.44 13.22 13.24 13.05 13.33 13.06 13.12 12.98
+SARD CP QRA Norm Jsu Stu QR CQN CQJ CQS CQR
+α=0.2 28.14 28.53 27.92 28.46 28.09 28.58 27.56 28.26 27.61 27.89
+α=0.4 20.84 20.93 21.01 20.97 20.59 21.00 20.82 20.86 20.42 20.79
+α=0.6 16.73 16.73 16.95 16.73 16.52 16.85 16.84 16.66 16.41 16.74
+α=0.8 13.75 13.70 13.96 13.71 13.57 13.81 13.88 13.63 13.51 13.74
+SICI CP QRA Norm Jsu Stu QR CQN CQJ CQS CQR
+α=0.2 56.78 57.86 60.44 54.65 56.10 53.78 58.37 53.63 54.33 52.71
+α=0.4 41.45 41.58 43.35 40.66 41.13 40.09 42.85 40.11 40.39 39.55
+α=0.6 32.75 32.70 34.22 32.61 32.74 32.23 33.83 32.28 32.30 31.91
+α=0.8 26.62 26.54 27.83 26.72 26.75 26.43 27.43 26.42 26.43 26.20
+11Published as a workshop paper at ”Tackling Climate Change with Machine Learning”, ICLR 2024
+Figure 6: Probabilistic forecasts on a subset of the test samples: (t)-GE, (m)-NORD, (b)-SICI
+12

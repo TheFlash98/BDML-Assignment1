@@ -1,0 +1,207 @@
+Meta-Optimization of Optimal Power Flow
+Mahdi Jamei1Letif Mones1Alex Robson1Lyndon White1James Requeima1 2Cozmin Ududec1
+Abstract
+The planning and operation of electricity grids
+is carried out by solving various forms of con-
+strained optimization problems. With the increas-
+ing variability of system conditions due to the
+integration of renewable and other distributed en-
+ergy resources, such optimization problems are
+growing in complexity and need to be repeated
+daily, often limited to a 5 minute solve-time. To
+address this, we propose a meta-optimizer that is
+used to initialize interior-point solvers. This can
+signiﬁcantly reduce the number of iterations to
+converge to optimality.
+1. Introduction
+Optimization methods are increasingly being used for plan-
+ning and operations of complex systems such as electricity
+grids. A central part of daily planning and operations of elec-
+tricity grid operators (Tong, 2004) is to dispatch generation
+in order to meet demand at minimum cost, while respecting
+reliability and security constraints. This is done by solving
+a constrained optimization problem, often referred to as
+Optimal Power Flow (OPF). The OPF problem is in general
+challenging because, 1) it is a non-convex and non-linear
+constrained optimization problem that can also be mixed
+integer in its full form, and 2) it is computationally expen-
+sive due to the large size of power grids and high number of
+constraints. In order to reduce the time complexity of the
+OPF problem the general practice is to use an approximate
+form that is convex and has a reduced number of variables
+and constraints. However, the solution to this simpliﬁed
+problem is known to be far from the optimal one and can
+lead to inefﬁciencies in grid operations (Ilic et al., 2006).
+According to the United States Environmental Protection
+Agency (epa, 2019), electricity production contributed to
+27.5% of the total U.S. greenhouse gas (GHG) emissions in
+2017 placing this sector in the second place among GHG
+producers. With increasing concerns over climate change,
+multiple studies have suggested that reducing overall emis-
+sions from generation should be taken into account in OPF
+1Invenia Labs, Cambridge, UK
+2University of Cambridge, Cambridge, UK(Gholami et al., 2014), which makes the problem more com-
+plex. Further, the integration of renewable energy sources
+such as wind and solar add other complications to OPF due
+to the volatility of these resources. To deal with this volatil-
+ity, OPF should be solved as near to real-time as possible,
+which would require improvements to OPF convergence
+times and robustness.
+2. Proposed Methodology
+Non-linear and non-convex constrained optimization prob-
+lems can be solved by interior-point methods such as IPopt
+(W¨achter & Biegler, 2006). They can take as input a given
+initialization (called warm-start). A good initialization is
+important for two reasons: 1) it can help avoid poor local
+minima and reach the global minimum, and 2) it can speed
+up convergence to this global minimum. We propose an
+algorithm that outputs the initialization for interior-point
+solvers, through meta-optimization . This algorithm can be
+trained by using a loss metric as the number of iterations
+needed to solve the problem. This approach is inspired by
+recent work in the meta-learning literature, including (Ravi
+& Larochelle, 2017) and (Finn, 2017).
+Our model is trained not to optimize a single instance of
+an OPF problem, but a family of them. It takes as input a
+formulation of the problem, and outputs an initialization.
+Advantages of this method include: 1) leveraging already
+well-established constrained optimization solvers, and 2)
+getting guaranteed solutions to the true problem. However,
+a limitation of this approach is needing to train over all
+potential grid sizes. To resolve this, we consider grid com-
+pression techniques. Initialization is “decompressed” such
+that only the original OPF formulation is solved.
+The following terminology is used in the rest of the paper:
+Scenario generation : Given a grid, it creates new
+cases for train / testing by mutating grid parameters.
+Model: Neural Network (NN) that is trained to output
+solution initialization for OPF given grid input data.
+Conventional Loss: Quality metric on initialization
+(e.g., MSE to ﬁnal solution for a convex OPF).
+Meta-Loss: Sum over the number of interior-pointMeta-Optimization of Optimal Power Flow
+steps to reach optimal solution for selected scenarios.
+Fig. 1 shows the components of the proposed methodology:
+Problem Features: xcontains all the input parameters
+(e.g., lines, generators...) that deﬁne the OPF problem.
+Meta-Optimizer: The meta-optimizer is trained over
+a class of OPF problems, with the objective of mini-
+mizing the meta-loss. At test-time, the initializations
+of OPF solvers result in faster convergence.
+Reduced Features: Not all the features that deﬁne
+an OPF problem are necessary to ﬁnd a good initial-
+ization for an interior-point solver. Further, it would
+be cumbersome to retrain the meta-optimizer for ev-
+ery new grid or OPF problem. We propose a solution
+where separate meta-optimizers are trained for a set of
+pre-deﬁned grids denoted by G, and a grid compres-
+sion (see e.g., (Wang et al., 2010)) is used to reduce a
+given grid down to the nearest available size in Gand
+therefore to obtain the reduced features ( xred). The rec-
+ommended initialization ( yred
+0) is then decompressed
+(y0) before IPopt solves the original OPF.
+OPF Solver: Solves the OPF model using the recom-
+mended initialization (Coffrin et al., 2018).
+xGrid Compressionxred Meta-Optimizer yred
+0
+Grid Decompression
+y0
+OPF Solver
+y
+Figure 1. Proposed workﬂow of meta-optimized OPF.
+3. Preliminary Results
+To demonstrate the core concept, we pick different grids
+from the pglib-v19.05 (pgl) library treating them as mem-
+bers of the setG, for which we want to train the meta-
+optimizer. For each case, we start with scenario generation.
+Grid compression / decompression has not been included
+in this experiment as we are only dealing with members of
+Gfor now. For this experiment we use DC-OPF as an ap-
+proximation for simplicity and employ Ipopt solver to solve
+the optimization. Given the non-differentiable metaloss-
+function, we consider gradient-free optimization (GFO),
+such as Particle Swarm Optimization (PSO) to train the
+“meta-optimizer”.To motivate the importance of good initialization we refer
+to Fig. 2. Here, we use a metric of efﬁciency where 0%
+efﬁciency is the number of iterations that takes the solver
+to ﬁnd the optimal point using a heuristic initialization, and
+100% efﬁciency is for the case when both the primal and
+dual variables are initialized with the exact solution. In
+our experiments we focus on initializers for primals only
+and investigate how much we can approach the theoreti-
+cal upper-bound of efﬁciency (i.e. using the exact primals
+as initializers). The importance of initialization will be a
+function of grid complexity, such as the size of the feasible
+region. What we present here are the statistics of primal
+initialization efﬁciency across a family of grid states.
+Figure 2. Efﬁciency of primal ini-
+tialization
+Figure 3. Meta-loss minimiza-
+tion using the proposed method
+In order to highlight the advantages of meta-optimization,
+we compare a conventional NN supervised learning using a
+MSE (yNN
+0; y)objective on the metaloss, followed by the
+meta-training in Fig. 3. As can be seen, the meta-training
+could further minimize the meta-loss and can therefore lead
+to better initializations.
+4. Challenges and Future Direction
+There are three challenging problems we face in this design:
+Problem Representation: A challenging part of the
+meta-optimization pipeline is to encode the OPF for-
+mulation into a family that has been meta-trained.
+Meta-Optimizer Training: The optimizers such as
+Ipopt are generally complex pieces of software so un-
+like (Finn, 2017) we are unable to backpropagate gradi-
+ents through this part of the pipeline and that is why we
+used a GFO. We want to investigate the implementation
+of constrained optimization solvers in differentiable
+programming languages (Amos & Kolter, 2017).
+Scalability: Different electrical grids exist, and further,
+grids themselves change over time. We plan to train
+multiple meta-optimizers over a set of pre-deﬁned grid
+sizes and compress any grid to its nearest grid size in
+that set.Meta-Optimization of Optimal Power Flow
+References
+A library of ieee pes power grid benchmarks. URL
+https://github.com/power-grid-lib/
+pglib-opf .
+Sources of greenhouse gas emissions, Apr 2019.
+URL https://www.epa.gov/ghgemissions/
+sources-greenhouse-gas-emissions .
+Amos, B. and Kolter, J. Z. Optnet: Differentiable
+optimization as a layer in neural networks. CoRR ,
+abs/1703.00443, 2017. URL http://arxiv.org/
+abs/1703.00443 .
+Coffrin, C., Bent, R., Sundar, K., Ng, Y ., and Lubin, M.
+Powermodels. j1: An open-source framework for explor-
+ing power ﬂow formulations. In 2018 Power Systems
+Computation Conference (PSCC) , pp. 1–8. IEEE, 2018.
+Finn, C. B. Code for ”model-agnostic meta-learning for
+fast adaptation of deep networks”. https://github.
+com/cbfinn/maml , 2017.
+Gholami, A., Ansari, J., Jamei, M., and Kazemi, A. En-
+vironmental/economic dispatch incorporating renewable
+energy sources and plug-in vehicles. IET Generation,
+Transmission & Distribution , 8(12):2183–2198, 2014.
+Ilic, M. D., Lang, J. H., Litvinov, E., and Luo, X. The
+critical role of computationally robust ac optimal power
+ﬂow in reliable and efﬁcient reactive power/voltage dis-
+patch. In 2006 IEEE PES Power Systems Conference and
+Exposition , pp. 689–698. IEEE, 2006.
+Ravi, S. and Larochelle, H. Optimization as a model for
+few-shot learning. In Proceedings of the International
+Conference on Learning Representations (ICLR) , 2017.
+Tong, J. Overview of pjm energy market design, operation
+and experience. In 2004 IEEE International Conference
+on Electric Utility Deregulation, Restructuring and Power
+Technologies. Proceedings , volume 1, pp. 24–27. IEEE,
+2004.
+W¨achter, A. and Biegler, L. T. On the implementation of
+a primal-dual interior point ﬁlter line search algorithm
+for large-scale nonlinear programming. Mathematical
+Programming , 106(1):25–57, 2006.
+Wang, Z., Scaglione, A., and Thomas, R. J. Compressing
+electrical power grids. In 2010 First IEEE International
+Conference on Smart Grid Communications , pp. 13–18.
+IEEE, 2010.

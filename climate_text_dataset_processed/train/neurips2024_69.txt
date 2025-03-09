@@ -1,0 +1,627 @@
+RL for Mitigating Cascading Failures: Targeted
+Exploration via Sensitivity Factors
+Anmol Dwivedi
+Rensselaer Polytechnic InstituteAli Tajer
+Rensselaer Polytechnic Institute
+Santiago Paternain
+Rensselaer Polytechnic InstituteNurali Virani
+GE Vernova Advanced Research
+Abstract
+Electricity grid’s resiliency and climate change strongly impact one another due
+to an array of technical and policy-related decisions that impact both. This paper
+introduces a physics-informed machine learning-based framework to enhance
+grid’s resiliency. Specifically, when encountering disruptive events, this paper
+designs remedial control actions to prevent blackouts. The proposed Physics-
+Guided Reinforcement Learning (PG-RL) framework determines effective real-
+time remedial line-switching actions, considering their impact on power balance,
+system security, and grid reliability. To identify an effective blackout mitigation
+policy, PG-RL leverages power-flow sensitivity factors to guide the RL exploration
+during agent training. Comprehensive evaluations using the Grid2Op platform
+demonstrate that incorporating physical signals into RL significantly improves
+resource utilization within electric grids and achieves better blackout mitigation
+policies – both of which are critical in addressing climate change.
+1 Introduction
+Power grid resiliency and climate change are symbiotically interconnected. Climate change is
+increasing the frequency and intensity of extreme weather events, such as hurricanes, floods, wildfires,
+and heatwaves, requiring improved grid resiliency to maintain power and reduce economic and societal
+impacts. Mitigating climate change needs reduction in the energy system’s carbon footprint, which
+critically hinges on integrating renewable resources at scale. However, grid resilience enhancement is
+needed to provide robustness against equipment failures and manage stability impact of variability
+from renewable generation. Thus, mitigating and adapting to climate change necessitates enhancing
+grid resilience. This paper provides a physics-informed machine learning (ML) approach to enhance
+grid resiliency, defined as the grid’s ability to withstand, adapt, and recover from disruptions.
+One major source of disruption impacting grid resiliency are transmission line and equipment failures,
+often caused due to aging infrastructure stressed by extreme weather and congestion due to growing
+electricity demand. These gradual stresses can lead to system anomalies that can escalate if left
+unaddressed [ 1]. To mitigate these risks, system operators implement real-time remedial actions like
+network topology changes [ 2,3,4,5]. Selecting these remedial actions must balance two opposing
+impacts: greedy actions render quick impact to protect specific components but may have inadvertent
+consequences, while look-ahead strategies enhance network robustness but have delayed impact.
+Striking this balance is crucial for maintaining reliable operation and maximizing grid utilization.
+There are two main approaches for the sequential design of real-time remedial decisions: model-based
+and data-driven. Model-based methods, like model predictive control (MPC), approximate the system
+model and use multi-horizon optimization to predict future states and make decisions [ 6,7,8,9].
+While these methods offer precise control by adhering to system constraints, they require an accurate
+analytical model, which can be difficult for T-grids. Moreover, coordinating discrete actions like
+line-switching over extended planning horizons is computationally intensive and time-consuming.
+Tackling Climate Change with Machine Learning: workshop at NeurIPS 2024.Conversely, data-driven approaches like deep reinforcement learning (RL) learn decision policies
+through sequential interactions with the system model. Deep RL has been successfully applied to
+various power system challenges [ 10,11,12,13]. By shifting the computational burden to the offline
+training phase, these methods allow for rapid decision-making during real-time operations, making
+them promising for real-time network overload management [14, 15, 16].
+Using off-the-shelf RL algorithms (method-driven algorithms [ 17]) for complex tasks like power-
+grid overload management presents computational challenges, primarily due to the systems’ scale
+and complexity. Generic exploration policies often select actions that cause severe overloads and
+blackouts, preempting a comprehensive exploration of the Markov decision process (MDP) state
+space. This limitation hampers accurate decision utility predictions for the unexplored MDP states,
+rendering a highly sub-optimal remedial control policy. A solution to circumvent the computational
+complexity and tractability is leveraging the physics knowledge of the system and incorporating it
+into RL exploration design.
+Contribution: We formalize a Physics- Guided Reinforcement Learning (PG-RL) framework for
+real-time decisions to alleviate transmission line overloads over long operation planning horizons.
+The framework’s key feature is its efficient physics-guided exploration policy design that judiciously
+exploits the underlying structure of the MDP state and action spaces to facilitate the integration
+of auxiliary domain knowledge, such as power-flow sensitivity factors [ 18], for a physics-guided
+exploration during agent training. Extensive evaluations on Grid2Op [ 19] demonstrate the superior
+performance of our framework over counterpart black-box RL algorithms. The data and code required
+to reproduce our results is publicly available.
+Related Work: The study in [ 20] uses guided exploration based on Q-values while [ 21] employs
+policy gradient methods, both on bus-split actions pre-selected via exhaustive search. To accommodate
+the exponentially many bus-split topological actions, the study in [ 22] employs graph neural networks
+combined with hierarchical RL [ 23] to structure agent training. Recent approaches, such as [ 24]
+and [ 25], focus on integrating domain knowledge via curriculum learning and combining it with
+Monte-Carlo tree search for improved action selection. However, existing RL approaches (i) focus
+exclusively on bus-splitting actions; (ii) lack the integration of physical power system signals for
+guided exploration; and (iii) overlook active line-switching, particularly line removal actions, due to
+concerns about reducing power transfer capabilities and increasing cascading failure risk.
+2 Problem Formulation
+Transmission grids are vulnerable to stress by adverse internal and external conditions, e.g., line
+thermal limit violations due to excessive heat and line loading. Without timely remedial actions, this
+stress can lead to cascading failures resulting in blackouts. To mitigate these risks, our objective
+is to maximize the system’s survival time over a horizon T, denoted by ST (T), defined as the
+time until a blackout occurs [ 19]. In this paper, we focus on line-switching actions Wline[n]△=
+[W1[n], . . . , W L[n]]⊤to reduce system stress by controlling line flows, where the binary decision
+variable Wℓ[n]∈ {0,1}indicates whether line ℓis removed (0) or reconnected (1) at time n∈[T].
+We also define cline
+ℓas the cost of line-switching for line ℓ. Hence, the system-wide cost incurred due
+to line-switching over a horizon TisCline(T)△=PT
+n=1PL
+ℓ=1cline
+ℓ·Wℓ[n].
+Operational Constraints: Line-switching decisions are constrained by operational requirements to
+maintain system security. Once a line is switched, it must remain offline for a mandated downtime
+period τDbefore being eligible for another switch. For naturally failed lines (e.g., due to prolonged
+overload), a longer downtime period τFis required before reconnection, where τF≫τD.
+Maximizing Survival Time: Our objective is to constantly monitor the system and, upon detect-
+ing mounting stress (e.g., imminent overflows), initiate flow control decisions (line-switching) to
+maximize the system’s ST (T). Such decisions are highly constrained with decision costs Cline(T)
+and operational constraints due to downtime periods τNandτF. To quantify ST (T), we use a proxy,
+therisk margin for each transmission line ℓat time n, defined as ρℓ[n]△=Aℓ[n]
+Amax
+ℓ, where Aℓ[n]and
+Amax
+ℓdenotes the present and maximum line current flows, respectively. Based on ρℓ[n], a line ℓ
+is considered overloaded , ifρℓ[n]≥1. Minimizing these risk margins reduces the likelihood of
+overloads, thereby extending ST (T). We also use risk margins to identify critical states, which are
+states that necessitates remedial interventions, defined by the rule max i∈[L]ρi[n]≥η. To maximize
+ST(T), our goal is to sequentially form the decisions ¯Wline≜{Wline[n] :n∈N}all while adhering
+2to operational constraints and controlled decision costs βline, formulated as:
+P:
+
+min
+{¯Wline}TX
+n=1LX
+ℓ=1ρℓ[n]
+s.t. C line(T)≤βline
+Operational Constraints. (1)
+Cascading Failure Mitigation as an MDP: The complexity of identifying optimal line-switching
+(discrete) decisions grows exponentially with the number of lines Land the target horizon T, and is
+further compounded by the need to meet operational constraints. To address the challenges of solving
+Pin(1), we design an agent-based approach. At any instance n∈[T], the agent has access to the
+system’s states {X[m] :m∈[n]}and uses this information to determine the line-switching actions.
+These actions lead to outcomes that are partly deterministic, reflecting the direct impact on the system
+state, and partly stochastic, representing the randomness of future electricity demands. To effectively
+model these stochastic interactions, we employ a Markov decision process (MDP) characterized by
+the tuple (S,Aline,P,R, γ). Detailed information about the MDP modeling techniques employed is
+provided in Appendix A.1. Finding an optimal decision policy π∗can be found by solving [26]
+P2:π∗(S)△= arg max
+πQπ(S, π(S)), (2)
+where Qπ(S, a)characterizes the state-action value function.
+3 Physics-Guided RL Framework
+Motivation: Model-free off-policy RL algorithms [ 27,28] with function approximation [ 29] are
+effective in finding good policies without requiring access to the transition probability kernel Pfor
+high-dimensional MDP state spaces S. However, the successful design of these algorithms hinges
+on a comprehensive exploration of the state space to accurately learn the expected decision utilities,
+such as Q-value estimates. Common approaches entail dynamically updating a behavior policy
+π, informed by a separate exploratory policy like ϵ-greedy [ 28], illustrated in Algorithm 1. While
+Q-learning with random ϵ-greedy exploration is effective in many domains [29], it faces challenges
+in power-grid overload management. Random network topology exploration actions a[n]∈ A line
+can quickly induce severe overloads and, thus, blackouts. This is because topological actions force
+an abrupt change in the system state X[n]by redistributing transmission line power-flows after a
+network topological change, compromising risk margins ρℓand exposing the system to potential
+cascading failures, preventing a comprehensive exploration of S. This results in inaccurate Q-value
+predictions for the unexplored MDP states, rendering a highly sub-optimal remedial control policy.
+Algorithm 1 Canonical ϵ-greedy Exploration
+1:Input: ϵ1,A,Q(s, a),Output: Action a
+2:ifµ∼ U(0,1)< ϵ1then
+3: a∼Uniform (A) ▷Random-Explore
+4:else ▷ Q-guided Exploit
+5: Select abased on Q(s, a′)
+6:end ifAlgorithm 2 Physics-Guided ϵ-greedy Exploration
+1:Input: ϵ1, ϵ2,A, Q(s, a) Output: Action a
+2:ifµ∼ U(0,1)< ϵ1then
+3: ifζ∼ U(0,1)< ϵ2then ▷Physics-Explore
+4: a∼Physics-Guided (A) ▷Algorithm 4
+5: else
+6: a∼Uniform (A) ▷Random-Explore
+7: end if
+8:else ▷ Q-guided Exploit
+9: Select abased on Q(s, a′)
+10:end if
+Sensitivity Factors: We leverage power-flow sensitivity factors to guide exploration decisions by
+augmenting ϵ-greedy during agent training, as illustrated in Algorithm 2. Sensitivity factors [ 18]
+help express the mapping between MDP states Sand actions Aby linearizing the system around the
+current operating point. This approach allows us to analytically approximate the impact of any action
+a[n]∈ A on risk margins and, consequently, the MDP reward r∈ R. To address the challenges
+associated with implementing random topological actions during ϵ-greedy exploration, we use line
+outage distribution factors (LODF) to analyze the effects of line removals. Specifically, the sensitivity
+factor matrix LODF ∈RL×L, represents the impact of removing line kon the flow in line ℓby [18]
+Fℓ[n+ 1]≈Fℓ[n] +LODF ℓ,k[n]·Fk[n], (3)
+3Action Space (|A|) Agent Type Avg. ST%
+Do-nothing%
+Reconnect%
+RemovalsAvg. Action Diversity
+− Do-Nothing 4733.96 100 − − −
+Aline(60) Re-Connection 4743.87 99.90 0.10 − 1.093 (1 .821%)
+Aline(119) milp_agent [31] 4062.62 12.05 1.70 86.24 6.093 (5 .12%)
+Aline(119)
+µline= 0πrand
+θ(0) 5929.03 26.78 5.85 67.35 13.406 (11 .265%)
+PG-RL [πphysics
+θ(0)]6657 .09 1.74 7.66 90.59 17.062(14.337%)
+Aline(119)
+µline= 1πrand
+θ(1) 5327.06 81.51 0.28 18.20 3.625 (3 .046%)
+PG-RL [πphysics
+θ(1)]6603 .56 13.93 7.00 79.06 17.156(14.416%)
+Aline(119)
+µline= 1.5πrand
+θ(1.5) 4916.34 92.69 0.01 7.28 3.406 (2 .862%)
+PG-RL [πphysics
+θ(1.5)]6761 .34 46.53 6.12 47.34 15.718(13.208%)
+Table 1: Performance on the Grid2Op 36-bus system with η= 0.95.
+where Fk[n]is the pre-outage flow in line k, helping predict the anticipated impact of line removal
+action k. Likewise, the sensitivities of line flows to line reconnection actions are derived in [30].
+Physics-Guided Exploration: We leverage sensitivity factors to guide agent exploration with the
+following key idea: Topological actions a[n]∈ A linethatreduce line flows below their limits Amax
+ℓ,
+without causing overloads in other healthy lines, help transition to more favorable MDP states in the
+short term, that may otherwise be challenging to reach by taking a sequence of random exploratory
+actions. However, removing a line kcan both reduce flow in some lines and increase flow in others.
+To address this, we focus on identifying remedial actions that minimize flow in the maximally
+loaded line. At time n, we define the maximally loaded line index ℓmax△= arg maxℓ∈[L]ρℓ[n]. By
+leveraging the structure of the LODF [n]matrix, we first design Algorithm 3 to identify an effective
+setReff
+line[n]of potential remedial actions a[n]∈ A linethat greedily reduce risk margin ρℓmax[n]. Then,
+the agent selects an action a[n]∈ Reff
+line[n], guided by the dynamic effective set Reff
+line[n], as outlined
+in Algorithm 4, for action selection during agent training (as per the PG-RL design in Algorithm 2).
+4 Experiments
+To demonstrate our framework, we use the Grid2Op 36-bus and the IEEE 118-bus power networks
+from Grid2Op [ 19]. Detailed descriptions of the Grid2Op dataset, environment, and performance
+metrics are in Appendix A.3. We train RL agents with a dueling NN architecture [ 32] with prioritized
+experience replay [ 33] and ϵ-greedy exploration. Appendix A.4 provides a thorough description of
+the baselines. Table 1 compares the agent’s survival time ST (T), averaged across all test episodes
+forT= 8062 , showing increased agent sophistication as we move down the table. We denote the
+best policy from random ϵ-greedy (Algorithm 1) as πrand
+θ(µline)and from physics-guided ϵ-greedy
+(Algorithm 2) by πphysics
+θ(µline). For fair comparisons, DQN θmodels for each µline(5)are trained
+independently using Algorithms 1 and 2 for 20hours, using identical hyperparameters listed in
+Appendix A.5. We also adopt an exponential decay schedule for ϵ1while fix ϵ2= 1in Algorithm 2.
+In Table 1, we observe that policy πphysics
+θ(0)achieves an average ST of 6,657.09, a 12.2%improve-
+ment over πrand
+θ(0)and a 25.2%increase over baselines. Notably, the physics-guided agent takes
+25.05% more line-switch actions than its random counterpart, successfully identifying more effective
+line-removal actions due to the targeted design of Reff
+line[n]during agent training. To illustrate this ef-
+fectiveness, Fig. 2 plots the number of agent-MDP interactions as a function of agent training time for
+µline= 0. We observe that the PG-RL design results in a greater number of agent-MDP interactions,
+indicating a more thorough exploration of the MDP state space for the same computational budget.
+The ability of πphysics
+θto identify more effective actions, in comparison to πrand
+θ, is further substantiated
+by incrementally increasing µlineand observing the performance changes. As µlineincreases, the
+reward r[n]in (5) becomes lessinformative about potentially effective actions due to the increasing
+penalties on line-switch actions, thus amplifying the importance of physics-guided exploration design.
+This is observed in Table 1 where unlike the policy πrand
+θ(µline), the ST associated with πphysics
+θ(µline)
+does not degrade as µlineincreases. It is noteworthy that despite the inherent linear approximations
+of sensitivity factors, confining the RL exploration to actions derived from the set Reff
+line[n]enhances
+state space exploration. Overall, the agent’s ability to identify impactful topological actions, leading
+to greater action diversity, contributes to the enhanced utilization of the electrical grid while also a
+significant increase in ST. Similar results for the IEEE 118-bus system are provided in Appendix A.6,
+confirming the trends observed in the Grid2Op 36-bus system.
+40 1 2 3 4 5 6 7 8 9 10
+Training Time (hours)0k10k20k30k40k50k60k70kAgent-MDP InteractionsRL + Physics Guided Explore
+RL + Random ExploreFigure 1: Agent-MDP interactions for the Grid2Op 36-bus system with η= 0.95andµline= 0.
+5 Conclusion and Future Work
+We introduced a physics-guided RL framework for determining effective sequences of real-time
+remedial control actions to mitigate cascading failures. The approach, focused on transmission
+line-switches, utilizes linear sensitivity factors to enhance RL exploration during agent training. By
+improving sample efficiency and yielding superior remedial control policies within a constrained
+computational budget, our framework ensures better utilization of grid resources, which is critical
+in the context of climate change adaptation and mitigation. Comparative analyses on the Grid2Op
+36-bus and the IEEE 118-bus networks highlight the superior performance of our framework against
+relevant baselines. Future work will involve using bus-split sensitivity factors [ 34] to computationally
+efficiently prune and identify effective bus-split actions for remedial control policy design. Another
+direction is to leverage the linearity of sensitivity factors to implement simultaneous remedial actions,
+expediting line flow control along desired trajectories.
+References
+[1]August 14,2003 blackout: NERC actions to prevent and mitigate the impacts of future cascad-
+ing blackouts. https://www.nerc.com/docs/docs/blackout/NERC_Final_Blackout_
+Report_07_13_04.pdf , February 2014.
+[2]Emily B. Fisher, Richard P. O’Neill, and Michael C. Ferris. Optimal transmission switching.
+IEEE Transactions on Power Systems , 23(3):1346–1355, 2008.
+[3]Amin Khodaei and Mohammad Shahidehpour. Transmission switching in security-constrained
+unit commitment. IEEE Transactions on Power Systems , 25(4):1937–1945, 2010.
+[4]J. David Fuller, Raynier Ramasra, and Amanda Cha. Fast heuristics for transmission-line
+switching. IEEE Transactions on Power Systems , 27(3):1377–1386, 2012.
+[5]Payman Dehghanian, Yaping Wang, Gurunath Gurrala, Erick Moreno-Centeno, and Mladen
+Kezunovic. Flexible implementation of power system corrective topology control. Electric
+Power Systems Research , 128:79–89, 2015. ISSN 0378-7796.
+[6]Mats Larsson, David J. Hill, and Gustaf Olsson. Emergency voltage control using search and
+predictive control. International Journal of Electrical Power & Energy Systems , 24(2):121–130,
+2002.
+5[7]Juliano S. A. Carneiro and Luca Ferrarini. Preventing thermal overloads in transmission
+circuits via model predictive control. IEEE Transactions on Control Systems Technology , 18(6):
+1406–1412, 2010.
+[8]Mads R Almassalkhi and Ian A Hiskens. Model-predictive cascade mitigation in electric power
+systems with storage and renewables—Part I: Theory and implementation. IEEE Transactions
+on Power Systems , 30(1):67–77, 2014.
+[9]Mads R Almassalkhi and Ian A Hiskens. Model-predictive cascade mitigation in electric
+power systems with storage and renewables—Part II: Case-Study. IEEE Transactions on Power
+Systems , 30(1):78–87, 2014.
+[10] D. Ernst, M. Glavic, and L. Wehenkel. Power systems stability control: reinforcement learning
+framework. IEEE Transactions on Power Systems , 19(1):427–435, 2004.
+[11] Jun Yan, Haibo He, Xiangnan Zhong, and Yufei Tang. Q-learning-based vulnerability analysis
+of smart grid against sequential topology attacks. IEEE Transactions on Information Forensics
+and Security , 12(1):200–210, 2017.
+[12] Jiajun Duan, Di Shi, et al. Deep-reinforcement-learning-based autonomous voltage control for
+power grid operations. IEEE Transactions on Power Systems , 35(1):814–817, 2020.
+[13] Anmol Dwivedi and Ali Tajer. GRNN-based real-time fault chain prediction. IEEE Transactions
+on Power Systems , 39(1):934–946, 2024.
+[14] Adrian Kelly, Aidan O’Sullivan, Patrick de Mars, and Antoine Marot. Reinforcement learning
+for electricity network operation. arXiv:2003.07339 , 2020.
+[15] Antoine Marot, Benjamin Donnot, Camilo Romero, Balthazar Donon, Marvin Lerousseau, Luca
+Veyrin-Forrer, and Isabelle Guyon. Learning to run a power network challenge for training
+topology controllers. Electric Power Systems Research , 189:106635, 2020.
+[16] Antoine Marot, Benjamin Donnot, Gabriel Dulac-Arnold, Adrian Kelly, Aidan O’Sullivan, Jan
+Viebahn, Mariette Awad, Isabelle Guyon, Patrick Panciatici, and Camilo Romero. Learning to
+run a power network challenge: A retrospective analysis. In Proc. NeurIPS Competition and
+Demonstration Track , December 2021.
+[17] David Rolnick, Alan Aspuru-Guzik, Sara Beery, Bistra Dilkina, Priya L. Donti, Marzyeh
+Ghassemi, Hannah Kerner, Claire Monteleoni, Esther Rolf, Milind Tambe, and Adam White.
+Application-driven innovation in machine learning. arXiv:2403.17381 , 2024.
+[18] Allen J Wood, Bruce F Wollenberg, and Gerald B Sheblé. Power Generation, Operation, and
+Control . John Wiley & Sons, 2013.
+[19] Benjamin Donnot. Grid2Op - A Testbed Platform to Model Sequential Decision Making in
+Power Systems, 2020. URL https://github.com/rte-france/grid2op .
+[20] Tu Lan, Jiajun Duan, Bei Zhang, Di Shi, Zhiwei Wang, Ruisheng Diao, and Xiaohu Zhang.
+AI-based autonomous line flow control via topology adjustment for maximizing time-series
+ATCs. In Proc. IEEE Power and Energy Society General Meeting , QC, Canada, August 2020.
+[21] Anandsingh Chauhan, Mayank Baranwal, and Ansuma Basumatary. PowRL: A reinforcement
+learning framework for robust management of power networks. In Proc. AAAI Conference on
+Artificial Intelligence , Washington, DC, June 2023.
+[22] Deunsol Yoon, Sunghoon Hong, Byung-Jun Lee, and Kee-Eung Kim. Winning the L2RPN chal-
+lenge: Power grid management via semi-Markov afterstate actor-critic. In Proc. International
+Conference on Learning Representations , May 2021.
+[23] Richard S Sutton, Doina Precup, and Satinder Singh. Between MDPs and semi-MDPs: A
+framework for temporal abstraction in reinforcement learning. Artificial intelligence , 112(1-2):
+181–211, 1999.
+6[24] Amarsagar Reddy Ramapuram Matavalam, Kishan Prudhvi Guddanti, Yang Weng, and
+Venkataramana Ajjarapu. Curriculum based reinforcement learning of grid topology con-
+trollers to prevent thermal cascading. IEEE Transactions on Power Systems , 38(5):4206–4220,
+2023.
+[25] Geert Jan Meppelink. A hybrid reinforcement learning and tree search approach for network
+topology control. Master’s thesis, NTNU, 2023.
+[26] Richard Bellman. Dynamic Programming . Princeton University Press, 1957.
+[27] J.N. Tsitsiklis and B. Van Roy. An analysis of temporal-difference learning with function
+approximation. IEEE Transactions on Automatic Control , 42(5):674–690, 1997.
+[28] Richard S Sutton and Andrew G Barto. Reinforcement Learning: An Introduction . MIT press,
+2018.
+[29] V olodymyr Mnih, Koray Kavukcuoglu, David Silver, Andrei A Rusu, Joel Veness, Marc G
+Bellemare, Alex Graves, et al. Human-level control through deep reinforcement learning.
+Nature , 518(7540):529–533, 2015.
+[30] P.W. Sauer, K.E. Reinhard, and T.J. Overbye. Extended factors for linear contingency analysis.
+InProc. Hawaii International Conference on System Sciences , Maui, Hawaii, January 2001.
+[31] François Quentin. MILP-agent, 2022. URL https://github.com/rte-france/
+grid2op-milp-agent .
+[32] Ziyu Wang, , Tom Schaul, Matteo Hessel, Hado Hasselt, Marc Lanctot, and Nando Freitas. Du-
+eling network architectures for deep reinforcement learning. In Proc. International Conference
+on Machine Learning , New York, NY , June 2016.
+[33] Tom Schaul, John Quan, Ioannis Antonoglou, and David Silver. Prioritized experience replay.
+InProc. International Conference on Learning Representations , San Juan, Puerto Rico, May
+2016.
+[34] Joost van Dijk, Jan Viebahn, Bastiaan Cijsouw, and Jasper van Casteren. Bus split distribution
+factors. IEEE Transactions on Power Systems , 39(3):5115–5125, 2024.
+[35] Anmol Dwivedi, Santiago Paternain, and Ali Tajer. Blackout mitigation via physics-guided RL.
+arXiv:2401.09640 , 2024.
+A Appendix
+A.1 MDP Modeling
+State Space S:Based on the system’s state X[n], which captures the line and bus features, we
+denote the MDP state at time nbyS[n], defined as a moving window of the states of length κ, i.e.,
+S[n]△= [X[n−(κ−1)], . . . ,X[n]]⊤, (4)
+where the state space is S=Rκ·(L·N+F·H). Leveraging the temporal correlation of demands,
+decisions based on the MDP state S[n]help predict future load demands.
+Action Space A:We denote the action space by A≜Aline, where Alineis the space of line-
+switching. Action space Alineincludes two actions for each line ℓ∈[L]associated with reconnecting
+and removing it. Besides these 2Lactions, we also include a do-nothing action to accommodate the
+instances at which (i) the mandated downtime period τDmakes all line-switch actions operationally
+infeasible; or (ii) the system’s risk max i∈[L]ρi[n]is sufficiently low. This action allows the agent to
+determine the MDP state at time n+ 1solely based on the system dynamics driven by changes in
+load demand D[n+ 1].
+7Stochastic Transition Kernel P:After an action a[n]∈ A is taken at time n, the MDP state
+S[n]transitions to the next state S[n+ 1] according to an unknown transition probability kernel P
+S[n+ 1]∼P(S|S[n], a[n])wherePcaptures the system dynamics influenced by both the random
+future load demand and the implemented action a[n]∈ A.
+Reward Dynamics R:To capture the immediate effectiveness of taking an action a[n]∈ A in any
+given MDP state S[n], we define an instant reward function
+r[n]△=LX
+ℓ=1 
+1−ρ2
+ℓ[n]
+−µline LX
+ℓ=1cline
+ℓ·Wℓ[n]!
+, (5)
+which is the decision reward associated with transitioning from MDP state S[n]toS[n+1], where the
+constant µlineis associated with the cost constraint βlineintroduced in (1), respectively. The inclusion
+of parameter µlineallows us to flexibly model different cost constraints, reflecting diverse economic
+considerations in power systems. Greater values for the parameter µlinein(5)promote solutions that
+satisfy stricter cost requirements.
+A.2 Algorithmic Details
+Algorithm 3 Construct Set Reff
+line[n]from Action Space Aline
+1:procedure EFFECTIVE SETReff
+line(Aline)
+2: Observe system state X[n]and construct L[n]
+3: Initialize Reff
+line[n]← ∅
+4: Construct Arem
+line[n]← {ℓ∈ L[n] :τD= 0 &τF= 0} ▷legal removals
+5: Construct LODF [n]∈RL×Lmatrix from X[n]
+6: Find ℓmax=△= arg maxℓ∈L[n]ρℓ[n]
+7: forlinekinArem
+line[n]\{ℓmax}do ▷legal line removals that decrease flow
+8: Compute Fℓmax[n+ 1]←Fℓmax[n] +LODF ℓmax,k·Fk[n]
+9: if|Fℓmax[n+ 1]| ≤Fmax
+ℓmaxthen
+10: Reff
+line[n]← Reff
+line[n]S{k}
+11: end if
+12: end for
+13: forlinekinReff
+line[n]do ▷no additional overloads
+14: forlineℓinL[n]\{ℓmax}do
+15: Compute Fℓ[n+ 1]←Fℓ[n] +LODF ℓ,k·Fk[n]
+16: if|Fℓ[n+ 1]|> Fmax
+ℓthen
+17: Reff
+line[n]← Reff
+line[n]\{k}
+18: Break
+19: end if
+20: end for
+21: end for
+22: Construct Areco
+line[n]← {ℓ∈ ¬L [n] :τD= 0 &τF= 0} ▷legal reconnect
+23: Reff
+line[n]← Reff
+line[n]SAreco
+line[n]
+24: return Reff
+line[n]
+25:end procedure
+Algorithm 3 has three main steps.
+1.The agent constructs a legal action set Arem
+line[n]⊂ A linefromX[n], comprising of permissible
+line removal candidates. Specifically, lines ℓ∈ L[n]with legality conditions τD= 0and
+τF= 0can only be removed rendering other control actions in Alineirrelevant at time n.
+2.A dynamic set Reff
+line[n]is constructed by initially identifying lines k∈ Arem
+line[n]\{ℓmax}
+whose removal decrease flow in line ℓmaxbelow its rated limit Fmax
+ℓmax.
+3.Finally, the agent eliminates lines from Reff
+line[n]the removal of which creates additional
+overloads in the network. Note that we include allcurrently disconnected lines ℓ∈ ¬L [n]
+as potential candidates for reconnection in the set Reff
+line[n], provided they adhere to legality
+conditions ( τD= 0andτF= 0). It is noteworthy that the set Reff
+line[n]istime-varying . Hence,
+8Algorithm 4 Physics-Guided Exploration
+1:procedure PHYSICS -GUIDED EXPLORE (Aline)
+2: Construct Reff
+line[n]fromAlineusing Algorithm 3
+3: Initialize maxReward ← −∞
+4: Initialize maxAction ←None
+5: foreach action ainReff
+line[n]do ▷get reward estimate
+6: Obtain reward estimate ˜r[n]for action a[n]via sensitivity factors
+7: if˜r[n]>maxReward then
+8: maxReward ←˜r
+9: maxAction ←a
+10: end if
+11: end for
+12: return maxAction
+13:end procedure
+depending on the current system state X[n],Reff
+line[n]may either contain a few elements or
+be empty.
+Algorithm 5 Q-Guided Exploitation with Probability 1−ϵn
+1:procedure Q-GUIDED EXPLOIT (Aline,θn)
+2: Infer MDP state S[n]fromX[n]
+3: Construct Alegal
+line[n]← {ℓ∈[L] :τD= 0 &τF= 0} ▷legal line-switch
+4: Alegal← Alegal
+line[n]SAgen
+5: Initialize Q[n]←DQN θn(S[n])
+6:QAlegal[n]←Filter (Q[n],Alegal) ▷filter legalQ-values
+7: topFiveActions ←TopFive (QAlegal[n]) ▷find top- 5legalQ-values
+8: Initialize maxReward ← −∞
+9: Initialize maxAction ←None
+10: foreach action aintopFiveActions do ▷get reward estimate
+11: Obtain reward estimate ˜r[n]for action avia flow model (3)
+12: if˜r[n]>maxReward then
+13: maxReward ←˜r[n]
+14: maxAction ←a
+15: end if
+16: end for
+17: return maxAction
+18:end procedure
+Q-Guided Exploitation Policy (Algorithm 5) The agent refines its action choices over time by
+leveraging the feature representation θn, learned through the minimization of the temporal difference
+error via stochastic gradient descent. Specifically, the agent employs the current DQN θnto select
+an action a∈ A with probability 1−ϵn. The process begins with the agent inferring the MDP
+stateS[n]in(4)fromX[n]. Next, the agent predicts a Q[n]∈R|A|vector using the network model
+DQN θn(S[n])through a forward pass, where each element represents Q-value predictions associated
+with each remedial control actions a[n]∈ A . Rather than choosing the action with the highest
+Q-value, the agent first identifies legal action subset Alegal△=Alegal
+line[n]fromX[n]. Next, the agent
+identifies actions a[n]∈ Alegalassociated with the top- 5Q-values within this legal action subset
+Alegaland chooses one optimizing for the reward estimate ˜r[n]. This policy accelerates learning
+without the need to design a sophisticated reward function Rthat penalizes illegal actions.
+A.3 Grid2Op Environment Details
+Grid2Op Environment Grid2Op is an open-source gym-like platform for simulating power trans-
+mission networks with real-world operational constraints. Grid2Op offers diverse episodes throughout
+the year with distinct monthly load profiles. Each episode encompasses generation G[n]and load
+demand D[n]set-points for all time steps n∈[T]across every month throughout the year. Each
+episode represents approximately 28 days with a 5-minute time resolution, based on which we have
+horizon T= 8062 . December consistently shows high aggregate demand, pushing transmission lines
+closer to their maximum flow limits while May experiences relatively lower demand.
+9Datasets For both systems, we have performed a random split of Grid2Op episodes. For the test
+sets, we selected 32 scenarios for the Grid2Op 36-bus system and 34 scenarios for the IEEE 118-bus
+system, while assigning 450 scenarios to the training sets and a subset for validation to determine the
+hyperparameters. To ensure proper representation of various demand profiles, the test set includes at
+least two episodes from each month.
+Performance Metrics: A key performance metric is the agent’s survival time ST (T), averaged
+across all test set episodes for T= 8062 . We explore factors influencing ST through analyzing action
+diversity and track unique control actions per episode. Furthermore, we quantify the fraction of times
+each of the following three possible actions are taken: “do-nothing," and “line-switch Aline,". Since
+the agent takes remedial actions only under critical states associated with critical time instances n,
+we report action decision fractions that exclusively stem from these critical states, corresponding
+to instances when ρℓmax[n]≥η. We also note that monthly load demand variations D[n]influence
+how frequently different MDP states S[n]are visited. This results in varying control actions per
+episode. To form an overall insight, we report the average percentage of actions chosen across all test
+episodes.
+System-State Feature X[n] Size Type Notation
+prod_p G float G[n]
+load_p D float D[n]
+p_or, p_ex L float Fℓ[n]
+a_or, a_ex L float Aℓ[n]
+rho L float ρℓ[n]
+line_status L bool L[n]
+timestep_overflow L int overload time
+time_before_cooldown_line L int line downtime
+time_before_cooldown_sub N int bus downtime
+Table 2: Heterogeneous input system state features X[n].
+System Parameters and MDP State Space The Grid2Op 36-bus system consists of N= 36 buses,
+L= 59 transmission lines (including transformers), G= 10 dispatchable generators, and D= 37
+loads. We employ F= 8line and H= 3bus features (Table 2), totaling O= 567 heterogeneous
+input system state X[n]features. Each MDP state S[n]considers the past κ= 6system states for
+decision-making. Without loss of generality, we set η= 0.95specified in Section 2 as the threshold
+for determining whether the system is critical.
+The IEEE 118-bus system consists of N= 118 buses, L= 186 transmission lines, (includ-
+ing transformers), G= 32 dispatchable generators, and D= 99 loads. While in principle we
+can choose all the 11 features in Table 2, to improve the computational complexity associated
+with agent training, we choose a subset of line-related features, specifically, F= 5 line fea-
+tures ( p_or, a_or, rho, line_status andtimestep_overflow ). This results in a total of
+O= 930 heterogeneous input system state features and consider the past κ= 5system states for
+decision-making. Without loss of generality, we set η= 1.0.
+After performing a line-switch action a[n]∈ A lineon any line ℓ, we impose a mandatory downtime
+ofτD= 3time steps (15-minute interval) for each line ℓ∈[L]. In the event of natural failure caused
+due to an overload cascade, we extend the downtime to τF= 12 (60-minute interval).
+MDP Action Space - Line-Switch Action Space Design Aline:Following the MDP modeling
+discussed in Section A.1, for the Grid2Op 36-bus system we have |Aline|= 119 (2 L+ 1) and for the
+IEEE 118-bus system we have |Aline|= 373 (2 L+ 1) .
+A.4 Baseline Agents
+For the chosen performance metrics, we consider four alternative baselines: (i) Do-Nothing agent
+consistently opts for the “do-nothing" action across all scenarios, independent of the system-state
+X[n]; (ii)Re-Connection agent decides to “re-connect" a disconnected line that greedily maximizes
+the reward estimate ˜r[n](5)at the current time step n. In cases where reconnection is infeasible
+due to line downtime constraints or when no lines are available for reconnection, the Re-Connection
+10agent defaults to the “do-nothing" action for that step; (iii) milp_agent [31] agent strategically
+minimizes over-thermal line margins using line switching actions Alineby formulating the problem
+as a mixed-integer linear program (MILP); and (iv) RL + Random Explore baseline agent: we
+employ a DQN θnetwork with a tailored random ϵn-greedy exploration policy during agent training.
+Specifically, similar to Algorithm 4, the agent first constructs a legal action set Alegal
+line[n]△={ℓ∈[L] :
+τD= 0, τF= 0}fromX[n]at critical times. In contrast to Algorithm 4, however, this agent chooses
+arandom legal action in the set a[n]∈ Alegal
+line[n](instead of using Reff
+line[n]). In the Grid2Op 36-bus
+system, using this random exploration policy, we train the DQN θfor20hours of repeated interactions
+with the Grid2Op simulator for each µline∈ {0,0.5,1,1.5}. We report results associated with
+thebest model θand refer to the best policy obtained following this random ϵn-greedy exploration
+byπrand
+θ(µline). Similarly, in the IEEE 118-bus system, we train the DQN θmodel for 15 hours of
+repeated interactions.
+A.5 DQN Architecture and Training
+Our DQN architecture features a feed-forward NN with two hidden layers, each having Ounits and
+adopting tanh nonlinearities. The input layer, with a shape of |S[n]|=O·κ, feeds into the first
+hidden layer of Ounits, followed by another hidden layer of Ounits. The network then splits into
+two streams: an advantage-stream Aθ(S[n],·)∈R|A|with a layer of |A|action-size units and tanh
+non-linearity, and a value-stream Vθ(S[n])∈Rpredicting the value function for the current MDP
+stateS[n].Qθ(S[n],·)are obtained by adding the value and advantage streams. We penalize the
+reward function r[n]in(5)in the event of failures attributed to overloading cascades and premature
+scenario termination ( n < T ). Additionally, we normalize the reward constraining its values to the
+interval [−1,1]. For the Grid2Op 36-bus system, we use a learning rate αn= 5·10−4decayed every
+210training iterations, a mini-batch size of B= 64 , an initial ϵ= 0.99exponentially decayed to
+ϵ= 0.05over26·103agent-MDP training interaction steps and choose γ= 0.99. Likewise, for the
+IEEE 118-bus system we use similar parameters with a mini-batch size of B= 32 . Likewise, for
+the IEEE 118-bus system we set αn= 9·10−4with a mini-batch size of B= 32 and21·103agent
+MDP training interaction steps.
+A.6 Results for the IEEE 118-bus System
+Action Space (|A|) Agent Type Avg. ST%
+Do-nothing%
+Reconnect%
+RemovalsAvg. Action
+Diversity
+− Do-Nothing 4371.91 100 − − −
+Aline(187) Re-Connection 2813.64 98.73 1.26 − 1.235 (0 .66%)
+Aline(373) milp_agent [31] 4003.85 15.64 0.88 83.46 5.617 (1 .505%)
+Aline(373)RL + Random Explore 4812.88 3.58 20.30 76.08 8.323 (2 .231%)
+RL + Physics Guided Explore 5767 .14 1.86 25.34 72.77 16.235(4.352%)
+Table 3: Performance on the IEEE 118-bus system with η= 1.0andµline= 0.
+All the results for the IEEE 118-bus system are tabulated in Table 3. Starting from the baselines,
+we observe that the Do-Nothing agent achieves a significantly higher average ST of 4,371 steps,
+compared to the Re-Connection agent’s 2813.64 steps. This observation highlights the importance
+of strategically selecting look-ahead decisions, particularly in more complex and larger networks.
+Contrary to common assumptions, the Re-Connection agent’s greedy approach of reconnecting lines
+can instead reduce ST, demonstrating that Do-Nothing can be more effective.
+Focusing on the line switch action space Aline, we observe that the agent with policy πrand
+θsurvives
+4812.88 steps, a 10.1%increase over baselines, by allocating 76.08% to remedial control actions for
+line removals. More importantly, our physics-guided policy πphysics
+θachieves an average ST of 5767
+steps, a 31.9%increase over baselines and a 19.2%improvement compared to πrand
+θwith greater
+action diversity. Fig. 2 illustrates the number of agent-MDP interactions as a function of training time,
+showcasing that the physics-guided exploration is more thorough for a given computational budget.
+While this paper focuses on the improvements achieved through effective exploration using action
+spaceAline, further enhancements of the physics-guided design can be realized by extending the
+action space to generator adjustments, i.e., Aline∪A gen. As presented in the study [ 35], this extension
+11allows for a richer exploration of the state space. It enables reaching additional states by taking
+actions a[n]∈ A genfrom states that were originally accessible only via actions a[n]∈ A line, thereby
+improving downstream performance.
+0 1 2 3 4 5 6 7 8 9 10
+Training Time (hours)0k10k20k30k40k50kAgent-MDP InteractionsRL + Physics Guided Explore
+RL + Random Explore
+Figure 2: Agent −MDP interactions for the IEEE 118-bus system with η= 1.0andµline= 0.
+12

@@ -1,0 +1,243 @@
+A Transfer Learning-Based Surrogate Model for
+Geological Carbon Storage with Multi-Fidelity
+Training Data
+Su Jiang
+Department of Energy Resources Engineering
+Stanford University
+Stanford, CA 94305
+sujiang@stanford.eduHewei Tang
+Atmospheric, Earth, and Energy Division
+Lawrence Livermore National Laboratory
+Livermore, CA 94550
+tang39@llnl.gov
+Pengcheng Fu
+Atmospheric, Earth, and Energy Division
+Lawrence Livermore National Laboratory
+Livermore, CA 94550
+fu4@llnl.govHonggeun Jo
+Department of Petroleum and Geosystems
+Engineering, The University of Texas
+Austin, TX 78712
+honggeun.jo@utexas.edu
+Abstract
+Geologic carbon storage (GCS) entails injecting large volumes of carbon dioxide
+(CO 2) in deep geologic formations to prevent its release to the atmosphere. Reser-
+voir simulation is widely used in GCS applications to predict subsurface pressure
+and CO 2saturation. High ﬁdelity numerical models are prohibitively expensive for
+data assimilation and uncertainty quantiﬁcation, which require a large number of
+simulation runs. Deep learning-based surrogate models have shown a great promise
+to alleviate the high computational cost. However, the training cost is high as thou-
+sands of high-ﬁdelity simulations are often necessary for generating the training
+data. In this work, we explore the use of a transfer learning approach to reduce
+the training cost. Compared with the surrogate model trained with high-ﬁdelity
+simulations, our new transfer learning-based model shows comparable accuracy
+but reduces the training cost by 80%.
+1 Introduction
+We can prevent 90% of industry emissions from reaching the atmosphere by capturing the CO 2at
+source and then permanently store them underground. The storage process is known as geologic
+carbon storage (GCS). Reservoir simulation is widely used in GCS reservoir management to predict
+subsurface pressure and CO 2saturation. However, when used in the context of data assimilation
+and uncertainty quantiﬁcation, high-ﬁdelity numerical models are prohibitively expensive due to the
+large number of simulations required. Deep-learning-based surrogate models are emerging as an
+effective and efﬁcient alternative to conventional reservoir simulators for GCS applications ( Mo et al.
+[2019], Tang et al. [2021a], Tang et al. [2021b], Wen et al. [2021]).
+To train a neural network that predicts reservoir responses on a grid consisting of 100,000 cells,
+thousands of reservoir simulations are usually required, incurring a high training cost. In this work,
+we explore the possibility of reducing the training cost by using multi-ﬁdelity data for the training. In
+other words, we ﬁrst use an ensemble of low-ﬁdelity simulations to train the network. The low-ﬁdelity
+ensemble embodies the same physics as the high-ﬁdelity models but adopts a lower grid resolution to
+reduce the per-simulation computational cost by an order of magnitude. A small number of high-
+Tackling Climate Change with Machine Learning: workshop at NeurIPS 2021.ﬁdelity simulations with the original resolution are then employed to train and ﬁne-tune the network.
+Note that “high/low ﬁdelity” in this work is used interchangeably with “high/low resolution”.
+Such a transfer learning-based approach has been recently applied to subsurface surrogate model
+development such as in [Song and Tartakovsky, 2021] for a 2D Gaussian case. The challenges
+posed by our target application include the complexity of 3D two-facies geological modeling and
+simulation, and the complex well control for CO 2injection. In this work, we apply transfer learning
+on 3D recurrent R-U-Net, developed by Tang et al. [2021c], to train a surrogate model for pressure
+prediction of a 3D GCS case with bimodal distribution.
+2 Surrogate Model with Transfer Learning
+Forward Simulation. The GCS problem is simulated as a multi-phase ﬂow problem in porous
+media. Mass conservation for each phase and Darcy law are applied to solve the pressure and
+saturation. Finite volume formation is applied to solve the problem. In this work, we apply GEOSX
+(http://www.geosx.org/) to perform forward simulation. We provide the geological parameters
+(permeability, porosity, and etc.) and other modeling parameters (well controls). GEOSX is applied
+to generate pressure and CO 2saturation predictions.
+3D Recurrent R-U-Net. In this work, we apply a 3D recurrent R-U-Net developed by Tang et al.
+[2021c] as surrogate model. 3D recurrent R-U-Net is composed of residual U-Net (R-U-Net) and
+convolutional long-short term memory network (3D convLSTM) as shown in Figure 1. The R-U-Net
+is applied to capture the spatial correlation between simulation input m(permeability, porosity, etc.)
+and simulation output y(pressure, saturation, etc.). 3D convLSTM is applied to capture the temporal
+correlation between simulation output in different time steps. The latent features from R-U-Net are
+the input for the convLSTM. The feature maps after convLSTM will feed into the decoding net to
+generate temporal predictions of reservoir response. We use fto denote the surrogate model, the
+prediction can be generated through ^y=f(m).
+Figure 1: Architecture of Recurrent R-U-Net
+Workﬂow for Training with Transfer Learning . The 3D recurrent R-U-Net surrogate model
+requires a large number (O(2000)) of high-ﬁdelity simulations (HFS). We apply the idea of transfer
+learning to train the network based on the multi-scale simulations. We generate NLFS
+r(O(2000)) low-
+ﬁdelity simulations (LFS) and NHFS
+r(O(100)) HFS. The input for the surrogate model is ﬁne-scale
+geological properties m2RNm1, whereNmdenotes the number of model parameters.
+The process of surrogate model training includes three steps. First, a 3D recurrent R-U-Net is
+constructed as base model fbasewith weights wbase. The input is high-ﬁdelity geological parameters
+m2RNm1, and output is ybase. An additional output layer is added after the decoding net of the
+base model fbaseto map the base model output ybaseto LFS data yLFS2RNLFS
+outputNt. The weight for
+the additonal layer is wLFS
+output. A set ofNLFS
+rLFS samples are applied to train the network fLFSwith
+weightsfwbase;wLFS
+outputg. The second step is replacing the output layer (weights wLFS
+output) with a new
+output layer (weights wHFS
+output). The new output layer maps the base model output ybaseto HFS data
+yHFS2RNHFS
+outputNt. The trained base model weights wbasefrom step 1 are applied but ﬁxed in this
+2step.NHFS
+rHFS samples are used in this step to train the output layer (weights wHFS
+output) of the new 3D
+recurrent R-U-Net fHFS. The last step is ﬁne-tuning all the weights fwbase;wHFS
+outputgof the surrogate
+model fHFS. We will apply the training process to generate 3D surrogate model for CO 2storage case.
+3 Surrogate Results
+Problem Setup . In this work, we consider a model includes two rock types, sand and shale. The
+ﬁne-scale (high-ﬁdelity) model is deﬁned on a 646428grid. The 3D facies model is generated
+with sequential indicator simulation conditioned to the hard data at nine well locations in Fig. 2.
+3D Gaussian realizations are generated with sequential Gaussian simulation. The porosity and
+log-permeability are assigned to each block according to the facies and Gaussian realizations using
+cookie-cutter method. Figure 2 presents one realization of geomodel, with facies shown in left,
+porosity in middle, and log-permeability in right. The low-ﬁdelity model is deﬁned on 323228
+grid. The porosity and permeability are upscaled with the distance-weighted mean value. There
+areNinj= 4injectors in the ﬁeld. CO 2is injected through these four injectors with a constant total
+injection rate (2 million metric tons per year) for the whole ﬁeld. The simulation period is 10 years.
+We simulate NLFS
+r= 1800 LFS runs and NHFS
+r= 100 HFS runs as the training data. In this work,
+we train the surrogate model for pressure predictions.
+Figure 2: A representative geological realization with facies (left), porosity (middle),
+log-permeability (right). The nine wells used to constrain the model are shown in the facies plot.
+Training Process . The input for recurrent R-U-Net is composed of porosity and log-permeability
+ﬁeld (two input channel). The dimension of input is Nm=NxNyNz2 = 6868
+282 = 258;944. We normalize the porosity and log-permeability by the maximum value. The
+output include pressure for 10 time steps (simulation data is sampled per year). We apply the
+min-max normalization to transfer data to 0-1 range. The output dimension for LFS surrogate
+model isNLFS
+outputNt= 32322810 = 286;720. The output dimension for HFS model is
+NHFS
+outputNt= 64642810 = 1;146;880, whereNHFS
+output is the number of grid block of HFS.
+In the training process, we train the low-ﬁdelity surrogate model fLFSwithNLFS
+rLFS samples, and
+ﬁne tune the high-ﬁdelity model fHFSwithNLFS
+rLFS samples. The optimization is
+[w
+base;(wk
+output)] = argmin
+wbase;wk
+output1
+Nkr1
+NtNk
+rX
+i=1NtX
+t=1(jj^yk;t
+i yk;t
+ijj2
+2+1
+NinjNinjX
+j=1jj^yk;t
+i;j yk;t
+i;jjj2
+2);(1)
+fork=LFS;HFS, wheredenotes the weights for loss in the well locations. The training loss
+includes the reconstruction loss and the hard data loss for well locations. The mismatch is calculated
+withL2norm. The network is trained with adaptive moment estimation (ADAM) optimizer [Kingma
+and Ba, 2014]. The batch size is set be to 8, and 200 epochs are used to the LFS model. 100 epochs
+are used to train the output layer in step 2 and ﬁne tune the model in step 3.
+Pressure Fields . We generate a set of 100 new realizations at high ﬁdelity to evaluate the pressure
+prediction from surrogate model. We compute the relative error for pressure prediction of each
+realizationi, written as
+ei=1
+NHFS
+output1
+NtNHFS
+outputX
+j=1NtX
+t=1j^yt
+i;j yt
+i;jj
+(yt
+i;j)max (yt
+i;j)min; (2)
+3fori= 1;2;:::; 100. The relative error is normalized by the minimum and maximum value of
+pressure at each grid block j, time steptfor test realization i.
+We ﬁrst train the network with 1800 HFS samples and use the HFS surrogate model fref
+HFSas reference.
+Figure 3 presents the pressure ﬁelds of 10 realizations for layer 28 at t= 10 year. The upper row
+shows the HFS simulation results, the middle show presents the surrogate results from multi-ﬁdelity
+training. The bottom row shows the surrogate results from high-ﬁdelity training. We rank these 100
+realizations from low relative error to high relative error, and sample 10 realizations in sequence.
+For the surrogate results with multi-ﬁdelity training, the relative error for the ﬁrst realization is
+1:62% (the lowest value). The largest relative error is 3:62%. For the reference surrogate results with
+high-ﬁdelity training, the errors are 1:50% and4:05%. Both results show close agreement with HFS
+simulations. These 10 realizations are representative and present a large variation. The surrogate
+predictions with multi-ﬁdelity training presents reasonable accuracy.
+(a) Simulation pressure predictions (psi)
+(b) Surrogate pressure predictions with multi-ﬁdelity training (psi)
+(c) Surrogate pressure predictions with high-ﬁdelity training (psi)
+Figure 3: Pressure maps for HFS (upper row) surrogate results with multi-ﬁdelity training (middle
+row), surrogate results with high-ﬁdelity training (bottom row) for 10 test cases at layer 28 at 10 years
+Computational Cost . The computational time of building surrogate model includes two parts,
+simulation time and network training time. Table 1 summarizes the computational cost of generating
+reference surrogate model fref
+HFSand generating surrogate model fHFSwith transfer learning. For the
+reference surrogate model, 1800 high-ﬁdelity simulations are used to train the model. The total
+simulation time for high-ﬁdelity training is 3600 CPU hours. While for multi-ﬁdelity training, only
+100 HFS samples and 1800 low-ﬁdelity simulations are required. The total simulation time for
+multi-ﬁdelity training is 740 CPU hours, which is around 20% of the simulation time of high-ﬁdelity
+ensemble. The multi-ﬁdelity framework signiﬁcantly improve the computational efﬁciency of the
+training dataset.
+Table 1: Computational cost for high-ﬁdelity training and multi-ﬁdelity training
+High-ﬁdelity training Multi-ﬁdelity training
+GEOSX simulation
+(646428)2 core hours1800 = 3600
+core hours2 core hours100 = 200 core hours
+GEOSX simulation
+(323228)N/A0.3 core hours1800 = 540 core
+hours
+GPU training time
+(Nvidia Tesla V100)11.5 hours9.3 hours (step 1) + 0.1 hours (step
+2)+ 0.3 hours (step 3) = 9.7 hours
+4 Conclusions and Discussion
+In this study, we used a transfer learning approach to train a 3D recurrent R-U-Net surrogate model
+for predicting pressure responses of a geologic carbon storage (GCS) reservoir subjected to CO 2
+injection. The full model has an original resolution of 646428. We trained the neural network
+with 1,800 low-ﬁdelity simulations embodying the same physics but with low resolution. The
+4model is then ﬁne-tuned with 100 full-resolution simulations. The resultant surrogate model exhibits
+satisfactory accuracy while reduces the training cost by 80%. This suggests that the multi-ﬁdelity
+training framework can be applied to surrogate modeling of ﬁeld-scale GCS projects.
+Acknowledgments and Disclosure of Funding
+This manuscript has been authored by Lawrence Livermore National Security, LLC under Contract
+No. DE-AC52-07NA2 7344 with the US. Department of Energy (DOE). The work was completed as
+part of the Science-informed Machine learning to Accelerate Real Time decision making for Carbon
+Storage (SMART- CS) Initiative.
+References
+Diederik P Kingma and Jimmy Ba. Adam: A method for stochastic optimization. arXiv preprint
+arXiv:1412.6980 , 2014.
+Shaoxing Mo, Yinhao Zhu, Nicholas Zabaras, Xiaoqing Shi, and Jichun Wu. Deep convolutional
+encoder-decoder networks for uncertainty quantiﬁcation of dynamic multiphase ﬂow in heteroge-
+neous media. Water Resources Research , 55(1):703–728, 2019.
+Dong H Song and Daniel M Tartakovsky. Transfer learning on multi-ﬁdelity data. arXiv preprint
+arXiv:2105.00856 , 2021.
+Hewei Tang, Pengcheng Fu, Christopher S Sherman, Jize Zhang, Xin Ju, François Hamon, Nicholas A
+Azzolina, Matthew Burton-Kelly, and Joseph P Morris. A deep learning-accelerated data assim-
+ilation and forecasting workﬂow for commercial-scale geologic carbon storage. arXiv preprint
+arXiv:2105.09468 , 2021a.
+Meng Tang, Xin Ju, and Louis J Durlofsky. Deep-learning-based coupled ﬂow-geomechanics
+surrogate model for CO 2sequestration. arXiv preprint arXiv:2105.01334 , 2021b.
+Meng Tang, Yimin Liu, and Louis J Durlofsky. Deep-learning-based surrogate ﬂow modeling and
+geological parameterization for data assimilation in 3D subsurface ﬂow. Computer Methods in
+Applied Mechanics and Engineering , 376:113636, 2021c.
+Gege Wen, Meng Tang, and Sally M Benson. Towards a predictor for CO 2plume migration using
+deep neural networks. International Journal of Greenhouse Gas Control , 105:103223, 2021.
+5

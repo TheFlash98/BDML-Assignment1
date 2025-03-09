@@ -1,0 +1,211 @@
+Learning evapotranspiration dataset corrections from
+water cycle closure supervision
+Anonymous Author(s)
+Affiliation
+Address
+email
+Abstract
+Evapotranspiration (ET) is one of the most uncertain components of the global 1
+water cycle. Improving global ET estimates is needed to better our understanding of 2
+the global water cycle so as to forecast the consequences of climate change on the 3
+future of global water resource distribution. This work presents a methodology to 4
+derive monthly corrections of global ET datasets at 0.25 degree resolution. We use 5
+ML to generalize sparse catchment-level water cycle closure residual information 6
+to global and dense pixel-level residuals. Our model takes a probabilistic view on 7
+ET datasets and their correction that we use to regress catchment-level residuals 8
+using a sum-aggregated supervision. Using four global ET datasets, we show that 9
+our learned model has learned ET corrections that accurately generalize its water 10
+cycle-closure results to unseen catchments. 11
+1 Introduction 12
+In the context of Climate Change (CC), the demand on water resources is increasing as both flood 13
+and drought related damages increase. Human activities are known to impact the global water 14
+cycle. However observational uncertainties limit extreme hazard forecast capability and render 15
+human contribution to CC trend estimates very challenging in the context of high natural climate 16
+variability [1]. The main evidence of observational uncertainties and discrepancy in monitoring of 17
+the hydrosphere is that the water cycle is still not closed [2]. The water cycle is modelled through 18
+four components:, precipitation (P), evapotranspiration (ET), river discharge (R) and water storage 19
+differential (dS). Closing the water cycle refers to accurately quantifying each of these components at 20
+a given spatial and temporal resolution so that they sum to zero on all spatio-temporal locations: 21
+P−ET−R+dS= 0 (1)
+Among the hydrosphere component, ET remains one of the most uncertain and elusive components of 22
+Earth’s water balance: it is a difficult physical process to sense as it cannot be observed directly from 23
+space, and its field measurement via eddy-covariance method raise limited spatial representatives 24
+[3]. Improving ET is needed for an advanced closure of the water cycle at regional to local scales. 25
+Such improvement would translate into an improved capability to monitor and forecast extreme 26
+hazard and to attribute to human activity a more accurate part of global change. One the one hand 27
+previous studies have succeed in optimizing ET using the water cycle closure as a constrain [11,12]. 28
+but such attempts was limited to global or catchment scale and raise limitation in generalizing ET 29
+correction at higher scale [13]. Very recently, ML have leverage the use of hydroclimatic variables 30
+and large catchment database for inferring pixelwise correction on precipitation atlas [14]. In this 31
+work, we propose a method that corrects existing global ET datasets so as to better close the water 32
+Submitted to Tackling Climate Change with Machine Learning: workshop at NeurIPS 2022.cycle. Doing so presents two challenges: First, the water cycle constraint includes the R component, 33
+which is only defined at the catchment scale, while we seek evaporation corrections at the pixel 34
+scale. Second, R measurements are only sparsely available, so water cycle closure errors are only 35
+available locally in space and time, while we aim to provide dense corrections to global ET datasets. 36
+Our solution to both challenges is to use Machine Learning (ML) to generalize ET corrections from 37
+sparse catchment levels to dense pixel level. We train a pixel-wise model to regress ET corrections 38
+from globally available climatic indices, which allows us to generalize the learned corrections to 39
+a dense pixel-wise resolution. Due to the nature of the R measurements, the supervision signal is 40
+defined at the catchment level, so we train our model using a sum-aggregated supervision in which 41
+we regress the sum of model outputs over catchment pixels to the catchment-level label. Our loss is 42
+defined using a Maximum A Posteriori (MAP) formulation, in which we use prior knowledge on ET 43
+uncertainties to guide the supervision.We evaluate the ability of learned corrections to close the water 44
+cycle on unseen catchments and report consistent improvements across 4 global ET datasets. We also 45
+compare ET corrections to in-situ measurements and report improvements on 3 out of 4 datasets. 46
+2 Dataset 47
+Figure 1: Illustration of our dataset’s catchment
+locations and split.Figure 1 illustrates the location of training and 48
+test catchments for which we have gathered data. 49
+We investigate four different global ET datasets, 50
+for each of which we learn and evaluate correc- 51
+tions. Each dataset estimates ET using different 52
+methodology and thus showcase different error 53
+patterns. These datasets are Global Land Evap- 54
+oration Amsterdam Model [6] version va.3 and 55
+vb.3, the Penman-Monteith-Leuning (PML) es- 56
+timate [7] and the reanalysis ERA5 [8]. Our 57
+dataset contains 663 catchments ( C) and covers 58
+a time period ( T) of 192 months ranging from 59
+January 2000 to December 2015, although many 60
+months of data are missing for most catchments. In total, our dataset consists of 71654 monthly 61
+catchment-level data points for which all components are available. Our model is defined at a spatial 62
+resolution of 0.25 degrees, and a one month time resolution. It processes D= 7dimension input 63
+feature vectors, representing ET, P, dS, and four climatic indices representing vegetation cover (LAI 64
+[8], NDVI [9]), soil moisture [8], and surface water availability (P-E from [8]). Given an ET dataset 65
+Ei, for each catchment c∈Cand for each month t∈T, the ground-truth correction yis given as 66
+the difference y(c, t) =E(c, t)−Ei(c, t), where Erepresent the best catchment-level water cycle 67
+closure corrected estimate we have. Ewas computed using the Optimal Interpolation (OI) method 68
+proposed in [10], which accounts for uncertainty estimates of all water cycle component and has 69
+been shown to improve the catchment-level estimates of all components [11]. In addition, we used a 70
+catchment-level simple-weighting aggregation [10] of all four ET datasets as the input ET component 71
+to the OI. For each catchment and month index pairs (c, t), our dataset thus provides an input output 72
+pair(X(c, t), y(c, t)). As each catchment covers many pixels, Xrepresents a set of input feature 73
+vectors X(c, t) ={xi∀i∈N(c)}, with xi∈RD,N(c)represents the number of pixels covered by 74
+catchment c, andD= 7is the input feature dimension we use. 75
+3 Method and Experiments 76
+Our goal is to find a function fθ(x)that regresses pixel-wise ET corrections yto ET values Efrom 77
+input x, and we refer as ˆE=E+yto the corrected evaporation values. We take a probabilistic view 78
+of ET datasets and their correction. We consider each dataset to provide us with prior knowledge 79
+on ET in the form of a Gaussian distribution centered on E:p(ˆE) =N(E|σE). Following a recent 80
+review paper [2], we use the relative uncertainty estimate σE=7·E
+100in our experiments. We can 81
+2rewrite this prior in terms of yasP(y) =N(0|σ). We define a likelihood over the correction yas 82
+a Gaussian distribution whose mean we parameterize with a Multi Layer Perceptron (MLP) hθ(x) 83
+and with standard deviation σy, which we calibrate on a validation set: p(y|x) =N(hθ(x)|σy). The 84
+correction fθ(x)we bring to each dataset is then defined as a MAP given the prior Pprovided by the 85
+dataset and the parameterized likelihood function p: 86
+fθ(x) =max yp(y|x)P(y) (2)
+fθ(x) =σ2
+E×hθ(x) + 0×σ2
+y
+σ2y+σ2
+E(3)
+fθ(x) =hθ(x)
+1 +100×σ2y
+7×E(4)
+The rationale for this MAP formulation is that it allows to scale the correction with the original dataset 87
+value: Indeed, ET estimates are, in absolute values, less error-prone in very dry regions (where ET is 88
+close to zero) than in wet regions (where ET takes large values). The difference between using MAP 89
+and likelihood corrections is illustrated in Figure 2. Although fθ(x)is defined at the pixel level, the 90
+supervision yis defined at the catchment level. To train the model, we thus first apply the model 91
+on the pixels of each catchments, then aggregate the model output by summation, and regress the 92
+aggregated sum of corrections to the label y. For a given catchment and month, the catchment level 93
+correction computed by our model is thus: 94
+Fθ(c, t) =X
+x∈X(c,t)fθ(x) (5)
+so that we can write our loss function Land optimization problem as: 95
+eθ(c, t) =Fθ(c, t)−y(c, t) (6)
+L(θ) =1
+TX
+c∈CX
+t∈Teθ(c, t)2(7)
+θ∗=min θ∈ΘL(θ) (8)
+We analyse the errors of ET datasets before and after our correction to better understand the nature 96
+of the corrections we bring. To do so, we decompose residual errors into three components: a bias 97
+termBthat represents the average error per catchment, a seasonality term Srepresenting the errors 98
+of monthly-averaged difference to the bias, and an anomaly term Athat random variations after 99
+elimination of the systemic bias ans seasonality components. We denote by M={mi}to denote the 100
+set of 12 months, and we write m(t)∈Mto denote the month of a given time index t∈T. Given a 101
+catchment c∈Cat time ta residual term ycan be decomposed into three component as follows: 102
+e(c, t) =e(y, c) +e(y, c, m (t)) +e(y, c, t ), in which: 103
+b(e, c) =1
+TX
+t∈Te(c, t) (9)
+s(e, c, m ) =M
+TX
+t∈me(c, t)−b(y, c) (10)
+a(e, c, t) =e(c, t)−b(y, c)−s(y, c, m (t)) (11)
+Ignoring the cross terms, which were empirically found negligible, we can then decompose the loss 104
+into three residual error components that give us more insights on the nature of the ET residual error. 105
+3L(θ) =X
+c∈C 
+b(e, c)2+1
+MX
+m∈Ms(e, c, m )2+1
+TX
+t∈Ta(e, c, t)2!
+(12)
+L(θ) =X
+c∈CB(c) +S(c) +A(c) (13)
+Figure 2: Illustration of MAP impact.
+We trained a MLP with 4 hidden layers of width 512 on a training set of 496 catchments using the 106
+Adam [5] optimizer, and evaluated its accuracy on a test set of 166 catchments. Splits were built so 107
+that no train catchment overlap, even partially, with the test catchments. We report generalization 108
+results on the test split in terms of MSE, and decompose the error into the three components: B,S,A. 109
+Impact of MAP modeling : Figure 2 compares the per-pixel mean corrections of the likelihood hθ 110
+and the MAP fθ. The MAP successfully reduces the high biases of the likelihood above the Sahara 111
+region in which ET is expected to remain close to zero for the absence of water. 112
+(a) Water Cycle closure MSE
+ (b) In-situ data MSE
+Figure 3: MSE decomposition of ET estimates before (No Patch) and after (MAP) corrections. (a)
+Water cycle closure error computed on the test split, (b) Distance to in-situ measurements.
+Water cycle closure : Figure 3(a) shows the MSE of water cycle closure of each dataset before and 113
+after applying our corrections. We successfully reduce the water closure gap on all components. In- 114
+situ measurements : In Figure 3(b), we show the the MSE to in-situ measurements of the FLUX 115
+dataset [15] before and after applying our learned corrections. We find corrected global ET values to 116
+better fit in-situ measurements for three out of the four datasets. 117
+4 Conclusion 118
+Improving global ET estimates is needed to better our understanding of the global water cycle, so as 119
+to better understand the consequences of climate change on the future of global water distribution. In 120
+this work, we proposed a methodology to learn a correction of global ET datasets. Our method uses 121
+ML to generalize sparse catchment-level water cycle closure residual information to global, dense, 122
+pixel-level residuals. To do so, we modeled a pixel-level model that we trained to regress catchment- 123
+level residuals using a sum-aggregated supervision. Using four global ET datasets, quantitative 124
+experiments have shown the ability of our model to generalize to unseen catchments and to reach 125
+relative agreement with in-situ measurements. 126
+4References 127
+[1] (Hegerl et al. 2015,https://journals.ametsoc.org/view/journals/bams/96/7/bams-d-13-00212.1.xml). 128
+[2] (Dorigo et al 2021, https://journals.ametsoc.org/view/journals/bams/102/10/BAMS-D-19-0316.1.xml). 129
+[3] (Miralles et al. 2011, https://doi.org/10.1111/nyas.13912.; Fisher et al. 2017, 130
+https://doi.org/10.1002/2016WR020175.) 131
+[4] Kingma, Diederik P., and Jimmy Ba. "Adam: A Method for Stochastic Optimization." ICLR (Poster). 2015. 132
+[6] Martens, B., Miralles, D.G., Lievens, H., van der Schalie, R., de Jeu, R.A.M., Férnandez-Prieto, D., Beck, 133
+H.E., Dorigo, W.A., Verhoest, N.E.C., 2016. GLEAM v3: satellite-based land evaporation and root-zone 134
+soil moisture. Geoscientific Model Development Discussions , 1–36URL: http://www.geosci-model-dev- 135
+discuss.net/gmd-2016-162/, 937 doi:10.5194/gmd-2016-162. 136
+[7] Zhang, Y ., Peña-Arancibia, J., McVicar, T. et al. Multi-decadal trends in global terrestrial evapotranspiration 137
+and its components. Sci Rep 6, 19124 (2016). https://doi.org/10.1038/srep19124 138
+[8] Hersbach, H.; Bell, B.; Berrisford, P.; Horányi, A.; Sabater, J.M.; Nicolas, J.; Radu, R.; Schepers, D.; 139
+Simmons, A.; Soci, C.; et al. Global reanalysis: Goodbye ERA-Interim, hello ERA5. In ECMWF Newsletter 140
+No. 159; Lentze, G., Ed.; European Centre for Medium-Range Weather Forecasts (ECMWF): Reading, UK, 141
+2019; pp. 17–24. 142
+[9] The MOD13Q1 product, DOI: 10.5067/MODIS/MOD13Q1.006 143
+[10] Aires, F.(2014). Combining Datasets of Satellite-Retrieved Products. Part I: Methodology and Water Budget 144
+Closure. J. Hydrometeorol., 15 (4), 1677–1691.doi: 10.1175/JHM-D-13-0148.1 145
+[11] Pellet, V ., Aires, F., Munier, S., Fernández Prieto, D., Jordá, G., Dorigo, W. A., Polcher, J., and Brocca, L.: 146
+Integrating multiple satellite observations into a coherent dataset to monitor the full water cycle – application 147
+to the Mediterranean region, Hydrol. Earth Syst. Sci., 23, 465–491, https://doi.org/10.5194/hess-23-465-2019, 148
+2019. 149
+[12] Pan, M., Sahoo, A. K., Troy, T. J., Vinukollu, R. K., Sheffield, J., Wood, F, E. (2012). Multisource 150
+estimation of long-term terrestrial water budget for major global river basins. J. Clim., 25 (9), 3191–3206. 151
+doi:10.1175/JCLI-D-11-00300.1 152
+[13]Munier, S., Aires, F. (2018). A new global method of satellite dataset merging and quality characterization 153
+constrained by the terrestrial water budget. Remote Sens. Environ., 205 (October 2017), 119–130. doi: 154
+10.1016/j.rse.2017.11.008 155
+[14] Beck, H. E., Wood, E. F., McVicar, T. R., Zambrano-Bigiarini, M., Alvarez-Garreton, C., Baez-Villanueva, O. 156
+M., Sheffield, J., Karger, D. N. (2020). Bias Correction of Global High-Resolution Precipitation Climatologies 157
+Using Streamflow Observations from 9372 Catchments, Journal of Climate, 33(4), 1299-1315. Retrieved Sep 13, 158
+2022, from https://journals.ametsoc.org/view/journals/clim/33/4/jcli-d-19-0332.1.xml 159
+[15] Pastorello, G., Trotta, C., Canfora, E. et al. The FLUXNET2015 dataset and the ONEFlux processing 160
+pipeline for eddy covariance data. Sci Data 7, 225 (2020). https://doi.org/10.1038/s41597-020-0534-3 161
+5

@@ -1,0 +1,239 @@
+Multi-branch Spatio-Temporal Graph Neural Network
+For Efficient Ice Layer Thickness Prediction
+Zesheng Liu
+Department of Computer Science and Engineering
+Lehigh University
+Bethlehem, PA 18015
+zel220@lehigh.edu
+Maryam Rahnemooonfar∗
+Department of Computer Science and Engineering
+Department of Civil and Environmental Engineering
+Lehigh University Bethlehem, PA 18015
+maryam@lehigh.edu
+Abstract
+Understanding spatio-temporal patterns in polar ice layers is essential for tracking
+changes in ice sheet balance and assessing ice dynamics. While convolutional
+neural networks are widely used in learning ice layer patterns from raw echogram
+images captured by airborne snow radar sensors, noise in the echogram images
+prevents researchers from getting high-quality results. Instead, we focus on geomet-
+ric deep learning using graph neural networks, aiming to build a spatio-temporal
+graph neural network that learns from thickness information of the top ice layers
+and predicts for deeper layers. In this paper, we developed a novel multi-branch
+spatio-temporal graph neural network that used the GraphSAGE framework for
+spatio features learning and a temporal convolution operation to capture temporal
+changes, enabling different branches of the network to be more specialized and
+focusing on a single learning task. We found that our proposed multi-branch net-
+work can consistently outperform the current fused spatio-temporal graph neural
+network in both accuracy and efficiency.
+1 Introduction
+As global temperatures continue to rise, research has shown that the accelerated mass loss of polar ice
+sheets is increasingly contributing to climate change[ 2,8,11,21]. Polar ice sheets comprise several
+internal ice layers formed in different years. A better understanding of the status of internal ice layers
+can provide valuable information on snowfall melting and accumulation and enable a comprehensive
+understanding of the global climate system and future climate change.
+Traditional methods to study the internal ice layer are through onsite ice core[ 9]. However, the
+limited and discrete coverage makes it impossible to study the continuous change of the ice layer.
+Additionally, onside ice cores are expensive to obtain and will cause destructive damage to the ice
+sheet. In recent years, airborne snow radar sensors have proven to be a more effective way to study
+ice layers. Internal layers with different depths are captured continuously as radargrams by measuring
+the reflected signal strength[1], shown in Figure1( a).
+∗Corresponding Author
+Tackling Climate Change with Machine Learning: workshop at NeurIPS 2024.With the development of deep learning techniques, various convolution-based neural networks[ 10,13–
+15] have been proposed to extract ice layer boundaries from radargrams. However, noise in the
+radargrams is shown to be a major obstacle to achieve high-quality results. Instead of the convolution-
+based neural networks, Zalatan et al.[ 17–19] focus on learning the relationship between ice layers
+formed in different years and graph neural network. They utilized a fused spatio-temporal graph neural
+network, AGCN-LSTM, and aimed to make predictions on the thickness of deeper ice layers based
+on the thickness information of shallow layers. In their network, graph convolutional network(GCN)
+for spatio features is fused into the long short-term memory(LSTM) structure for temporal changes.
+Although their proposed methods have decent performance in predicting ice thickness, training the
+fused spatio-temporal graph neural network usually takes a few hours due to high computational
+costs.
+In this paper, we aim to build upon the work of Zalatan et al.[ 17–19] by improving the network
+performance in both accuracy and efficiency. Our major contributions are: 1) We developed a
+novel multi-branch spatio-temporal graph neural network that uses the GraphSAGE framework for
+spatio feature learning and uses temporal convolution operation to learn temporal changes, making
+different parts of the network more specialized to one single learning task. 2) We conducted extensive
+experiments on comparison with fused spatio-temporal graph neural networks, and results show that
+our proposed network can consistently outperform other methods in efficiency and accuracy.
+2 From Radargram To Graph Dataset
+In this work, we will start with radargrams captured over the Greenland Region in 2012 via airborne
+snow radar sensor operated by CReSIS[ 4]. Each radargram varies from 1200 pixels to 1700 pixels in
+depth, with a fixed 256 pixels in width. The value of each pixel is determined by the reflected signal
+strength, where brighter pixels in the radargram mean a stronger reflection[ 1], shown in Figure 1( a).
+Based on radargrams, corresponding labeled images are generated manually by NASA scientists
+by tracking out each layer, as illustrated in Figure Figure 1( b). Based on the position of ice layer
+boundary pixels, layer thickness can be calculated as the difference between its upper and lower
+boundaries. Moreover, while capturing the radargrams, airborne snow radar sensors will also keep
+records of current latitude and longitude simultaneously.
+Our graph dataset is then generated on the thickness and geographical location information from the
+radargrams and labeled images with additional pre-processing steps. As shown in Figure 1( b), we
+will use the top five layers (formed in 2007-2011) to predict the thickness of the deeper ice layers
+(formed in 1992-2006). To ensure the high quality of our graph dataset, we will eliminate images
+with less than 20 complete layers, dividing the remaining images into training, testing, and validation
+sets with a ratio of 3 : 1 : 1 . This pre-processing step reduces the total number of valid images to
+1660. Each valid labeled image will be represented as two temporal sequences of spatial graphs: one
+sequence of five graphs as input and another sequence of fifteen as the ground truth. Each spatial
+graph represents one internal ice layer formed in a specific year, with 256 nodes that correspond to
+the 256 pixels in the labeled images. Nodes will be fully connected and undirected. Edge weights
+between two nodes i, jare defined as
+wi,j=1
+2 arcsin ( hav(ϕj−ϕi) + cos ϕicosϕjhav(λj−λi))(1)
+where hav(θ) = sin2(θ
+2). Each node will contain three node features: latitude, longitude, and the
+thickness of the current ice layer.
+3 Key Designs
+The key idea of our proposed multi-branch network is to make different parts of the network more
+specialized. Unlike previous AGCN-LSTM and GraphSAGE-LSTM, in which the network learns
+spatio and temporal features in one block, we will have individual branches to learn spatio patterns or
+temporal changes. Figure 1( c) shows the architecture of our proposed network. For each branch, we
+will have a dimension reduction block to let the GraphSAGE framework or temporal convolution
+focus more on the relevant features. Outputs of each branch are concatenated together and passed
+into three linear layers for final prediction.
+23.1 Dimension Reduction
+In order to let each branch focus only on relevant features, we will have dimension reduction blocks
+for different branches. Based on signal transmission properties, pixels in the same pixel column
+but different ice layers will have the same latitude and longitude. Therefore, for the spatial branch,
+we will condense the overall node feature matrix of the input graph sequence from 5×(256,3)to
+(256,7), where the seven node features are latitude, longitude and concatenated thickness information
+of the previous five ice layers. For the temporal branch, we will modify the dimension of the node
+feature matrix to 5×(256,1)by removing the latitude and longitude.
+3.2 GraphSage Inductive Framework
+GraphSAGE[ 5] is an inductive framework that generates node embedding based on a sampling and
+aggregating process on its local neighbors[ 5,20]. For a known node iwith node feature xi, it is
+defined as follows:
+x′
+i=W1xi+W2·mean j∈N(i)xj (2)
+where x′
+iis the learned node embedding via GraphSAGE, W1,W2are layer weights, N(i)is the
+neighbor list of node ithat may include neighbors with different depth, xjis the neighbor node features
+andmean is the aggregator function. GraphSAGE can be understood as a linear approximation of
+localized spectral convolution[ 5], and the sampling and aggregating process can reduce the effect of
+possible outliers and noise and increase the model’s generalization ability.
+3.3 Temporal Convolution
+Recurrent neural networks, like long short-term memory(LSTM), can effectively learn temporal
+changes with high computational cost and long training time. In this work, we will replace the LSTM
+structure with a gated temporal convolution block proposed by Yu et al.[ 16] to improve its efficiency.
+Inspired by Gehring et al.[ 3], the temporal convolution block will learn the temporal features from
+the original node features. An input graph sequence with node feature matrix Xwill pass through
+three two-dimensional convolution operation to achieve P, Q, R .P, Q are then passed into a gated
+linear unit (GLU) and Ris added to the output as a skip connection. Therefore, the gated temporal
+convolution is defined as follows:
+X′=ReLU (P×σ(Q) +R) (3)
+where X′is the learned temporal features, ×is an element-wise Hadamard product, and σis the
+sigmoid function that serves as the gate part of the GLU.
+(a)Radargram(b)LabeledimagesManually Labeling
+Temporal Ice Layer Graph Inputs5×(256,3)
+DimensionReduction5	×	256,3→(256,7)GraphSAGELayer256,7→(256,256)DimensionReduction5	×	256,3→5	×	(256,1)Temporal Convolution Layer5×256,1→(256,256)Spatio BranchTemporal Branch+Linear Layer(256,512)→(256,128)Linear Layer(256,128)→(256,64)Linear Layer(256,64)→(256,15)15 Ice Layer Thickness PredictionsHard Swish ActivationHard Swish ActivationHard Swish Activation
+MSE Loss(c)Architecture of our proposed network
+Figure 1: Diagram of our graph dataset and network structure. ( a) Radargram captured by airborne
+snow radar sensor. ( b) Labeled image where each ice layer is labeled out from the radargram. ( c)
+Architecture of our proposed multi-branch network.
+3Table 1: Experiment results of GCN-LSTM, GraphSAGE-LSTM, and our proposed Multi-branch
+model. Results are reported as the mean and standard deviation of the RMSE on the test dataset over
+five individual trials. Train time is reported as the average train time over five individual trials
+Model RMSE Results Average Train Time
+GCN-LSTM 3.2106 ±0.1188 1:58:56
+GraphSAGE-LSTM 3.1949 ±0.0332 1:16:14
+Proposed Multi-branch(SAGE+TempConv) 3.1236 ±0.0548 0:16:18
+4 Experiment and Results
+To verify the design of our proposed multi-branch spatio-temporal graph neural network and the
+choice of branches, we compare its performance and efficiency with several different graph neural
+networks, including GCN-LSTM[ 12] and SAGE-LSTM[ 7]. All the networks are trained on 8
+NVIDIA A5000 GPUs and Inter(R) Xeon(R) Gold 6430 CPU. Mean-squared error loss is used as the
+loss function for all the networks. Adam optimizer[ 6] with 0.01 as an initial learning rate and 0.0001
+as a weight decay coefficient. A step learning rate scheduler halves the learning rate every 75 epochs.
+The mean of the training time and the mean and standard deviations of prediction error over the five
+trials are reported as the model efficiency and accuracy, shown in Table 1. Our proposed multi-branch
+spatio-temporal graph neural network can significantly outperform previous fused spatio-temporal
+networks in both efficiency and accuracy. Figure 2 shows the qualitative results of our trained
+model. Compared with the previously fused spatio-temporal graph neural networks, our proposed
+multi-branch method significantly improves the accuracy for bottom layers and pixels around the
+image boundaries.
+5 Conclusion
+In this work, we develop a novel multi-branch spatio-temporal graph neural network for learning
+deeper ice layer thickness. This network utilizes GraphSAGE as the spatial branch and temporal
+convolution to learn temporal changes over time. Experiments show that compared with previous
+fused spatio-temporal networks, our proposed method consistently performs better in both accuracy
+and efficiency.
+(a) GCN-LSTM(b) SAGE-LSTM(c) Proposed Multi-branch
+Figure 2: Qualitative results of model predictions. The green line is the groundtruth (manually-labeled
+ice layers) and the red line is the model prediction.
+4Acknowledgments and Disclosure of Funding
+This work is supported by NSF BIGDATA awards (IIS- 1838230, IIS-1838024), IBM, and Amazon.
+We acknowledge data and data products from CReSIS generated with support from the University of
+Kansas and NASA Operation IceBridge.
+References
+[1]Emily Arnold, Carl Leuschen, Fernando Rodriguez-Morales, Jilu Li, John Paden, Richard Hale,
+and Shawn Keshmiri. Cresis airborne radars and platforms for ice and snow sounding. Annals
+of Glaciology , 61(81):58–67, 2020. doi: 10.1017/aog.2019.37.
+[2]Rene Forsberg, Louise Sørensen, and Sebastian Simonsen. Greenland and Antarctica Ice
+Sheet Mass Changes and Effects on Global Sea Level , pages 91–106. Springer International
+Publishing, Cham, 2017. ISBN 978-3-319-56490-6. doi: 10.1007/978-3-319-56490-6_5. URL
+https://doi.org/10.1007/978-3-319-56490-6_5 .
+[3]Jonas Gehring, Michael Auli, David Grangier, Denis Yarats, and Yann N. Dauphin. Convolu-
+tional sequence to sequence learning, 2017.
+[4]S. Gogineni, J. B. Yan, D. Gomez, F. Rodriguez-Morales, J. Paden, and C. Leuschen. Ultra-
+wideband radars for remote sensing of snow and ice. In IEEE MTT-S International Microwave
+and RF Conference , pages 1–4, 2013. doi: 10.1109/IMaRC.2013.6777743.
+[5]William L. Hamilton, Rex Ying, and Jure Leskovec. Inductive representation learning on large
+graphs, 2018.
+[6] Diederik P. Kingma and Jimmy Ba. Adam: A method for stochastic optimization, 2017.
+[7]Zesheng Liu and Maryam Rahnemoonfar. Learning spatio-temporal patterns of polar ice layers
+with physics-informed graph neural network, 2024. URL https://arxiv.org/abs/2406.
+15299 .
+[8]Jérémie Mouginot, Eric Rignot, Anders A. Bjørk, Michiel van den Broeke, Romain Millan,
+Mathieu Morlighem, Brice Noël, Bernd Scheuchl, and Michael Wood. Forty-six years of
+greenland ice sheet mass balance from 1972 to 2018. Proceedings of the National Academy
+of Sciences , 116(19):9239–9244, 2019. doi: 10.1073/pnas.1904242116. URL https://www.
+pnas.org/doi/abs/10.1073/pnas.1904242116 .
+[9]W.S.B. Paterson. 15 - ice core studies. In W.S.B. PATERSON, editor, The Physics of Glaciers
+(Third Edition) , pages 378–409. Pergamon, Amsterdam, third edition edition, 1994. ISBN
+978-0-08-037944-9. doi: https://doi.org/10.1016/B978-0-08-037944-9.50021-2. URL https:
+//www.sciencedirect.com/science/article/pii/B9780080379449500212 .
+[10] Maryam Rahnemoonfar, Masoud Yari, John Paden, Lora Koenig, and Oluwanisola Ibikunle.
+Deep multi-scale learning for automatic tracking of internal layers of ice in radar data. Journal
+of Glaciology , 67(261):39–48, 2021. doi: 10.1017/jog.2020.80.
+[11] E. Rignot, I. Velicogna, M. R. van den Broeke, A. Monaghan, and J. T. M. Lenaerts. Acceleration
+of the contribution of the greenland and antarctic ice sheets to sea level rise. Geophysical
+Research Letters , 38(5), 2011. doi: https://doi.org/10.1029/2011GL046583. URL https:
+//agupubs.onlinelibrary.wiley.com/doi/abs/10.1029/2011GL046583 .
+[12] Youngjoo Seo, Michaël Defferrard, Pierre Vandergheynst, and Xavier Bresson. Structured
+sequence modeling with graph convolutional recurrent networks, 2016.
+[13] Debvrat Varshney, Maryam Rahnemoonfar, Masoud Yari, and John Paden. Deep ice layer track-
+ing and thickness estimation using fully convolutional networks. In 2020 IEEE International
+Conference on Big Data (Big Data) , pages 3943–3952, 2020. doi: 10.1109/BigData50022.2020.
+9378070.
+5[14] Debvrat Varshney, Maryam Rahnemoonfar, Masoud Yari, John Paden, Oluwanisola Ibikunle,
+and Jilu Li. Deep learning on airborne radar echograms for tracing snow accumulation layers
+of the greenland ice sheet. Remote Sensing , 13(14), 2021. ISSN 2072-4292. doi: 10.3390/
+rs13142707. URL https://www.mdpi.com/2072-4292/13/14/2707 .
+[15] Masoud Yari, Oluwanisola Ibikunle, Debvrat Varshney, Tashnim Chowdhury, Argho Sarkar,
+John Paden, Jilu Li, and Maryam Rahnemoonfar. Airborne snow radar data simulation with deep
+learning and physics-driven methods. IEEE Journal of Selected Topics in Applied Earth Obser-
+vations and Remote Sensing , 14:12035–12047, 2021. doi: 10.1109/JSTARS.2021.3126547.
+[16] Bing Yu, Haoteng Yin, and Zhanxing Zhu. Spatio-temporal graph convolutional networks:
+A deep learning framework for traffic forecasting. In Proceedings of the Twenty-Seventh
+International Joint Conference on Artificial Intelligence , IJCAI-2018. International Joint Con-
+ferences on Artificial Intelligence Organization, july 2018. doi: 10.24963/ijcai.2018/505. URL
+http://dx.doi.org/10.24963/ijcai.2018/505 .
+[17] Benjamin Zalatan and Maryam Rahnemoonfar. Recurrent graph convolutional networks for
+spatiotemporal prediction of snow accumulation using airborne radar. In 2023 IEEE Radar
+Conference (RadarConf23) , pages 1–6, 2023. doi: 10.1109/RadarConf2351548.2023.10149562.
+[18] Benjamin Zalatan and Maryam Rahnemoonfar. Prediction of annual snow accumulation using a
+recurrent graph convolutional approach. In IGARSS 2023 - 2023 IEEE International Geoscience
+and Remote Sensing Symposium , pages 5344–5347, 2023. doi: 10.1109/IGARSS52108.2023.
+10283236.
+[19] Benjamin Zalatan and Maryam Rahnemoonfar. Prediction of deep ice layer thickness using
+adaptive recurrent graph neural networks. In 2023 IEEE International Conference on Image
+Processing (ICIP) , pages 2835–2839, 2023. doi: 10.1109/ICIP49359.2023.10222391.
+[20] Jie Zhou, Ganqu Cui, Shengding Hu, Zhengyan Zhang, Cheng Yang, Zhiyuan Liu, Lifeng
+Wang, Changcheng Li, and Maosong Sun. Graph neural networks: A review of methods
+and applications. AI Open , 1:57–81, 2020. ISSN 2666-6510. doi: https://doi.org/10.1016/
+j.aiopen.2021.01.001. URL https://www.sciencedirect.com/science/article/pii/
+S2666651021000012 .
+[21] H. Jay Zwally, Jun Li, Anita C. Brenner, Matthew Beckley, Helen G. Cornejo, John DiMarzio,
+Mario B. Giovinetto, Thomas A. Neumann, John Robbins, Jack L. Saba, and et al. Greenland ice
+sheet mass balance: distribution of increased mass loss with climate warming; 2003–07 versus
+1992–2002. Journal of Glaciology , 57(201):88–102, 2011. doi: 10.3189/002214311795306682.
+6

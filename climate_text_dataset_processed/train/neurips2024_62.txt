@@ -1,0 +1,530 @@
+Sliced-Wasserstein-based Anomaly Detection and
+Open Dataset for Localized Critical Peak Rebates
+Julien Pallage∗
+Dept. of Electrical Engineering
+Polytechnique Montréal, GERAD & MilaBertrand Scherrer
+Data Science, Hilo
+Hydro-QuébecSalma Naccache
+Data Science, Hilo
+Hydro-Québec
+Christophe Bélanger
+Open Data | Data and Analytics
+Hydro-QuébecAntoine Lesage-Landry
+Dept. of Electrical Engineering
+Polytechnique Montréal, GERAD & Mila
+Abstract
+In this work, we present a new unsupervised anomaly (outlier) detection (AD)
+methodusingthesliced-Wassersteinmetric. Thisfilteringtechniqueisconceptually
+interesting for MLOps pipelines deploying machine learning models in critical
+sectors, e.g., energy, as it offers a conservative data selection. Additionally, we
+open the first dataset showcasing localized critical peak rebate demand response in
+a northern climate. We demonstrate the capabilities of our method on synthetic
+datasetsaswellasstandardADdatasetsanduseitinthemakingofafirstbenchmark
+for our open-source localized critical peak rebate dataset.
+1 Introduction
+Québec,Canada,standsasanoutlierintheelectricalgriddecarbonizationparadigm. Asthereisa
+globaltendencytoinvestinintermittentrenewableenergysourcestodecarbonizegridsworldwide,
+Québec,whilenottotallystrangertothistrend,isgenerallymostlycarbon-freethankstoitsimpressive
+hydroelectric power capacity. One of its main challenges comes from its northern climate, its
+reliance on electric baseboard heating systems for residential heating, and its unrestrictive home
+insulationpolicies[ 1]. Duringglacialwinterdays,aselectricheatersareallrunningatonce,andpeak
+consumptionhourshit, Québec’shydropowercapacitycanbe reached[ 2]. Toaccommodatewinter
+peakpowerneeds,Hydro-Québec,thestate-ownedcompanyinchargeofelectricpowergeneration,
+transmission,anddistribution,mustoperateitsonlyon-gridthermalpowerplantandimportelectricity
+from neighbouring provinces and states. These imports are usually expensive and produce much
+more greenhouse gas emissions in comparison to local energy sources [3].
+To remediate this issue without solely relying on the deployment of new generation and transmission
+infrastructures, demand response (DR) initiatives have flourished in the province [ 4]. Demand
+response can be defined as changes in normal electrical power consumption patterns by end-use
+customersinresponsetoasignal,e.g.,financialincentivesorcontrolsetpoints[ 5]. WithQuébec’s
+long tradition of fixed electricity rates, one of its main DR mechanisms is critical peak rebates (CPR).
+ResidentialcustomersenrolledinaCPRprogramreceivefinancialcompensationduringpre-specified
+timeperiods,referredtoaschallenges,forreducingtheirenergyconsumptionwithrespecttotheir
+expected baseload [ 6]. CPR programs are purely voluntary and virtually penalty-free. They thus
+depend on consumers’ goodwill, motivation, and sensitivity. Yet, as we have seen in our work, CPR
+events can be powerful tools for shifting power consumption before and after each event.
+∗Corresponding author: julien.pallage@polymtl.ca .
+Tackling Climate Change with Machine Learning: workshop at NeurIPS 2024We work with a variation of CPR, viz., localized CPR (LCPR), in which the events are called for
+localized relief in the grid instead of being cast for the whole system. LCPR can diversify the
+types of services offered by typical CPR programs, e.g., they can alleviate stress on local equipment
+like substation transformers [ 7] or they can be paired with generation forecasts of distributed
+energy resources (DERs), e.g., roof solar panels and private windfarms, to balance demand and
+generation during peak hours. LCPR is highly underexplored in the literature and is a valuable
+application to benchmark trustworthy machine learning (ML) models. Indeed, the higher spatial
+granularity,thecriticalaspectofthetask,thedependenceonbehaviouraltendencies,andthelower
+margin for error require the deployment of forecasting models that offer performance guarantees [ 8],
+robustnesstonoise[ 9],interpretability[ 10],physicalconstraintssatisfaction[ 11],asenseofprediction
+confidence [ 12,13], or a combination of them [ 14]. Being able to predict and utilize localized
+peak-shaving potential in the electrical grid, through programs similar to LCPR, could accelerate the
+integrationofDERsand,specificallyforQuébec,phaseoutitsdependenceonfossilenergy-based
+imports. To the best of our knowledge, no published open-source datasets are showcasing either
+LCPR or CPR schemes, in a northern climate.
+As with most smart grid applications, dataset quality can highly influence the performance of ML
+models when used for training. The adversarial properties stemming from the amalgam of numerical
+errors, noise in sensor readings, telemetry issues, meter outages, and unusual extreme events can
+disruptthepredictionqualityofMLmodels. Anomalydetection(AD)andoutlierfilteringarethus
+primordial in a reliable ML pipeline [ 15]. Unsupervised AD methods are preferable as they do
+not need human-made labels and their hyperparameters can be tuned simultaneously with other
+ML models’ included in the loop. Popular unsupervised AD methods [ 16] include local outlier
+factor (LOF) [ 17], isolation forest [ 18], k-nearest neighbours (KNN) [ 19], connectivity-based outlier
+factor[20],andone-classsupportvectormachine(SVM)[ 21]. Thesemethodseitheruseclusteringor
+local density to assign an outlier score. We are interested in optimal transport-based (OT) metrics for
+AD. Reference [ 22] proposed a Wasserstein generative adversarial network for AD tasks and authors
+from [23] have designed a differentiable training loss function using the Wasserstein metric for deep
+classifiers. To the best of our knowledge, no unsupervised OT method has been proposed yet for AD.
+In this work, we address the lack of open-source datasets showcasing CPR demand response
+mechanismsinnorthernclimatesbyreleasingtwoyearsofaggregatedconsumptiondataforcustomers
+participating in an LCPR program in Montréal, Québec, Canada2. These customers are spread in
+three adjacent distribution substations. With it, we hope to stimulate research on trustworthy ML
+models for demand response applications. We also address the challenges of training ML models
+withunfilteredsmartgriddatabyproposinganewsimpleunsupervisedoutlierfilterleveragingthe
+Sliced-Wassersteindistance[ 24]. Weshowcasetheperformanceofthisfilteronstandardanomaly
+detectiondatasetsandleverageittopresentabenchmarkforthepredictionofthelocalizedenergy
+consumption of LCPR participants on our open-source dataset.
+2 Localized critical peak rebates in Québec
+Québec’s CPR and LCPR programs have been carried out under the banner of Hilo, a division of
+Hydro-Québec in charge of DR aggregation. Hilo, calls a DR challenge a day ahead of the event, and
+users choose their degree of participation for the next day. Hilo subscribers are equipped with smart
+thermostatsandtheirrespectiveheatingsetpointsarecontrolledbyHilo,accordingtoanagreed-upon
+strategy, throughout the event. With the Hilo mobile application and different connected objects,
+customers can program the response of their house to different scenes. For example, they can choose
+theheatingsetpointofeachthermostatwhenthereisaDRevent,orwhennobodyishome. When
+notified, smart thermostats pre-heat the house to augment user comfort during events which typically
+last 4 hours: either between 6 AM and 10 AM or 5 PM and 9 PM. A maximum of 30 CPR events can
+becalledperyear. LCPRisanadditionalprogramcurrentlyundertesting. Testerscanbeaskedfor
+upto10extraLCPRevents. Rewardsareproportionaltothetotalamountofenergyshavedduring
+the event, i.e., heating-related curtailment and others, with respect to their estimated baselines [25].
+2Available at https://github.com/jupall/lcpr-data , as well as,
+https://donnees.hydroquebec.com/explore/dataset/consommation-clients-evenements-pointe
+23 Open dataset
+Description The dataset we share contains the aggregated hourly consumption of 197 anonymous
+LCPR testers located in three substations. Additional hourly weather data and LCPR information are
+also present. Table 1 details the features and the label. Note that we also provide cyclical encoding of
+temporal features, e.g., month, day of the week, and hour. We remark that outliers and anomalies are
+presentinthedatasetbecauseofmeteringandtelemetryissuesorevenblackouts,e.g.,anaberrant
+(and impossible) 32.2 MWh energy consumption is registered at some point. We refer readers to
+Appendix A for additional analyses and visualizations of the dataset’s features and labels.
+Open data initiatives at Hydro-Québec The yearly energy demand in Québec should doubleby
+2050,requiringanadditionalproductionof60TWhby2035andtheadditionof8to9GWofpeak
+power to Québec’s 38 GW capacity [ 26]. Québec’s energy landscape must evolve rapidly to meet the
+increasing demand and DR is a powerful tool to mitigate infrastructure growth.
+Hydro-Québec recognizes the importance of sharing data to foster research, innovation, and informed
+decision-making. Throughitsplateform3,itprovideshistoricalandreal-timedataonenergyproduction
+and consumption in Québec as well as other datasets, e.g., geolocated hydrometeorological data from
+its remote weather stations. This new dataset is Hydro-Québec’s first dedicated to DR research.
+By supporting data democratization, Hydro-Québec encourages the emergence of a culture of
+transparencyandopennessintheenergysectorwhichisneededtoacceleratetheenergytransition.
+Thisapproachaimstostimulateresearchers,citizens,andbusinessesintheirdesiretoparticipateinthe
+design of innovative applications for a more sustainable, interoperable, reliable, and safe power grid.
+4 Sliced-Wasserstein Filter
+TheWassersteindistanceisametricthatprovidesasenseofdistancebetweentwodistributions. Also
+calledearthmover’sdistance,itcanbeconceivedastheminimaleffortitwouldtaketodisplaceapile
+of a weighted resource to shape a specific second pile [ 27]. The order- 𝑡Wasserstein distance with
+respect to some norm ∥·∥between distributions UandVis defined as:
+𝑊∥·∥,𝑡(U,V)=
+min
+𝜋∈J(U,V)∫
+Z×Z∥z1−z2∥𝑡d𝜋(z1,z2)1/𝑡
+,
+whereJ(U,V)representsallthepossiblejointdistributions 𝜋between UandV,z1and z2arethe
+marginalsof UandV, respectively, andZisthesetofallpossiblevaluesof z1andz2[9]. Ingeneral,
+computing the Wasserstein distance is of high computational complexity [ 28] except for some special
+cases. For example, the Wasserstein distance for one-dimensional distributions has a closed-form
+solution that can beefficientlyapproximated. Thesliced-Wasserstein (SW) distance is ametric that
+makesuseofthispropertybycalculatinginfinitelymanylinearprojectionsofthehigh-dimensional
+distributionontoone-dimensionaldistributionsandthencomputingtheaverageoftheWasserstein
+distancebetweentheseone-dimensionalrepresentations[ 24,28]. Interestingly,itpossessessimilar
+theoretical properties to the original Wasserstein distance while being computationally tractable [ 29].
+The order-𝑡SW distance’s approximation under a Monte Carlo scheme is defined as:
+𝑆𝑊∥·∥,𝑡(U,V)≈ 
+1
+𝐿𝐿∑︁
+𝑙=1𝑊∥·∥,𝑡(RU(·,𝜃𝑙),RV(·,𝜃𝑙))𝑡!1/𝑡
+,
+whereRD(·,𝜽𝑙)is a single projection of the Radon transform of distribution function Dover a fixed
+sample 𝜽𝑙∈S𝑑−1={𝜽∈R𝑑|𝜃2
+1+𝜃2
+2+···+𝜃2
+𝑑=1}∀𝑙∈⟦𝐿⟧. Interested readers are referred to
+references [24, 28] for in-depth mathematical explanations.
+We now utilize this approximation ofthe sliced-Wasserstein distance to formulate a simple outlier
+filter. Consider an empirical distribution ˆP𝑁=1
+𝑁Í𝑁
+𝑖=1𝛿z𝑖(z), where𝛿z𝑖(·)is a Dirac delta function
+assigningaprobabilitymassofoneateachknownsample z𝑖∈R𝑑. Considerthenotation ˆP−z𝑖
+𝑁−1to
+denoteavariationof ˆP𝑁inwhichweremovesample z𝑖. Astheweightofeachsampleisidentical
+and because the SW distance compares distributions of equal weights, we propose an outlier filter by
+3https://www.hydroquebec.com/documents-data/open-data/
+3usingasimplevotingsysteminwhichwecomparetheSWdistancebetweentheempiricaldistribution
+minustheoutlier candidateandtheempiricaldistributionminus arandomsample. Let O⊆Dand
+O𝑐⊆Ddenote the sets of outlier and inlier samples, respectively, under the perspective of the filter
+and letD=O∪O𝑐⊂R𝑑be the available dataset. A vote is positive if the distance between the two
+empirical distributions exceeds the threshold 𝜖 >0. A sample is labelled an outlier if the proportion
+of positive votes is greater than the threshold 𝑝.
+O= 
+z𝑖∈D𝑝≤1
+𝑛∑︁
+z𝑗∼ˆP−z𝑖
+𝑁−1:𝑗∈⟦𝑛⟧1
+𝑆𝑊∥·∥,𝑡(ˆP−z𝑖
+𝑁−1,ˆP−z𝑗
+𝑁−1)≥𝜖
+,∀𝑖∈⟦𝑁⟧ 
+,(SWAD)
+where 1(·)denotesanindicatorfunction, 𝑛isthenumberofpointsusedforthevote, 𝑝∈[0,1]isthe
+voting threshold required to label a sample as an outlier, and ⟦𝑁⟧≡{ 1,2,...,𝑁}.
+Thisfilterisinterestingforseveralreasons. Itisunsupervised,purelyanalytical,andusesawell-known
+explainable mathematical distance to filter data points that seem out-of-sample under the SW metric.
+The intuition is that we remove samples that are costly in the transportation plan when compared
+to other random samples of the same distribution. We can use the voting percentage to measure
+the algorithm’s confidence in its labelling. It is also parallelizable, as seen in our implementation
+provided on our GitHub page4. Numerical results and figures are presented in Appendix B.
+This method does not scale with large datasets as is: the SW distance computational burden increases
+asbiggerdistributionsarecompared. Weproposeasmartsplittingmethodtoacceleratetheprocedure,
+but we remark that the transportation plan between a distribution minus a sample and the same
+distributionminusanothersamplecanberoughlyapproximatedbytheEuclidiandistancebetween
+the two removed samples. As such, we introduce a fast Euclidian approximation for 𝑊∥·∥2,1:
+O≈ 
+z𝑖∈𝐷𝑝≤1
+𝑛∑︁
+z𝑗∼ˆP−z𝑖
+𝑁−11 ∥z𝑖−z𝑗∥2≥𝜂,∀𝑖∈⟦𝑁⟧ 
+, (FEAD)
+where𝜂is the threshold of the Euclidian distance. This method is not as accurate as the first proposal
+tofilterout-of-sampledatapoints. But,because( SWAD)and( FEAD)usethesameprinciple,theyshare
+similar classification patterns when 𝜖and𝜂are tuned accordingly, as can be seen in Figure 7.
+5 Benchmark
+We now propose a first benchmark on our LCPR dataset. Our goal is to predict the aggregated hourly
+consumption at each substation in winter when peak demand is critical. To follow the literature [ 30],
+and propose a simple yet meaningful benchmark, we implement a Gaussian process [ 31] in a rolling
+horizonfashion. Samples datingfrom before2023-12-15 areused forhyperparameter tuningwhile
+thosebetween2023-12-15and2024-04-15,duringthemostrecentwinterDRseason,areusedfor
+testing. We train onemodel per weekand the trainingwindowsize isa hyperparameter tobe tuned.
+The SW filter is used to preprocess data in the tuning phase and increase generalization in testing.
+Ourmethodisinterestingbecauseitcanfilterclearout-of-samplepointswhileavoidingsparseLCPR
+events that other methods could consider as local outliers. We refer interested readers to our GitHub
+page for more details. Testing mean average errors (MAE) and root mean squared errors (RMSE) are
+presented in Table 2 for each substation. See Appendix C for additional figures.
+6 Closing remark
+In this work, we present a new unsupervised outlier filter by leveraging the sliced-Wasserstein
+metric. This filter is interesting for MLOps integration on applications where global outliers may
+be adversarial to the prediction quality of trained models, e.g., smart grid data. We also hope to
+stimulate research on trustworthy ML models in critical sectors by releasing the first open dataset
+showcasing localized critical peak rebate demand response schemes in a northern climate. This
+dataset has a strong potential for benchmarking of such models as it opens a window to a real-world
+critical application where accuracy and robustness are equally important. To get the ball rolling, we
+provide a first benchmark by tuning simultaneously our SW filter and a Gaussian process.
+4https://github.com/jupall/swfilter
+4References
+[1]T. Gerbet, “Performance énergétique des bâtiments: Québec manque de courage, déplorent des
+experts,” Radio-Canada , Sep 2023.
+[2]J.WhitmoreandP.-O.Pineau,“Étatdel’énergieauQuébec,”2024,préparépourlegouvernement
+du Québec.
+[3]Hydro-Québec, UneénergierenouvelablepourunQuébecdurable,Rapportsurledéveloppement
+durable, 2023.
+[4]F.PelletierandA.Faruqui,“Doesdynamicpricingworkinawinter-peakingclimate? Acase
+study of Hydro Quebec,” The Electricity Journal , vol. 35, no. 2, p. 107080, 2022.
+[5]M. H. Albadi and E. F. El-Saadany, “Demand Response in Electricity Markets: An Overview,”
+in2007 IEEE Power Engineering Society General Meeting , 2007, pp. 1–5.
+[6]A.Mercado,R.Mitchell,S.Earni,R.Diamond,andE.Alschuler,“Enablinginteroperability
+throughacommonlanguageforbuildingperformancedata,” Proceedingsofthe2014ACEEE
+Summer Study on Energy Efficiency in Buildings , 2014.
+[7]F. Li, I. Kocar, and A. Lesage-Landry, “A Rapid Method for Impact Analysis of Grid-Edge
+Technologieson PowerDistributionNetworks,” IEEETransactions onPowerSystems ,vol. 39,
+no. 1, pp. 1530–1542, 2024.
+[8]A.VenzkeandS.Chatzivasileiadis,“Verificationofneuralnetworkbehaviour: Formalguarantees
+for power system applications,” IEEE Transactions on Smart Grid , vol. 12, no. 1, pp. 383–397,
+2021.
+[9]R. Chen and I. C. Paschalidis, “Distributionally robust learning,” Foundations and Trends ®in
+Optimization , vol. 4, no. 1-2, pp. 1–243, 2020.
+[10]L. H. Gilpin, D. Bau, B. Z. Yuan, A. Bajwa, M. A. Specter, and L. Kagal, “Explaining
+Explanations: AnApproachtoEvaluatingInterpretabilityofMachineLearning,” CoRR,vol.
+abs/1806.00069, 2018.
+[11]G.S.Misyris,A.Venzke,andS.Chatzivasileiadis,“Physics-informedneuralnetworksforpower
+systems,” in 2020 IEEE Power & Energy Society General Meeting (PESGM) , 2020, pp. 1–5.
+[12]L. V. Jospin, H. Laga, F. Boussaid, W. Buntine, and M. Bennamoun, “Hands-on bayesian neural
+networks—a tutorial for deep learning users,” IEEE Computational Intelligence Magazine ,
+vol. 17, no. 2, pp. 29–48, 2022.
+[13]A. G. Wilson and P. Izmailov, “Bayesian deep learning and a probabilistic perspective of
+generalization,” AdvancesinNeuralInformationProcessingSystems ,vol.33,pp.4697–4708,
+2020.
+[14]J. Pallage and A. Lesage-Landry, “Wasserstein Distributionally Robust Shallow Convex Neural
+Networks,” arXiv preprint arXiv:2407.16800 , 2024.
+[15]J. Stiasny, S. Chevalier, R. Nellikkath, B. Sævarsson, and S. Chatzivasileiadis, “Closing the
+loop: Aframeworkfortrustworthymachinelearninginpowersystems,” Proceedingsof11th
+Bulk Power Systems Dynamics and Control Symposium (IREP 2022) , 2022.
+[16]M. Goldstein and S. Uchida, “A Comparative Evaluation of Unsupervised Anomaly Detection
+Algorithms for Multivariate Data,” PLOS ONE , vol. 11, no. 4, pp. 1–31, 04 2016.
+[17]M.M.Breunig,H.-P.Kriegel,R.T.Ng,andJ.Sander,“LOF:identifyingdensity-basedlocal
+outliers,” Proceedings of the 2000 ACM SIGMOD International Conference on Management of
+Data, p. 93–104, 2000.
+[18]F.T.Liu,K.M.Ting,andZ.-H.Zhou,“IsolationForest,”in 2008EighthIEEEInternational
+Conference on Data Mining , 2008, pp. 413–422.
+5[19]F. Angiulli and C. Pizzuti, “Fast Outlier Detection in High Dimensional Spaces,” Proceedings
+of the Sixth European Conference on the Principles of Data Mining and Knowledge Discovery ,
+vol. 2431, pp. 15–26, 08 2002.
+[20]J. Tang, Z. Chen, A. W.-C. Fu, and D. W.-L. Cheung, “Enhancing Effectiveness of Outlier
+Detections for Low Density Patterns,” in Proceedings of the 6th Pacific-Asia Conference on
+Advances in Knowledge Discovery and Data Mining , ser. PAKDD ’02. Berlin, Heidelberg:
+Springer-Verlag, 2002, p. 535–548.
+[21]M.Amer,M.Goldstein,andS.Abdennadher,“Enhancingone-classsupportvectormachines
+for unsupervised anomaly detection,” Proceedings of the ACM SIGKDD Workshop on Outlier
+Detection and Description , p. 8–15, 2013.
+[22]M. Ducoffe, I. Haloui, and J. S. Gupta, “Anomaly detection on time series with Wasserstein
+GAN applied to PHM,” International Journal of Prognostics and Health Management , vol. 10,
+no. 4, 2019.
+[23]Y. Wang, W. Sun, J. Jin, Z. Kong, and X. Yue, “WOOD: Wasserstein-Based Out-of-Distribution
+Detection,” IEEE Transactions on Pattern Analysis and Machine Intelligence , vol. 46, no. 2, pp.
+944–956, 2024.
+[24]N.Bonneel,J.Rabin,G.Peyré,andH.Pfister,“SlicedandRadonWassersteinbarycentersof
+measures,” Journal of Mathematical Imaging and Vision , vol. 51, pp. 22–45, 2015.
+[25] Hilo. (2023, 09) Residential. [Online]. Available: https://www.hiloenergie.com/en-ca/
+[26] Hydro-Québec, Action Plan 2035, Towards a Decarbonized and Prosperous Québec , 2023.
+[27]V. M. Panaretosand Y. Zemel, “Statistical aspectsof wasserstein distances,” Annual reviewof
+statistics and its application , vol. 6, no. 1, pp. 405–431, 2019.
+[28]S. Kolouri, K. Nadjahi, U. Simsekli, R. Badeau, and G. Rohde, “Generalized sliced wasserstein
+distances,” Advances in Neural Information Processing Systems , vol. 32, 2019.
+[29]N. Bonnotte, “Unidimensional and evolution methods for optimal transportation,” Ph.D. disser-
+tation, Université Paris Sud-Paris XI; Scuola normale superiore (Pise, Italie), 2013.
+[30]Y.WengandR.Rajagopal,“ProbabilisticbaselineestimationviaGaussianprocess,”in 2015
+IEEE Power & Energy Society General Meeting , 2015, pp. 1–5.
+[31]C. Williams and C. Rasmussen, “Gaussian processes for regression,” Advances in neural
+information processing systems , vol. 8, 1995.
+[32]C.Spearman,“TheProofandMeasurementofAssociationBetweenTwoThings,” American
+Journal of Psychology , vol. 15, pp. 88–103, 1904.
+[33]T. Chen and C. Guestrin, “XGBoost: A Scalable Tree Boosting System,” in Proceedings of the
+22ndACMSIGKDDInternational ConferenceonKnowledgeDiscoveryandData Mining ,ser.
+KDD ’16. New York, NY, USA: Association for Computing Machinery, 2016, p. 785–794.
+[34]S. M. Lundberg and S.-I. Lee, “A unified approach to interpreting model predictions,” in
+Proceedingsofthe31stInternationalConferenceonNeuralInformationProcessingSystems ,
+ser. NIPS’17. Red Hook, NY, USA: Curran Associates Inc., 2017, p. 4768–4777.
+[35]F. Pedregosa, G. Varoquaux, A. Gramfort, V. Michel, B. Thirion, O. Grisel, M. Blondel,
+P.Prettenhofer,R.Weiss,V.Dubourg,J.Vanderplas,A.Passos,D.Cournapeau,M.Brucher,
+M. Perrot, and E. Duchesnay, “Scikit-learn: Machine Learning in Python,” Journal of Machine
+Learning Research , vol. 12, pp. 2825–2830, 2011.
+[36]G. O. Campos, A. Zimek, J. Sander, R. J. Campello, B. Micenková, E. Schubert, I. Assent, and
+M.E.Houle,“Onthe evaluationofunsupervisedoutlierdetection: measures,datasets, andan
+empirical study,” Data Mining and Knowledge Discovery , vol. 30, pp. 891–927, 2016.
+6Appendices
+A Detailed analysis of the dataset
+In this section, we present some additional insights on the LCPR dataset. Figure 1 presents the
+distributioncountofsomekeyfeaturesforeachsubstation. Weobservethatmeteorologicalfeaturesare
+identical for each substation as they are geographically adjacent and located in dense neighborhoods.
+Figure 1: Distribution of key features for each substation
+Figure 2 shows a correlation heatmap of important features and label for each substation. We observe
+that each substation follows the same general tendencies. We remark significant correlations between
+the energy consumed, the month of the year, the outside temperatures, and the temperature setpoints.
+ThisisalsohighlightedinFigure3whichpresentstheSpearmancoefficientsranking[ 32]between
+each feature and the label. A positive sign indicates that both the label and the feature grow or
+decrease in the same direction while a negative sign indicates an opposite direction. The coefficients
+are ranked in decreasing importance from left to right.
+To have a more nuanced analysis of the contribution of each feature to the output, we also provide in
+Figure 4 an analysis of Shapley values of a trained extreme gradient boosting model ( XGBoost) [33]
+for each substation. These analyses were realized with the Python package SHAP[34]. As we see,
+some lower-ranked features, viz., the challenge flags, sometimes have a strong impact on the model’s
+output even though their general impact is null.
+B Numerical study of the Sliced-Wasserstein Filter
+WefirstbeginthissectionbyshowingtheADmechanismoftheSWfilteronasimpletwo-dimensional
+example. We generate three Gaussian distributions with different population sizes. As shown in
+Figure5,thefirstdistributionisthemajoritygroup,thesecondistheminoritygroup,andthethird
+represents clear statistical outliers. We now merge the three distributions into a single one to test our
+SWfilter. WevarytheradiusoftheWassersteinballtoseehowthefilterbehaves. Theresultsare
+presented in Figure 6.
+7(a) Substation A
+ (b) Substation B
+(c) Substation C
+Figure 2: Correlation heatmap of key features and label for each substation
+Aswesee,wecangeneratethreefilteringscenariosbymodifyingthevalueof 𝜖. With𝜖=0.1,we
+filteronlythestatisticaloutliers. With 𝜖=0.05,weonlykeepthemajoritygroup. And,with 𝜖=0.01,
+we only keep the samples closest to the barycenter of the majority group. This is very interesting in
+a safe ML pipeline as we can tune the conservatism of the training dataset that is used at each run
+during hyperparameter optimization.
+In Figure 7, we compare different AD algorithms on synthetic datasets provided in scikit-learn ’s
+examplecollection[ 35]. Hyperparametersarefixedforeachalgorithmtoseehowasinglehyperpa-
+rameter choice influences the labelling on each dataset. As can be seen, the SW filter and its fast
+Euclidianapproximationarebetteratisolatingoutlierswhenthereisaclearmajoritygroupbutare
+not as precise in identifying local outliers based on local density, e.g., one-class SVM.
+Finally, we run a more thorough experiment with typically used real-world benchmark datasets. We
+runexperimentsonthe Lymphography ,Ionosphere ,Glass,Shuttle,WPBC,Arrhythmia ,andPima,
+datasetspresentedin[ 36]forADbenchmarking. WecompareisolationforestandLOFtoourmethod.
+Weimplementagridsearchandselecteachmodel’srunwiththebestaccuracy 𝐴. Wethenextract
+the precision score 𝑃from this run. The performance indicators are defined as follows:
+𝑃=𝑇p
+𝑇p+𝐹p, 𝐴 =𝑇p+𝑇n
+𝑇p+𝐹p+𝑇n+𝐹n,
+8Figure 3: Spearman coefficients of key features for each substation
+where𝑇p,𝐹p,𝑇n,and𝐹nstandfortruepositives,falsepositives,truenegatives,andfalsenegatives,
+respectively. Results are presented in Figure 8. We observe a similar performance between each
+model, exceptonthe Ionosphere datasetwheretheSWfilterlagsbehindtheothermodels, andon
+Arrhythmia where the fast Euclidian approximation is underperforming. The SW filter’s strength
+is that it considers the global distributional properties of the population to guide its labelling. We
+remarkthatourmethodfailsatdetectinglocaloutliersasitispurelydesignedtolocateglobaloutliers
+that areriskyto keep in the training set. This is a reasonable choice to make when designing data
+preprocessing methods for safer ML training but not necessarily to filter local outliers.
+Every experiment is available on our GitHub page.
+C Supplementary content to the benchmark
+This section presents visual test predictions of the best validation runs for each substation as well as
+the test error of the benchmark.
+AscanbeseeninbothFigure9andTable2,substationCisthehardesttopredictfortheGaussian
+process. In general, the confidence of the model is also low (standard deviation is high). This hints at
+the complexity of the patterns.
+D Acknowledgements:
+SpecialthankstoOdileNoël,AhmedAbdellatif,SteveBoursiquot,andeveryonefromHydro-Québec’s
+open data initiative, especially Andrée-Anne Gauthier, and Robert Row. This work was partially
+funded by NSERC, FRQNT, Mitacs, and Hydro-Québec.
+9100
+ 50
+ 0 50 100 150 200
+SHAP value (impact on model output)average_snow_precipitationchallenge_flagpre_post_challenge_flagaverage_wind_speedaverage_relative_humidityday_of_week_cosweekend_holidayday_of_week_sinaverage_solar_radiancemonth_cosmonth_sinhour_coshour_sinconnected_clientsaverage_inside_temperatureaverage_temperature_setpointconnected_smart_tstatsaverage_outside_temperature
+LowHigh
+Feature value(a) Substation A
+100
+ 0 100 200
+SHAP value (impact on model output)average_snow_precipitationchallenge_flagday_of_week_cosaverage_wind_speedpre_post_challenge_flagaverage_relative_humidityday_of_week_sinweekend_holidayaverage_solar_radiancemonth_coshour_coshour_sinmonth_sinconnected_smart_tstatsaverage_outside_temperatureaverage_temperature_setpointconnected_clientsaverage_inside_temperature
+LowHigh
+Feature value (b) Substation B
+100
+ 0 100 200 300 400
+SHAP value (impact on model output)average_snow_precipitationchallenge_flagpre_post_challenge_flagaverage_wind_speedaverage_relative_humidityweekend_holidayday_of_week_cosday_of_week_sinaverage_solar_radiancemonth_cosmonth_sinhour_coshour_sinaverage_inside_temperatureconnected_smart_tstatsaverage_outside_temperatureconnected_clientsaverage_temperature_setpoint
+LowHigh
+Feature value
+(c) Substation C
+Figure 4: Shapley analysis of key features for each substation on trained XGBoost
+2
+ 0 2 4 6
+x14
+2
+024681012x2
+majoritary group
+minoritary group
+outliers
+Figure 5: Illustration of different groups
+10Table 1: Description of features and label of the dataset
+Name Description Possible values
+substation Substation identifier { 'A ','B','C'}
+timestamp_localTimestamp in local time (UTC-5)
+andISO8601format[AAAA-MM-
+DD hh:mm:ss]−
+connected_clientsNumberofclientsconnectedtothe
+substation during the considered
+hour{9,10,..., 104}
+connected_smart_tstatsNumber of smart thermostats con-
+nected to the substation during the
+considered hour{59,60,..., 1278}
+average_inside_temperatureHourly average indoor temperature
+measured by smart thermostats in
+substation [◦C][16.21,27.08]
+average_temperature_setpointHourlyaveragesetpointofsmartther-
+mostats in substation [◦C][9.31,21.03]
+average_outside_temperatureHourly average outside temperature
+at substation [◦C][−32.0,35.2]
+average_solar_radianceHourlyaveragesolarradianceatsub-
+station [W/m2][0,961]
+average_relative_humidityHourlyaveragerelativehumidityat
+substation [%][0,100]
+average_snow_precipitationHourly average amount of snow pre-
+cipitation at substation [mm][0.0,306.0]
+average_wind_speedHourly average wind speed at sub-
+station [m/s][0, 15.68 ]
+date Date [AAAA-MM-DD] [2022-01-01, 2024-06-30]
+month Month {1,2,..., 12}
+day Day of the month {1,2,..., 31}
+day_of_weekDay of the week with Sunday and
+Saturday being 1 and 7, respectively{1,2,..., 7}
+hour Hour of the day {0,1,..., 23}
+challenge_typeType of challenge during the given
+hour{'None ','CPR ','LCPR '}
+challenge_flag Flag indicating hours in challenge {0,1}
+pre_post_challenge_flagFlag indicating hours in pre-
+challenge or post-challenge{0,1}
+is_weekend Flag indicating weekends {0,1}
+is_holiday Flag indicating Québec holidays {0,1}
+weekend_holidayFlag indicating whether aweekend
+or a holiday{0,1}
+total_energy_consumedHourly energy consumption of the
+substation [kWh][7.45,32240.17]
+114
+ 2
+ 0 2 4 6
+x15.0
+2.5
+0.02.55.07.510.012.5x2
+confidence
+samples
+outliers(a)𝜖=0.1
+4
+ 2
+ 0 2 4 6
+x15.0
+2.5
+0.02.55.07.510.012.5x2
+confidence
+samples
+outliers (b)𝜖=0.05
+4
+ 2
+ 0 2 4 6
+x15.0
+2.5
+0.02.55.07.510.012.5x2
+confidence
+samples
+outliers (c)𝜖=0.01
+Figure 6: Labelling of the SW filter for different values of 𝜖
+Robust covariance
+ One-Class SVM
+ One-Class SVM (SGD)
+ Isolation Forest
+ Local Outlier Factor
+ SW
+ Split-SW
+ Fast Euclidian
+ Smart Split-SW
+Figure 7: AD comparison on multiple synthetic datasets
+Table 2: Absolute test errors of the best validation run for each substation
+Substation A B C
+MAE [kWh] 20.49103 17.90663 41.21746
+RMSE [kWh] 26.08270 22.39355 51.25044
+12Lymphography Ionosphere Glass Shuttle WPBC Arrhythmia Pima
+Sliced Wasserstein
+Fast Euclidian
+Isolation Forest
+Local Outlier Factor0.99 0.64 0.96 0.99 0.76 0.67 0.66
+0.96 0.72 0.96 0.99 0.76 0.54 0.65
+0.97 0.81 0.96 0.99 0.76 0.71 0.68
+0.99 0.88 0.96 0.96 0.76 0.65 0.66
+ 0.60.70.80.9
+T est accuracy(a) Accuracy 𝐴
+Lymphography Ionosphere Glass Shuttle WPBC Arrhythmia Pima
+Sliced Wasserstein
+Fast Euclidian
+Isolation Forest
+Local Outlier Factor1.00 0.64 0.96 0.99 0.76 0.63 0.67
+0.96 0.91 0.96 0.99 0.76 0.54 0.65
+0.97 0.83 0.96 0.99 0.76 0.73 0.69
+0.99 0.88 0.96 1.00 0.76 0.61 0.67
+ 0.60.70.80.91.0
+T est precision
+(b) Precision 𝑃
+Figure 8: Results of the grid search for each AD model on each dataset
+130 500 1000 1500 2000 2500200
+100
+0100200300400500
+reality
+predictions
+confidence(a) Substation A
+0 500 1000 1500 2000 2500100
+0100200300400reality
+predictions
+confidence
+(b) Substation B
+0 500 1000 1500 2000 2500400
+200
+02004006008001000
+reality
+predictions
+confidence
+(c) Substation C
+Figure 9: Test predictions of the benchmark at each substation
+14

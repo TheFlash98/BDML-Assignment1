@@ -1,0 +1,572 @@
+Operational Wind Speed Forecasts for Chile’s Electric
+Grid Using A Hybrid Machine Learning Model
+Dhruv Suri∗
+Stanford University
+surid@stanford.eduPraneet Dutta∗
+Google DeepMind
+praneetdutta@deepmind.com
+Flora Xue
+Google DeepMind
+floraxue@google.comInês Azevedo
+Stanford University
+iazevedo@stanford.eduRavi Jain†
+X - The Moonshot Factory
+ravijain@google.com
+Abstract
+As Chile’s electric power sector advances toward a future powered by renewable
+energy, accurate forecasting of renewable generation is essential for managing grid
+operations. The integration of renewable energy sources is particularly challenging
+due to the operational difficulties of managing their power generation, which
+is highly variable compared to fossil fuel sources, delaying the availability of
+clean energy. To mitigate this, we quantify the impact of increasing intermittent
+generation from wind and solar on thermal power plants in Chile and introduce
+a hybrid wind speed forecasting methodology which combines two custom ML
+models for Chile. The first model is based on TiDE, an MLP-based ML model for
+short-term forecasts, and the second is based on a graph neural network, GraphCast,
+for medium-term forecasts up to 10 days. Our hybrid approach outperforms the
+most accurate operational deterministic systems by 4-21% for short-term forecasts
+and 5-23% for medium-term forecasts and can directly lower the impact of wind
+generation on thermal ramping, curtailment, and system-level emissions in Chile.
+1 Introduction
+Replacing fossil fuels with renewable energy for electricity generation has a direct impact on climate
+change, since electricity generation globally contributes to roughly a third of annual carbon emissions
+[11]. However, the integration of renewable energy sources into the electric grid is challenging due to
+the operational difficulties of managing their highly variable power generation. Chile has taken a
+globally leading role in clean energy and has emerged as a leading destination for solar and wind
+developers and ambitious clean energy goals for the future [ 6]. This makes it a particularly interesting
+and important area of study for renewable energy forecasting. While Chile’s electricity demand is
+relatively modest (6.5% of Central and South America’s total in 2022), it is growing rapidly, both
+in aggregate (up from 40 TWh in 2000 to 88 TWh in 2022) and per-capita (70% over the same
+period). In 2023, the share of thermal, solar and wind in annual generation in Chile was 38.9%,
+19.9%, and 11.8% [ 4]. Electric grid Independent System Operators (ISOs) recognize the need for
+precise renewable generation and net demand forecasts. Historically, thermal plants provided stable
+generation with predictable net demand patterns. However, increased penetration of renewables
+necessitates advanced forecasting due to significant generation ramps from wind and solar. Accurate
+forecasts are critical for subsequent thermal generator dispatch, which rely on forecast accuracy and
+∗These authors contributed equally to this work. Dhruv Suri’s work done while at X - The Moonshot Factory.
+†Corresponding author.
+Tackling Climate Change with Machine Learning: workshop at NeurIPS 2024.security constraints. Among renewable sources, wind power prediction is particularly challenging
+due to its temporal and spatial variability, and oftentimes lack of sufficient high-quality data, not
+only for wind power but for wind speed itself [ 21]. Our work aims to contribute to improving
+the coordination and control of Chile’s electric power system amidst growing renewable energy
+integration by enhancing the reliability and accuracy of wind speed forecasts.
+Our approach diverges from traditional forecast methods by applying machine learning techniques.
+Traditionally, Numerical Weather Prediction (NWP) models, which have been the cornerstone of
+weather forecasting for decades, process current weather observations to predict future weather
+by solving fundamental physical equations of fluid dynamics and thermodynamics. These models
+integrate various atmospheric parameters such as temperature, humidity, wind speed, and pressure
+across different altitudes and geographical locations. Despite their sophistication, NWP models
+face limitations, such as diminished accuracy over time, dependency on high-quality input data,
+computational constraints affecting resolution, and challenges in physics-based modeling of complex
+processes like cloud formation and precipitation. In contrast, Machine Learning-based Weather
+Prediction (MLWP) models leverage historical data to identify patterns not easily captured by
+explicit physics-based modeling. These models use advanced machine learning (ML) algorithms
+to improve forecasting accuracy and efficiency, particularly in short-term predictions. MLWP has
+shown promise in areas like sub-seasonal heat wave prediction [ 7] and precipitation nowcasting [ 17].
+For short-term weather forecasting, a range of MLWP approaches have been employed – including
+advanced statistical models [ 19], graph neural networks (GNN) [ 12,8], long short-term memory
+(LSTM) networks [ 18,14], and models that combine a differentiable solver for atmospheric dynamics
+with machine-learning components models [ ?] – demonstrating improved performance in specific
+applications.
+We introduce a novel hybrid methodology for short and medium-term wind speed forecasts, designed
+as an input to the ISO’s unit commitment and economic dispatch models in the day-ahead and
+week-ahead electricity market. For short-term forecasts (0 to 48 hours) we develop a custom ML
+model specifically optimized for capturing the intricate temporal dependencies in hourly wind speed.
+For medium-term forecasts (2 to 10 days), we develop a custom ML model based on GraphCast — a
+graph neural network-based machine learning weather prediction (MLWP) model for medium-range
+weather forecasts [9, 10].
+2 Data & Methods
+Data . We develop a dataset with thermal power plants that includes hourly generation by fuel source
+obtained from Coordinador Eléctrico Nacional (CEN) [ 3], Chile’s national ISO. CEN also records
+historical hourly generation from wind, solar, hydro and geothermal plants, and system demand. For
+short and medium-term wind magnitude forecasts, we use ERA5, a global reanalysis dataset produced
+by ECMWF [ 13]. GraphCast is initially trained on ERA5 data spanning 1979-2016. HRES provides
+real-time weather predictions using the most recent observations and advanced numerical weather
+prediction models [ 16]. HRES-fc0 is a dataset derived from HRES, consisting of the initial state of
+each high-resolution ensemble forecast and is used as the benchmark for evaluating our hybrid model.
+Electricity generation marginal response models . We use a fixed effects ordinary least squares
+(OLS) regression formulation to model the change in operational behavior of thermal generators
+in response to a marginal increase in generation from wind and solar. The formulation is a non-
+logarithmic form of the statistical model used by [2] and [20].
+Gt=α+β1St+β2Wt+β3Dt+β4(Wt−Wt−1) +β5(St−St−1) +ηt,m+γXt+ηt,a+ϵ(1)
+where tdenotes the current timestep; Gt,St,Wtrepresent the thermal, solar, and wind generation,
+respectively; Dtis the electricity demand, and the terms between the brackets denote the hourly wind
+and solar ramp. ηmandηadenote the month and year fixed effects. Xtis a set of control variables
+that includes the hydro and geothermal generation, and imports. The parameters that are of interest
+are the coefficients for solar, β1and wind, β2. These coefficients represent the change in thermal
+generation in response to a marginal unit increase in generation.
+Operational wind speed forecast models . In medium and long-term weather forecasts, the current
+top deterministic operational system in the world is ECMWF’s HRES forecast. Owing to its proven
+versatility, we use a graph neural network forecasting model, GraphCast, that outperforms the baseline
+HRES forecasts on 90.3% of 1380 location targets with an overall skill improvement of 7 to 14%
+2across global locations [ 9]. However, the GraphCast model in [ 9] with HRES-fc0 finetuning for
+Chile proves to be more accurate than HRES forecasts only following a lead time of approximately 7
+days. Before this cross-over point, GraphCast’s normalized RMSE relative to HRES ranges from 0 to
+1.15 (shown in the SI) in Chile. To overcome this limitation we categorize the forecasting problem
+into two distinct temporal regimes, short-term and medium-term forecasts. Furthermore, in Chile,
+day-ahead dispatch processes require advanced hourly generation and net demand forecasts to be
+made available a day prior for unit commitment and economic dispatch models to be run by the ISO.
+As GraphCast’s time step size is 6 hours, we propose a short-term model with hourly granularity. In
+order to draw a direct comparison of our methods with ECMWF’s HRES, we use a quarter-degree
+model resolution. However, we focus on those mesh points that are closest to the actual 52 wind farm
+locations in Chile, and wind speed forecasts are developed for 24 unique quarter-degree interpolated
+locations in Chile.
+Short-term forecasts . We use an enhanced Time-series Dense Encoder (TiDE) model [ 5] that
+represents a state-of-the-art approach for short-term wind speed forecasting from 0 to 48 hours. This
+model employs a Multi-layer Perceptron (MLP) based encoder-decoder architecture, optimized to
+handle time-series data with multiple covariates and complex, non-linear dependencies. The encoder
+processes historical wind speed data and relevant covariates, transforming them into a latent space
+representation through multiple residual blocks, which are crucial for capturing intricate patterns in
+the data. The decoder then reconstructs future wind speeds from this latent representation, allowing
+the model to make accurate predictions up to 48 hours ahead. To enhance the forecast accuracy of
+TiDE for our application, we integrate a randomized iterative forecasting framework. This integration
+is inspired by the decomposition-ensemble learning methodology where the data is first decomposed
+into simpler components, which are then modeled individually using randomized algorithms.
+Medium-term forecasts . For medium-range forecasts, we use GraphCast, a neural network architec-
+ture designed to predict weather states by taking the two most recent states of Earth’s weather - the
+current time and six hours earlier - and forecasting the next state six hours ahead. The model uses
+a 0.25-degree latitude-longitude grid to represent a single weather state, corresponding to roughly
+28 km by 28 km resolution at the equator. Implemented as a neural network architecture based on
+Graph Neural Networks (GNNs) in an "encode-process-decode" configuration, GraphCast consists of
+36.7 million parameters. To improve the forecast accuracy of GraphCast, we develop a custom model
+using a novel multi-stage fine-tuning process. This involved autoregressive fine-tuning on HRES-
+fc0 data to account for potential distribution shifts between reanalysis data (ERA5) and real-time
+operational data. The model is further customized through location-based weighting, emphasizing
+accuracy within a bounding box encompassing the Chilean wind farms, and wind magnitude and
+power weighting, directly optimizing for these specific metrics by using a scaling factor in the loss
+function. Finally, iterative fine-tuning is combined with linear regression post-processing to further
+enhance the model’s accuracy. We first fine-tune the base GraphCast model autoregressively on five
+years (2016-2020) of HRES-fc0 data. During this stage, we used the original GraphCast loss function,
+a spatially-weighted mean squared error (MSE) calculated across all variables and pressure levels:
+Lbase=1
+|Dbatch|X
+d0∈D batch1
+TtrainX
+τ∈1:Ttrain1
+|G0.25◦|X
+i∈G0.25◦X
+j∈Jsjwjai(ˆxd0+τ
+i,j−xd0+τ
+i,j)2(2)
+Dbatchdenotes a batch of forecast initialization date-times in the training set, Ttrainis the number
+of autoregressive steps used for training, G0.25◦is the set of grid cells in the 0.25-degree latitude-
+longitude grid, Jis the set of variables and pressure levels, sjrepresents the inverse variance of time
+differences for variable j,wjis the loss weight for variable j,aiis the area of grid cell i, normalized
+to unit mean over the grid, ˆxd0+τ
+i,j is the model’s prediction for variable jat grid cell iand lead time τ
+from initialization d0, andxd0+τ
+i,j is the corresponding target value from the HRES-fc0 data. We also
+modify the loss function by incorporating a location-based weighting factor mi, which up-weights
+the error contributions from grid cells within a specified bounding box by a factor ωl, while grid cells
+outside the bounding box are left unweighted.
+33 Results
+Marginal response of thermal power plants . By analyzing the coefficients β1andβ2of the
+statistical model, we find that, on average, fluctuations or ramps in thermal generation are more
+sensitive to increases in wind generation compared to solar. A 1 GWh increase in wind generation
+displaces 0.95 GWh of thermal generation, whereas the same increase in solar generation displaces
+only 0.67 GWh, which is 30% less. We also model the response of individual thermal generators
+to marginal changes in wind and solar generation by isolating hourly generation in the fixed-effects
+model. Using these coefficients, we classify each power plant as either ‘solar-following’ or ‘wind-
+following’ determined based on the absolute value of the larger, statistically significant coefficient.
+Of the 128 thermal plants, we find that 91 are wind-following, while the remaining 37 largely to solar
+generation. The vast majority of wind-following thermal plants clearly necessitates better operational
+wind forecasts in dispatch models used by the ISO.
+Short-term forecasts . We evaluate the performance of our TiDE model using the Root Mean Squared
+Error (RMSE) metric, averaged hourly across all 24 locations, for wind speed. Figure 1a shows the
+metric over a 48-hour horizon for both TiDE and HRES. The RMSE increases gradually over the
+forecast period for both models; for HRES the data available is at 6-hour intervals. The short-term
+model performs better than auto-regressive models, as evidenced by a 4-21% improvement over
+HRES. The RMSE for HRES forecasts at hours 6 and 12 is lower than that of our short-term model,
+however, given that operational forecasts are made at 10 am the day prior, the critical forecasting
+window used for unit commitment and economic dispatch by the ISO is from 14 - 38 hours, during
+which we consistently outperform HRES. Beyond a 48-hour forecast horizon, TiDE’s performance in
+comparison to HRES resembles a mean-reverting behavior.
+Medium-term forecasts . Our custom model weighting training inputs by location, wind magnitude
+independently, and a combination of both resulted in iterative improvements in skill and RMSE. Figure
+1b summarizes the RMSE for three fine-tuned GraphCast variants at quarter-degree interpolated wind
+farm locations. At 96-hour lead times, these weighted models outperform HRES predictions by 10%,
+13%, and 17% respectively. The location- and wind-weighted GraphCast has greater wind speed
+forecasting skill than HRES for periods after a lead time of 30 hours at various pressure levels which
+roughly correspond to those of wind farm elevations. When further improved by incorporating HRES
+inputs as a covariate, the crossover point for wind magnitude predictions improves to 2.5 days. Over
+the medium-term lead times, our finetuned GraphCast model outperforms HRES by 5-23%.
+4 Conclusion
+The lack of accurate day-ahead forecasts for wind generation can exacerbate curtailment or lead to
+sub-optimal thermal plant operations. Our proposed hybrid machine learning models - TiDE for
+short-term and GraphCast for medium-term forecasts, significantly outperform traditional NWP
+models, with a 4-23% improvement in prediction accuracy for Chile’s grid operations. The improved
+accuracy of ML-based forecasts can reduce unnecessary thermal ramping and lower system-level
+emissions by avoiding overproduction and reducing curtailment. We acknowledge limitations, such
+as the challenges in predicting wind generation, and suggests that more detailed curtailment data
+could improve model calibration. Moreover, while the models are fine-tuned for Chile’s specific
+grid and geography, their applicability to other locales could be constrained by the availability of
+high-resolution data and different meteorological patterns. Practical challenges in implementing the
+models included managing large datasets and the complexity of model tuning, however the high
+level of skill improvement demonstrated makes these methods valuable for future studies aiming to
+replicate or adapt the study to other regions.
+5 Acknowledgements
+We thank Andrew El-Kadi, Ferran Alet, and Alexis Boukouvalas for all their guidance with Graphcast.
+We thank Rodrigo Andres, Leonie Wagner and Farooq Anjum for data management, software, soft-
+ware reviews and experiments, Joshua D’Arcy and Ren Gibbons for early software and experiments
+on wind prediction, and Abhimanyu Das for guidance in implementing and tuning the TiDE model.
+We also thank Gautam Bajaj, Sanjana Reddy, and Qianyu Zhang for reviews and comments on the
+paper.
+4(a) Short-term forecasts (0-2 days)
+(b) Medium-term forecasts (2-10 days)
+Figure 1: Mean hourly RMSE and Normalized RMSE of wind magnitude predictions averaged
+across all interpolated wind farm locations for 2021 . (a) Short-term forecasts (0-2 days). The
+left column represents mean hourly wind magnitude RMSE values over a 48-hour forecast horizon,
+while the right column represents normalized RMSE considering HRES as the baseline using TiDE
+forecasts at 6-hour intervals. (b) Medium-term forecasts (2-10 days). The left column represents
+wind magnitude RMSE values over an 8 day forecast horizon at 6-hour time intervals. The solid lines
+represent three alternate GraphCast models.
+References
+[1]Kaifeng Bi, Lingxi Xie, Hengheng Zhang, Xin Chen, Xiaotao Gu, and Qi Tian. Accurate
+medium-range global weather forecasting with 3d neural networks. Nature , 619(7970):533–538,
+2023.
+[2]James B Bushnell and Catherine Wolfram. Ownership change, incentives and plant efficiency:
+The divestiture of us electric generation plants. 2005.
+[3]Coordinador Eléctrico Nacional. Coordinador eléctrico nacional, 2024. Accessed: 2024-05-27.
+[4]Coordinador Eléctrico Nacional. Información técnica - coordinador eléctrico nacional, 2024.
+Accessed: 2024-05-27.
+[5]Abhimanyu Das, Weihao Kong, Andrew Leach, Shaan Mathur, Rajat Sen, and Rose Yu. Long-
+term forecasting with tide: Time-series dense encoder. arXiv preprint arXiv:2304.08424 ,
+2023.
+[6] IEA. Energy policies beyond iea countries: Chile 2018 review, 2018.
+[7]Valérian Jacques-Dumas, Francesco Ragone, Pierre Borgnat, Patrice Abry, and Freddy Bouchet.
+Deep learning-based extreme heatwave forecast. Frontiers in Climate , 4, 2022.
+5[8]Mahdi Khodayar and Jianhui Wang. Spatio-temporal graph deep neural network for short-term
+wind speed forecasting. IEEE Transactions on Sustainable Energy , 10(2):670–681, 2018.
+[9]Remi Lam, Alvaro Sanchez-Gonzalez, Matthew Willson, Peter Wirnsberger, Meire Fortunato,
+Ferran Alet, Suman Ravuri, Timo Ewalds, Zach Eaton-Rosen, Weihua Hu, et al. Graphcast:
+Learning skillful medium-range global weather forecasting. arXiv preprint arXiv:2212.12794 ,
+2022.
+[10] Remi Lam, Alvaro Sanchez-Gonzalez, Matthew Willson, Peter Wirnsberger, Meire Fortunato,
+Ferran Alet, Suman Ravuri, Timo Ewalds, Zach Eaton-Rosen, Weihua Hu, et al. Learning
+skillful medium-range global weather forecasting. Science , 382(6677):1416–1421, 2023.
+[11] Zhu Liu, Zhu Deng, Steve Davis, and Philippe Ciais. Monitoring global carbon emissions in
+2022. Nature Reviews Earth & Environment , 4(4):205–206, 2023.
+[12] Minbo Ma, Peng Xie, Fei Teng, Bin Wang, Shenggong Ji, Junbo Zhang, and Tianrui Li. Hist-
+gnn: Hierarchical spatio-temporal graph neural network for weather forecasting. Information
+Sciences , 648:119580, 2023.
+[13] Franco Molteni, Roberto Buizza, Tim N Palmer, and Thomas Petroliagis. The ecmwf ensemble
+prediction system: Methodology and validation. Quarterly journal of the royal meteorological
+society , 122(529):73–119, 1996.
+[14] Xiangyun Qing and Yugang Niu. Hourly day-ahead solar irradiance prediction using weather
+forecasts by lstm. Energy , 148:461–468, 2018.
+[15] Minghao Qiu, Corwin M Zigler, and Noelle E Selin. Impacts of wind power on air qual-
+ity, premature mortality, and exposure disparities in the united states. Science Advances ,
+8(48):eabn8762, 2022.
+[16] Stephan Rasp, Peter D Dueben, Sebastian Scher, Jonathan A Weyn, Soukayna Mouatadid, and
+Nils Thuerey. Weatherbench: a benchmark data set for data-driven weather forecasting. Journal
+of Advances in Modeling Earth Systems , 12(11):e2020MS002203, 2020.
+[17] Suman Ravuri, Karel Lenc, Matthew Willson, Dmitry Kangin, Remi Lam, Piotr Mirowski,
+Megan Fitzsimons, Maria Athanassiadou, Sheleem Kashem, Sam Madge, et al. Skilful pre-
+cipitation nowcasting using deep generative models of radar. Nature , 597(7878):672–677,
+2021.
+[18] Afan Galih Salman, Yaya Heryadi, Edi Abdurahman, and Wayan Suparta. Single layer & multi-
+layer long short-term memory (lstm) model with intermediate variables for weather forecasting.
+Procedia Computer Science , 135:89–98, 2018.
+[19] Shankarappa Sridhara, Nandini Ramesh, Pradeep Gopakkali, Bappa Das, Soumya D Venkatappa,
+Shivaramu H Sanjivaiah, Kamalesh Kumar Singh, Priyanka Singh, Diaa O El-Ansary, Eman A
+Mahmoud, et al. Weather-based neural network, stepwise linear and sparse regression approach
+for rabi sorghum yield forecasting of karnataka, india. Agronomy , 10(11):1645, 2020.
+[20] Dhruv Suri, Jacques de Chalendar, and Ines Azevedo. What are the real implications for co_2
+as generation from renewables increases? arXiv preprint arXiv:2408.05209 , 2024.
+[21] Yun Wang, Runmin Zou, Fang Liu, Lingjun Zhang, and Qianyi Liu. A review of wind speed
+and wind power forecasting with deep neural networks. Applied Energy , 304:117766, 2021.
+6A Methods
+A.1 Statistical Models
+We use a fixed effects ordinary least squares (OLS) regression formulation to model the change in
+operational behavior of thermal generators in response to a marginal increase in generation from wind
+and solar. The formulation is a non-logarithmic form of the statistical model used by [2] and [20].
+Gt=α+β1St+β2Wt+β3Dt+β4(Wt−Wt−1) +β5(St−St−1) +ηt,m+γXt+ηt,a+ϵ(3)
+where tdenotes the current timestep; Gt,St,Wtrepresent the thermal, solar, and wind generation,
+respectively; Dtis the electricity demand, and the terms between the brackets denote the hourly wind
+and solar ramp. ηmandηadenote the month and year fixed effects. Xtis a set of control variables
+that includes the hydro and geothermal generation, and imports.
+In our formulation, the parameters that are of interest are the coefficients for solar, β1and wind, β2.
+These coefficients represent the change in thermal generation in response to a marginal unit increase
+in generation from solar and wind, respectively. For example, if generation from wind increases by 1
+MWh, then β1andβ2will represent the MWh change in generation from thermal plants in Chile.
+These coefficients thus measure the causal change in the dependent variable under the assumption
+that daily wind and solar production (represented by WandS) is uncorrelated with the error term ϵ
+after controlling for demand and time fixed effects. As suggested by [ 15], this assumption is valid for
+wind at the hourly level and can thus be extended into the present form of the statistical model.
+A.2 Short-term Wind Forecasting
+The Time-series Dense Encoder (TiDE) model represents a state-of-the-art approach for short-term
+wind speed forecasting. This model employs a Multi-layer Perceptron (MLP) based encoder-decoder
+architecture, optimized to handle time-series data with multiple covariates and complex, non-linear
+dependencies. The encoder processes historical wind speed data and relevant covariates, transforming
+them into a latent space representation through multiple residual blocks, which are crucial for
+capturing intricate patterns in the data. The decoder then reconstructs future wind speeds from this
+latent representation, allowing the model to make accurate predictions up to 48 hours ahead.
+The hyperparameters of the TiDE model are chosen to enhance its predictive performance, tuned on
+the validation loss for each interpolated wind-farm location. Ranges of different hyperparameters are
+shown in Table 1. Key hyperparameters include the number of layers in the encoder and decoder, the
+hidden layer sizes, and dropout rates to prevent overfitting. Specifically, the encoder and decoder each
+consist of four residual blocks, with each block containing fully connected layers of 128 neurons.
+Dropout is applied with a rate of 0.1 to ensure regularization. The model is trained using the Mean
+Squared Error (MSE) loss function, which measures the average squared difference between predicted
+and actual wind speeds. The Adam optimizer, with a learning rate of 0.001, is utilized to update
+the model’s weights efficiently during training. An early stopping mechanism with a patience of 20
+epochs is implemented to halt training when the validation loss ceases to improve, thus avoiding
+overfitting.
+Table 1: Ranges of different hyperparameters for model tuning
+Parameter Range Evaluated
+Hidden Size [256, 512, 1024]
+Number of Encoder Layers [1, 2, 3]
+Number of Decoder Layers [1, 2, 3]
+Decoder Output Dimension [4, 8, 16, 32]
+Temporal Decoder Hidden [32, 64, 128]
+Dropout Level [0.0, 0.1, 0.2, 0.3, 0.5]
+Layer Normalization [True, False]
+Learning Rate Log-scale in [1e-5, 1e-2]
+Reversible Instance Norm (RevIN) [True, False]
+7The TiDE model’s performance is evaluated using the Root Mean Squared Error (RMSE) metric,
+averaged hourly across multiple locations in Chile. To handle the time-series nature of the data, the
+model incorporates various datetime attributes as additional covariates, such as the hour of the day, day
+of the week, and month, which are encoded using dense layers in a Multi-Layer Perceptron (MLP)-
+based architecture. Additionally, the model is equipped to use a Scaler transformer to normalize the
+input data, ensuring that all features have zero-mean unit variance. This preprocessing step is essential
+for maintaining the stability and performance of the neural network. We normalize and detect outliers
+using a z-scoring threshold specified in [ 1]. By adopting a higher z-score threshold, performance
+at later lead times beyond 24 hours in not affected. The inclusion of future covariates, such as
+temperature, pressure, and various wind parameters at different altitudes, enhances the model’s ability
+to capture the underlying weather patterns, leading to more accurate short-term wind speed forecasts.
+A.2.1 Integration with Randomized Iterative Forecasting
+To further enhance the predictive performance and computational efficiency of the TiDE model, we
+integrate a randomized iterative forecasting framework into the model. This integration is inspired by
+the decomposition-ensemble learning methodology where the data is first decomposed into simpler
+components, which are then modeled individually used to condition the TiDE model on randomly
+selected time intervals during training. At inference time, the model uses the learned intervals to
+generate multiple forecasts for a specific lead time. For example, to predict the weather 7 days
+ahead, the model might use a combination of forecasts at 12-hour intervals repeated 14 times or at
+24-hour intervals repeated 7 times. These forecasts are then averaged to produce the final prediction,
+significantly improving accuracy by reducing the uncertainty inherent in long-term forecasts.
+A.2.2 Model Architecture and Mathematical Formulation
+Lety1:Lrepresent the historical wind speeds, x1:L+Hthe covariates over the look-back and forecast
+horizon, and athe static attributes. The encoding step maps the past covariates and wind speeds into
+a dense representation e:
+xt=ResidualBlock (xt) (4)
+e=Encoder (y1:L;x1:L+H;a) (5)
+This encoding eis then utilized by the decoder to predict future wind speeds.
+The decoding process in the TiDE model involves mapping the encoded hidden representations
+into future predictions. The dense decoder processes the encoding eto produce an intermediate
+representation, which is further refined by the temporal decoder to generate the final forecast. The
+process is described by the following equations:
+g=Decoder (e) (6)
+D=Reshape (g) (7)
+ˆyL+t=TemporalDecoder (dt;xL+t) (8)
+where gis the output of the dense decoder, Dis the reshaped matrix of decoded vectors, and dtis
+the decoded vector for time t. The temporal decoder combines this decoded vector with the projected
+covariates xL+tto generate the final prediction ˆyL+t.
+A.2.3 Randomized Algorithm-based Decomposition-Ensemble Learning
+The proposed method involves three major steps: data decomposition, individual prediction using
+randomized algorithms, and results ensemble.
+Data Decomposition: We employ an effective multi-scale analysis technique such as Ensemble
+Empirical Mode Decomposition (EEMD) to decompose the original time series data into nintrinsic
+8mode functions (IMFs) and a residue. This decomposition ensures that the data complexity is reduced,
+making it easier to model.
+xt=nX
+j=1cj,t+rt (9)
+Individual Prediction using Randomized Algorithms: For each decomposed component, instead of
+forecasting weather conditions at fixed intervals, we condition the TiDE model on randomly selected
+time intervals during training. This is done by introducing a distribution over time intervals, choosing
+from intervals such as 6, 12, 24, and 48 hours. This randomization serves a dual purpose: it acts as
+a form of data augmentation by varying the intervals during training, and it enables the model to
+produce multiple forecasts for a specified lead time during inference by combining predictions from
+different intervals.
+Results Ensemble: The final forecast is obtained by aggregating the predictions of all decomposed
+components and the residue.
+ˆ xt=nX
+j=1ˆ cj,t+ˆ rt (10)
+A.2.4 Performance Evaluation
+Mathematically, the forecasting function fcan be defined as:
+f:n
+y(i)
+1:LoN
+i=1,n
+x(i)
+1:L+HoN
+i=1,n
+a(i)oN
+i=1
+→
+
+nX
+j=1ˆc(i)
+L+1:L+H,j+ˆr(i)
+L+1:L+H
+
+N
+i=1(11)
+where:
+•Nis the number of time-series,
+•Lis the look-back period,
+•His the forecast horizon,
+•ˆc(i)
+L+1:L+H,jrepresents the predicted values for the j-th IMF,
+•ˆr(i)
+L+1:L+Hrepresents the predicted residue.
+The accuracy of the prediction is measured by the Root Mean Squared Error (RMSE), defined as:
+RMSE
+n
+y(i)
+L+1:L+HoN
+i=1,
+
+nX
+j=1ˆc(i)
+L+1:L+H,j+ˆr(i)
+L+1:L+H
+
+N
+i=1
+=
+vuuut1
+NHNX
+i=1y(i)
+L+1:L+H−
+nX
+j=1ˆc(i)
+L+1:L+H,j+ˆr(i)
+L+1:L+H
+2
+2(12)
+This integration of randomized iterative forecasting with TiDE leverages the speed and robustness of
+randomized algorithms to enhance the efficiency and accuracy of wind speed predictions, particularly
+in scenarios involving large-scale time series data with complex patterns.
+9A.3 GraphCast
+GraphCast is a neural network architecture designed to predict weather states by taking the two most
+recent states of Earth’s weather - the current time and six hours earlier - and forecasting the next
+state six hours ahead. The model uses a 0.25-degree latitude-longitude grid to represent a single
+weather state, corresponding to roughly 28 km by 28 km resolution at the equator. Implemented as a
+neural network architecture based on Graph Neural Networks (GNNs) in an "encode-process-decode"
+configuration, GraphCast consists of 36.7 million parameters.
+The encoder within GraphCast employs a single GNN to map variables, normalized to zero-mean
+unit variance, represented as node attributes on the input grid to learned node attributes on an internal
+multi-mesh representation. This multi-mesh is spatially homogenous and defined by refining a regular
+icosahedron iteratively six times, leading to a high-resolution graph with 40,962 nodes and a flat
+hierarchy of edges of varying lengths. The processor then uses 16 unshared GNN layers to perform
+learned message-passing on the multi-mesh, enabling efficient local and long-range information
+propagation with minimal message-passing steps. The decoder maps the final processor layer’s
+learned features back to the latitude-longitude grid using a single GNN layer, predicting the output as
+a residual update to the most recent input state, with output normalization to achieve unit-variance on
+the target residual.
+For fine-tuning GraphCast to optimize wind magnitude and power forecasts specifically for Chilean
+wind farms, a multi-stage fine-tuning process was employed. This involved autoregressive fine-tuning
+on HRES-fc0 data to account for potential distribution shifts between reanalysis data (ERA5) and
+real-time operational data. The model was further customized through location-based weighting,
+emphasizing accuracy within a bounding box encompassing the Chilean wind farms, and wind
+magnitude and power weighting, directly optimizing for these specific metrics. Iterative fine-tuning
+combined with linear regression post-processing enhanced the model’s accuracy, making it a robust
+tool for predicting wind patterns in Chile’s diverse and complex terrain.
+B Finetuning GraphCast
+GraphCast demonstrates strong global weather forecasting skills, but our objective is to optimize
+wind magnitude and power predictions specifically for Chilean wind farms. To achieve this, we
+customized the publicly available GraphCast model, pre-trained on ERA5 reanalysis data, using a
+multi-stage fine-tuning process. This section elaborates on each stage and provides the mathematical
+formulation of the modified loss function.
+B.1 Operational Data Fine-tuning
+Recognizing the potential distribution shift between reanalysis data (ERA5) and real-time operational
+data (HRES-fc0), we first fine-tuned the base GraphCast model autoregressively on five years (2016-
+2020) of HRES-fc0 data. This fine-tuning involved several steps. Firstly, HRES-fc0 data was
+pre-processed to align with the GraphCast input format. This included variable selection, focusing
+on relevant variables directly related to wind dynamics, such as eastward and northward wind
+components at various pressure levels. Additionally, the data was converted to the same spatial
+resolution as GraphCast (0.25-degree latitude-longitude grid).
+The autoregressive fine-tuning process involved 30,000 steps where the model predicted the weather
+state six hours ahead for up to a ten-day lead time. In each training step, the model’s output from the
+previous timestep was fed back as input, simulating a real-time forecasting scenario. This recursive
+process allowed the model to learn temporal dependencies and adapt to the dynamics of operational
+data. During this stage, we used the original GraphCast loss function, a spatially-weighted mean
+squared error (MSE) calculated across all variables and pressure levels:
+Lbase=1
+|Dbatch|X
+d0∈D batch1
+TtrainX
+τ∈1:Ttrain1
+|G0.25◦|X
+i∈G0.25◦X
+j∈Jsjwjai(ˆxi,j,d 0+τ−xi,j,d 0+τ)2(13)
+In this equation, Dbatchdenotes a batch of forecast initialization date-times in the training set, Ttrainis
+the number of autoregressive steps used for training, G0.25◦is the set of grid cells in the 0.25-degree
+10latitude-longitude grid, Jis the set of variables and pressure levels, sjrepresents the inverse variance
+of time differences for variable j,wjis the loss weight for variable j,aiis the area of grid cell i,
+normalized to unit mean over the grid, ˆxi,j,d 0+τis the model’s prediction for variable jat grid cell
+iand lead time τfrom initialization d0, and xi,j,d 0+τis the corresponding target value from the
+HRES-fc0 data.
+B.2 Location and Wind-Magnitude Weighting
+To focus the model’s predictive skill on Chilean wind farms, we applied location-based weighting
+and wind magnitude weighting. The location-based weighting emphasized the accuracy within a
+bounding box encompassing the Chilean wind farms which is the region of interest, while the wind
+magnitude weighting directly optimized for predicting wind weather variables that can be used as an
+input into operational forecasts and economic dispatch. This involved adjusting the weights in the
+loss function to prioritize errors in these regions and variables, thereby fine-tuning the model to the
+specific operational characteristics of the Chilean wind farms.
+The location-based weighting modified the loss function as follows:
+Lloc=1
+|Dbatch|X
+d0∈D batch1
+TtrainX
+τ∈1:Ttrain1
+|G0.25◦|X
+i∈G0.25◦X
+j∈Jsjwjaimi(ˆxi,j,d 0+τ−xi,j,d 0+τ)2(14)
+where miis defined as:
+mi=ωl,if grid cell iis within the bounding box
+1,otherwise(15)
+andωlis the location-based up-weighting factor.
+For wind magnitude and power weighting, we introduced additional loss terms to optimize the model
+for predicting wind magnitude ( wm) and power ( wp). Wind magnitude was calculated from the
+predicted eastward ( u10m) and northward ( v10m) wind components at 10 meters:
+wm=q
+u2
+10m+v2
+10m
+Wind power was estimated using a simplified cubic relationship:
+wp=wm3
+B.3 Iterative Fine-tuning and Configuration Selection
+An iterative fine-tuning process was employed to refine the model further. Various configurations
+were tested, adjusting hyperparameters and re-evaluating performance to identify the optimal setup.
+The configuration achieving the lowest RMSE for Chilean wind farm locations was chosen as the
+final fine-tuned model.
+B.4 Linear Regression Post-processing
+To enhance accuracy, we applied a per-lead-time bias correction using linear regression. This involved
+training separate linear regression models for each six hour lead time (up to 10 days), variable (e.g.,
+u10m,v10m, wind magnitude, and power), and grid cell within the bounding box. The last year
+(2020) of HRES-fc0 data was used for training these models, with the results evaluated on 2021. The
+correction formula is given by:
+ˆycorrected =α+βˆyraw (16)
+where ˆycorrected is the bias-corrected prediction, ˆyrawis the raw GraphCast prediction, and αandβare
+the learned intercept and slope, respectively. These models were applied to the fine-tuned GraphCast
+predictions to generate the final bias-corrected wind forecasts.
+11B.5 HRES Initialized Inputs
+To further enhance the predictive accuracy of our location and wind-magnitude weighted GraphCast
+model, we investigated the integration of real-time forecasts from the ECMWF’s High-Resolution
+Forecasting System (HRES) as additional input features. Building on existing work in this field, our
+"HRES forcing" approach leverages the inherent short-term predictive skill of HRES to potentially
+inform and improve the medium-range wind speed forecasts generated by the GraphCast model.
+Implementation of HRES forcing involves augmenting the input layer of our customized GraphCast
+model to accommodate the HRES forecast variables. The weights associated with these new inputs
+are initialized as zeros, preserving the model’s pre-existing functionality, which is derived from
+pre-training on ERA5 and operational fine-tuning on historical HRES-fc0 data. A subsequent single-
+step autoregressive fine-tuning process, utilizing a reduced number of steps (2,000 compared to
+the standard 30,000), allows the model to learn how to effectively incorporate the real-time HRES
+information while minimizing disruption to the previously established, regionally-tailored weights.
+12Figure 2: Mean hourly generation and standard deviation for wind, solar, and thermal power
+plants in Chile from 2019 to 2023 . Each row corresponds to a different year, and each column
+represents a different technology (Wind, Solar, and Thermal). The solid lines indicate the mean
+generation in gigawatt-hours (GWh), and the shaded areas represent the standard deviation across
+all hours. The x-axis denotes the hour of the day, ranging from 0 to 23. This figure illustrates the
+temporal variation in power generation for each technology over the years, highlighting both the
+average generation and the variability within each day.
+13Figure 3: Hourly solar and wind generation (2019-2023) . Solar (left) and Wind (right). The
+colored bars represent mean generation normalized by installed capacity by source and year. The
+bars indicate the standard deviation of hourly normalized generation by source.
+14Figure 4: Normalized RMSE difference of GraphCast’s 10u forecasts relative to HRES, by
+location, at 12 hours, 2 days and 10 day lead times . Blue indicates that GraphCast has greater skill
+than HRES, Red that HRES has greater skill. Here "10u" refers to the u-component of wind at an
+altiitude corresponding to 10m [9]
+15

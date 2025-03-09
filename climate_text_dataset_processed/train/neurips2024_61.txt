@@ -1,0 +1,413 @@
+Emulating the Global Change Analysis Model
+with Deep Learning
+Andrew Holmes1, Matt Jensen2, Sarah Coffland1, Hidemi Mitani Shen1, Logan Sizemore1,
+Seth Bassetti3, Brenna Nieva1, Claudia Tebaldi4, Abigail Snyder4, Brian Hutchinson1,4
+1Computer Science Dept, Western Washington University, Bellingham, WA, USA
+2Applied Artificial Intelligence Systems, Pacific Northwest National Laboratory, Seattle, WA, USA
+3Computer Science Department, Utah State University, Logan, UT, USA
+3Utah State University, Logan, UT, USA
+4Joint Global Change Research Institute, Pacific Northwest National Laboratory, College Park, MD
+Abstract
+The Global Change Analysis Model (GCAM) simulates complex interactions
+between the coupled Earth and human systems, providing valuable insights into
+the co-evolution of land, water, and energy sectors under different future scenarios.
+Understanding the sensitivities and drivers of this multisectoral system can lead to
+more robust understanding of the different pathways to particular outcomes. The
+interactions and complexity of the coupled human-Earth systems make GCAM
+simulations costly to run at scale - a requirement for large ensemble experiments
+which explore uncertainty in model parameters and outputs. A differentiable
+emulator with similar predictive power, but greater efficiency, could provide novel
+scenario discovery and analysis of GCAM and its outputs, requiring fewer runs of
+GCAM. As a first use case, we train a neural network on an existing large ensemble
+that explores a range of GCAM inputs related to different relative contributions of
+energy production sources, with a focus on wind and solar. We complement this
+existing ensemble with interpolated input values and a wider selection of outputs,
+predicting 22,528GCAM outputs across time, sectors, and regions. We report a
+median R2score of 0.998for the emulator’s predictions and an R2score of 0.812
+for its input-output sensitivity.
+1 Introduction and Background
+The global change problem involves both Earth and human system dynamics, interacting and creating
+feedbacks among the multiple components and sectors that make up the whole system. The Global
+Change Analysis Model (GCAM) [ 2,3] and other models of the same class are essential to represent
+the future evolution of the human system, including socioeconomic, land, energy, and water sectors,
+giving rise to future plausible and coherent scenarios of emissions. These scenarios are in turn used
+as drivers of Earth system model projections. In the opposite direction, climate output from Earth
+system models is used to model impacts in GCAM and other integrated multi-sector models. This
+work focuses on emulating GCAM specifically; it is an open-source multisector dynamic model that
+simulates the integrated, simultaneous evolution of energy, agriculture, land use, water, and climate
+system components. GCAM simulates global markets segmented into 32 distinct socioeconomic
+regions, 235 hydrological basins, forming 384 land units from the intersection of basins and regions.
+Historically, GCAM and comparable models have run a discrete set of “storylines” or representa-
+tive future scenarios. In contrast, thanks to advances in computational power and analysis tools,
+exploratory modeling, sampling a much larger set of drivers (and therefore outcomes) has become
+popular in recent years [ 4,5]. In this approach, large ensembles of scenarios are designed and run
+Tackling Climate Change with Machine Learning: workshop at NeurIPS 2024.to fill the gaps between the representative storyline scenarios. This approach has been fruitful for
+exploring the complex sensitivities these models have to assumptions about the systems under test,
+and the external drivers that determine their outcomes. This understanding of sensitivity and drivers
+can facilitate identification of pros and cons of different pathways to outcomes of interest (e.g., to
+minimize water scarcity [ 5]). The ensembles are often designed to incorporate a range of data sources,
+expert opinion, and discrete parameterizations in a factorial combination [ 18]. However, even with
+access to modern computing clusters, computational cost hinders a comprehensive exploration of
+these inputs. We aim to enable this comprehensive exploration via deep learning-based emulation of
+GCAM. Existing large ensembles provide data to train and evaluate such emulators.
+Once trained, a high-fidelity emulator can be used to aid our understanding both of the coupled
+Earth-human systems and their models (e.g., GCAM). For example, an emulator could be used to
+explore the input (assumption) space, to steer the generation of large GCAM ensembles, or to better
+characterize model sensitivities. There are two defining aspects to our approach that set it apart from
+GCAM toward these goals. First, once trained, predicting outcomes for novel scenarios is faster than
+GCAM by at least three orders of magnitude. Second, the differentiability of the emulation enables
+efficient search algorithms over the input space. Relatively little work has been done with emulation
+of integrated, multisector models, but results have been promising [ 17,19]. Here we introduce a
+high-fidelity emulator of GCAM, both in the predictions and in the input-output sensitivities.
+2 Methods
+2.1 Data
+Each scenario of GCAM is shaped by exogenous factors like socioeconomic trends (population and
+GDP growth), technology costs and performance, historical information, and assumptions about
+future values of key drivers. These are what we call “inputs” in this paper, and a subset of these will
+be sampled in our ensembles. GCAM provides a detailed, time-evolving analysis of sectors within
+the economy and simulates how different external factors might affect specific sectors over time,
+taking into account the effects from all other sectors; these serve as the outputs of our emulator.
+Inputs: This paper follows the experiment set up by Woodard et al. [ 18], W2023 henceforth, to
+study the effect of varying inputs on wind and solar energy adoption by 2050. We use the same 12
+GCAM inputs as W2023, representing costs, constraints, backups, and demand in the energy sector.
+These factors were chosen by climate experts to describe a wide variety of scenarios to explore
+GCAM and its outputs. Table 2 describes each of the 12 inputs. In W2023 experiments, these factors
+were held to high andlowvalues which were encoded as 1 and 0, respectively, in our experiments.
+To enrich the input space, we consider here input values between the high and low. For nine of the 12
+inputs (see Appendix A), an intermediate value between high and low is well-defined, so we relax the
+domain from {0,1}to the interval 0≤x≤1. The extreme high and low values still represent the
+original binary meaning, while all intermediate values are linearly interpolated between the high and
+low scenarios. For three of the twelve inputs, a notion of intermediate is not well-defined; namely,
+for bioenergy, electrification, and emissions, the binary values represent the presence of absence of
+specific input files to GCAM.
+Sampling Strategies: With the introduction of interpolated values, the input space can no longer
+be enumerated, so we consider two strategies for sampling the space: Latin hypercube [ 12] and
+“finite-diff” [ 15,16]. In either strategy, the nine interpolated inputs are sampled by the strategy
+while the remaining three inputs are randomly sampled randomly uniformly in {0,1}. We selected
+Latin hypercube to efficiently explore the interpolated input space, while the finite-diff was selected
+to support our sensitivity analysis. We sample 4096 input configurations for Latin hypercube
+data (denoted here “interpolated”) data, which we split into training, validation and test sets at an
+80%/10%/10% ratio. The finite-diff data (denoted here as the “DGSM” or “sensitivity” dataset)
+contains 4000 samples and is entirely test set, as it was used neither for model training nor tuning.
+Outputs: Each GCAM run produces a large output database related to the energy, water, climate,
+and land sectors. Among these, we identify 44 GCAM output quantities to predict (see Appendix B
+for full details). These quantities were chosen to cover physical quantities and prices over the major
+2Interpolator
+ScriptBinary
+XMLs
+GCAMInterpolated
+XMLsGCAM Output
+DatabaseData Extraction
+ScriptQuery
+Set
+Outputs InputsFigure 1: Diagram of the input-output relationship using GCAM. The emulator approximates the
+dashed box, mapping directly from inputs to outputs
+resources in the water, land, and energy sectors relevant to renewable energy adoption, in light of the
+focus in W2023. For each of the 44 output quantities, GCAM and our emulator predict values over
+32 regions and over 16 model years, {2025,2030,2035, . . . , 2095,2100}. This yields a total output
+dimension of 22,528values to predict.
+2.2 Emulator
+Figure 1 illustrates the emulation problem. Our emulator abstracts a series of steps between inputs
+and outputs, including interpolating the configuration XMLs, running GCAM, and running queries to
+extract the output values of interest.
+Model Architecture: Motivated by the success of neural networks learning non-linear relation-
+ships [ 7], we employ a nueral network to emulate input-output relationship (dashed box of Fig. 1).
+Specifically, we use a four-layer, feed-forward, fully connected neural network, each layer with 256
+hidden units followed by a linear rectified unit (ReLU) hidden activation function [ 6]. The fully
+connected output layer contains 22,528units.
+Training: The model is trained to minimize mean squared error loss between the emulator pre-
+dictions and GCAM outputs on the training set using hyperparameters selected with a Bayesian
+Hyperparameter search [ 14] via Weights and Biases [ 1] on the validation set. All output values are z-
+score normalized using their training set statistics – each quantity-region-year pair xqryis normalized
+using (xqry−µqry)/σqry; where mean (µqry)and standard deviation (σqry)are computed for that
+specific quantity-region-year value across all training dataset scenarios. We train with the AdamW
+[11] stochastic optimization algorithm for 500epochs with a learning rate of 0.001.
+3 Results and Analysis
+As summarized in Table 1, we analyze the performance of our emulator by comparing the output
+values to those of GCAM, as well as comparing the sensitivities of the emulator to those of GCAM.
+For the “Predictions” row of the table, we evaluate the “Overall” emulator performance on the
+interpolated test set by calculating the R2score for each of the 22,528 output values and report the
+median over these output values. This shows very high agreement with GCAM, with a median R2
+of 0.998. The results for Region, Year, and Quantity involve first aggregating targets over the other
+two dimensions (e.g., Region averages over Year and Quantity); R2is then computed for each the
+remaining outputs (44 if Quantity, 32 if Region, 16 if Year), and the median R2over these aggregated
+outputs is reported. This level of aggregation does not improve the already near-perfect overall R2.
+Table 1: Evaluation of emulator on test sets. Results are reported as R2values between GCAM and
+the emulator on its predictions (on the interpolated test set) and on input-output DGMS sensitivity
+(on the DGSM set), aggregated to region, year or quantity-level, and overall (no aggregation).
+Region Year Quantity Overall
+Predictions 0.998 0.998 0.998 0.998
+Sensitivity 0.989 0.990 0.995 0.812
+3To further evaluate the quality of the emulator, we perform a Derivative-based Global Sensitivity
+Measure (DGSM) analysis [ 16], as implemented in the SALib package [ 8,9], on both our emulator
+and on GCAM. Specifically, we compare Sσ
+ijvalues defined as follows:
+Sσ
+ij=σxi
+σyjSij,where Sij=E"∂yj
+∂xi2#
+.
+Sijis the νvalue from [ 16], while σzdenotes the standard deviation of z.Sσ
+ijis a normalized version
+ofSij; normalizing this way better captures the true effect of input xion output yj[13], given the
+wide range of magnitudes and units in GCAM inputs and outputs. The sensitivity analysis uses
+the DGSM dataset, generated with the finite-diff sampling strategy; sensitivities are calculated by
+observing the effects of introducing small perturbations around each input parameter and seeing how
+each of the outputs respond. For the emulator and for GCAM, we calculate Sσ
+ijfor all inputs xiand
+outputs yj.
+The Overall result, summarized in Table 1, is the R2agreement between the Sσmatrix for the emulator
+and the Sσmatrix for GCAM. At 0.812, we observe good agreement between the emulator and
+GCAM with respect to the input-output sensitivities. For the Region, Year and Quantity breakdowns,
+we average the Sσmatrices over disjoint subsets of output variables j, leaving only the specified
+dimension (e.g., the Quantity breakdown uses Sσ∈R9×44, having averaged sensitivities over Year
+and Region). Sensitivity agreement at this coarser resolution is very high, ranging from 0.989 for
+Region to 0.995 for Quantity.
+The input-output sensitivities, both of the emulator and GCAM, yield some interesting trends. Most
+notably, there is a high normalized sensitivity to the energy input factor for many of the outputs. This
+makes sense because this particular input variable affects the GDP and population assumptions, which
+past exploratory studies have also found to be the largest contributor to outputs [ 4,10]. Predictably,
+we also see a strong sensitivity to the energy input factor among regions with large economies and
+high populations, such as China, India, and the USA. Several of the output quantities stand out as
+highly sensitive to the inputs; in particular, electricity price and many land sector outputs. Electricity
+price reflects the input drivers chosen for this ensemble, which experts selected specifically because
+they would affect energy prices from different technologies and therefore relative adoption of wind
+and solar. The land sector has been studied in past analyses [ 4,10] showing that the inherently finite
+nature of land availability for feeding changing populations is often a key determinant of outcomes.
+See Appendix C for additional information.
+4 Conclusion and Future Work
+We present in this paper a high-fidelity and computationally efficient emulator of GCAM using deep
+learning. In the process of doing so, we enriched the sampling strategy of inputs underpinning an
+existing exploration (in W2023) of the drivers of renewable energy deployment by 2050, relaxing
+9 of 12 input variables from binary to continuous. This represents a particularly valuable addition
+to the past study that, by limiting exploration to binary choices for the input parameters, risked
+overlooking outcomes of interest associated with intermediate values. We confirm that our emulator
+is highly accurate and that its sensitivities are consistent with GCAM’s. In future work, we plan
+to explore the use of this high-fidelity emulator for searching over input space (e.g., to identify
+circumstances that minimize water scarcity) to steer the generation of large ensembles of GCAM,
+and to better understand GCAM itself. Ultimately, we view this work as a bridge to a new era where
+large ensembles are still relevant, but their creation can be aided by machine learning to reduce the
+cost and complexity; future work to answer scientific questions around climate, energy, land and
+water systems can generate tailored ensembles in an iterative, emulator-in-the-loop manner.
+References
+[1]Lukas Biewald. Experiment tracking with weights and biases, 2020. Software available from
+wandb.com.
+[2]Ben Bond-Lamberty, Kalyn Dorheim, Ryna Cui, Russell Horowitz, Abigail Snyder, Katherine
+Calvin, Leyang Feng, Rachel Hoesly, Jill Horing, G. Page Kyle, Robert Link, Pralit Patel,
+Christopher Roney, Aaron Staniszewski, Sean Turner, Min Chen, Felip Feijoo, Corinne Hartin,
+4Mohamad Hejazi, Gokul Iyer, Sonny Kim, Yaling Liu, Cary Lynch, Haewon McJeon, Steven
+Smith, Stephanie Waldhoff, Marshall Wise, and Leon Clarke. Gcamdata: An R Package for
+Preparation, Synthesis, and Tracking of Input Data for the GCAM Integrated Human-Earth
+Systems Model. 7(1):6, March 2019.
+[3]Katherine Calvin, Pralit Patel, Leon Clarke, Ghassem Asrar, Ben Bond-Lamberty, Ryna Yiyun
+Cui, Alan Di Vittorio, Kalyn Dorheim, Jae Edmonds, Corinne Hartin, Mohamad Hejazi, Russell
+Horowitz, Gokul Iyer, Page Kyle, Sonny Kim, Robert Link, Haewon McJeon, Steven J. Smith,
+Abigail Snyder, Stephanie Waldhoff, and Marshall Wise. GCAM v5.1: Representing the
+linkages between energy, water, land, climate, and economic systems. Geoscientific Model
+Development , 12(2):677–698, February 2019.
+[4]Flannery Dolan, Jonathan Lamontagne, Katherine Calvin, Abigail Snyder, Kanishka B. Narayan,
+Alan V . Di Vittorio, and Chris R. Vernon. Modeling the Economic and Environmental Impacts
+of Land Scarcity Under Deep Uncertainty. Earth’s Future , 10(2):e2021EF002466, February
+2022.
+[5]Flannery Dolan, Jonathan Lamontagne, Robert Link, Mohamad Hejazi, Patrick Reed, and Jae
+Edmonds. Evaluating the economic impact of water scarcity in a changing world. Nature
+Communications , 12(1):1915, March 2021.
+[6]Kunihiko Fukushima. Visual Feature Extraction by a Multilayered Network of Analog Threshold
+Elements. IEEE Transactions on Systems Science and Cybernetics , 5(4):322–333, 1969.
+[7] Ian Goodfellow, Yoshua Bengio, and Aaron Courville. Deep Learning . MIT Press, 2016.
+[8]Jon Herman and Will Usher. SALib: An open-source python library for sensitivity analysis.
+The Journal of Open Source Software , 2(9), jan 2017.
+[9]Takuya Iwanaga, William Usher, and Jonathan Herman. Toward SALib 2.0: Advancing the
+accessibility and interpretability of global sensitivity analyses. Socio-Environmental Systems
+Modelling , 4:18155, May 2022.
+[10] Franklyn Kanyako, Jonathan Lamontagne, Abigail Snyder, Jennifer Morris, Gokul Iyer, Flannery
+Dolan, Yang Ou, and Kenneth Cox. Compounding uncertainties in economic and population
+growth increase tail risks for relevant outcomes across sectors. Earth’s Future , 2023.
+[11] Ilya Loshchilov and Frank Hutter. Decoupled Weight Decay Regularization. 2017.
+[12] M. D. McKay, R. J. Beckman, and W. J. Conover. A Comparison of Three Methods for Selecting
+Values of Input Variables in the Analysis of Output from a Computer Code. Technometrics ,
+21(2):239, May 1979.
+[13] Andrea Saltelli, Marco Ratto, Terry Andres, Francesca Campolongo, Jessica Cariboni, Debora
+Gatelli, Michaela Saisana, and Stefano Tarantola. Global Sensitivity Analysis: The Primer .
+Wiley-Interscience, Chichester, England, 2008.
+[14] Jasper Snoek, Hugo Larochelle, and Ryan P Adams. Practical bayesian optimization of machine
+learning algorithms. 2012.
+[15] I.M Sobol′. Global sensitivity indices for nonlinear mathematical models and their Monte Carlo
+estimates. Mathematics and Computers in Simulation , 55(1-3):271–280, February 2001.
+[16] I.M. Sobol’ and S. Kucherenko. Derivative based global sensitivity measures and their link with
+global sensitivity indices. Mathematics and Computers in Simulation , 79(10):3009–3017, June
+2009.
+[17] Jun’ya Takakura, Shinichiro Fujimori, Kiyoshi Takahashi, Naota Hanasaki, Tomoko Hasegawa,
+Yukiko Hirabayashi, Yasushi Honda, Toshichika Iizumi, Chan Park, Makoto Tamura, and
+Yasuaki Hijioka. Reproducing complex simulations of economic impacts of climate change
+with lower-cost emulators. Geoscientific Model Development , 14(5):3121–3140, June 2021.
+5[18] Dawn L. Woodard, Abigail Snyder, Jonathan R. Lamontagne, Claudia Tebaldi, Jennifer Morris,
+Katherine V . Calvin, Matthew Binsted, and Pralit Patel. Scenario Discovery Analysis of Drivers
+of Solar and Wind Energy Transitions Through 2050. Earth’s Future , 11(8):e2022EF003442,
+August 2023.
+[19] Weiwei Xiong, Katsumasa Tanaka, Philippe Ciais, Daniel J. A. Johansson, and Mariliis Lehtveer.
+emIAM v1.0: An emulator for Integrated Assessment Models using marginal abatement cost
+curves. Preprint, Integrated assessment modeling, March 2023.
+6Table 2: Inputs varied for each run of GCAM. Interpolated inputs in bold.
+Input Key Description
+Wind and Solar Backups back Systems needed to backup wind and solar
+Bioenergy bio Tax on bioenergy
+Carbon Capture ccs Carbon storage resource cost
+Electrification elec Share of electricity in building, industry, and transportation
+Emissions emiss CO 2emission constraints
+Energy Demand energy Energy Demand - GDP and population assumptions
+Fossil Fuel Costs ff Cost of crude oil, unconventional oil, natural gas, and coal
+Nuclear Costs nuc Capital overnight costs
+Solar Storage Costs solarS Solar storage capital overnight costs
+Solar Tech Costs solarT CSP and PV costs
+Wind Storage Costs windS Wind storage capital overnight costs
+Wind Tech Costs windT Wind and wind offshore capital overnight costs
+A Inputs (Drivers)
+The 12 input variables are described in Table 2.
+B Output Quantities
+Our 44 output quantities are described in Table 3.
+C Input-Output Sensitivities
+See Figure 2 for sensitivity values.
+7resource metric sector units query name
+energy demand_electricity building EJ elec_consumption_by_demand_sector
+energy demand_electricity industry EJ elec_consumption_by_demand_sector
+energy demand_electricity transport EJ elec_consumption_by_demand_sector
+energy demand_fuel building EJ final_energy_consumption_by_sector_and_fuel
+energy demand_fuel industry EJ final_energy_consumption_by_sector_and_fuel
+energy demand_fuel building EJ final_energy_consumption_by_sector_and_fuel
+energy demand_fuel industry EJ final_energy_consumption_by_sector_and_fuel
+energy demand_fuel transport EJ final_energy_consumption_by_sector_and_fuel
+energy price coal 1975$/GJ final_energy_prices
+energy price electricity 1975$/GJ final_energy_prices
+energy price transport 1975$/GJ final_energy_prices
+energy price transport 1975$/GJ final_energy_prices
+energy supply_electricity biomass EJ elec_gen_by_subsector
+energy supply_electricity coal EJ elec_gen_by_subsector
+energy supply_electricity gas EJ elec_gen_by_subsector
+energy supply_electricity nuclear EJ elec_gen_by_subsector
+energy supply_electricity oil EJ elec_gen_by_subsector
+energy supply_electricity other EJ elec_gen_by_subsector
+energy supply_electricity solar EJ elec_gen_by_subsector
+energy supply_electricity wind EJ elec_gen_by_subsector
+energy supply_primary biomass EJ primary_energy_consumption_by_region
+energy supply_primary coal EJ primary_energy_consumption_by_region
+energy supply_primary gas EJ primary_energy_consumption_by_region
+energy supply_primary nuclear EJ primary_energy_consumption_by_region
+energy supply_primary oil EJ primary_energy_consumption_by_region
+energy supply_primary other EJ primary_energy_consumption_by_region
+energy supply_primary solar EJ primary_energy_consumption_by_region
+energy supply_primary wind EJ primary_energy_consumption_by_region
+land allocation biomass thousand km2 aggregated_land_allocation
+land allocation forest thousand km2 aggregated_land_allocation
+land allocation grass thousand km2 aggregated_land_allocation
+land allocation other thousand km2 aggregated_land_allocation
+land allocation pasture thousand km2 aggregated_land_allocation
+land demand feed Mt demand_balances_by_crop_commodity
+land demand food Mt demand_balances_by_crop_commodity
+land price biomass 1975$/GJ prices_by_sector
+land price forest 1975$/m3 prices_by_sector
+land production biomass EJ ag_production_by_crop_type
+land production forest billion m3 ag_production_by_crop_type
+land production grass Mt ag_production_by_crop_type
+land production other Mt ag_production_by_crop_type
+land production pasture Mt ag_production_by_crop_type
+water demand crops km3 water_withdrawals_by_tech
+water demand electricity km3 water_withdrawals_by_tech
+Table 3: GCAM outputs quantities with the associated GCAM selection query used to generated the
+outputs from the GCAM database.
+82025
+2030
+2035
+2040
+2045
+2050
+2055
+2060
+2065
+2070
+2075
+2080
+2085
+2090
+2095
+2100Core Interpolated
+energy_demand_elec_building
+energy_demand_elec_industry
+energy_demand_elec_transport
+energy_demand_fuel_biomass_building
+energy_demand_fuel_biomass_industry
+energy_demand_fuel_fossil_building
+energy_demand_fuel_fossil_industry
+energy_demand_fuel_fossil_transport
+energy_price_coal
+energy_price_electricity
+energy_price_gas
+energy_price_oil
+energy_supply_electricity_biomass
+energy_supply_electricity_coal
+energy_supply_electricity_gas
+energy_supply_electricity_nuclear
+energy_supply_electricity_oil
+energy_supply_electricity_other
+energy_supply_electricity_solar
+energy_supply_electricity_wind
+energy_supply_primary_biomass
+energy_supply_primary_coal
+energy_supply_primary_gas
+energy_supply_primary_nuclear
+energy_supply_primary_oil
+energy_supply_primary_other
+energy_supply_primary_solar
+energy_supply_primary_wind
+land_allocation_biomass
+land_allocation_forest
+land_allocation_grass_shrub
+land_allocation_other
+land_allocation_pasture
+land_demand_feed
+land_demand_food
+land_price_biomass
+land_price_forest
+land_production_biomass
+land_production_forest
+land_production_grass_shrub
+land_production_other
+land_production_pasture
+water_demand_crops
+water_demand_electricity
+back ccs energy ff nuc solarS solarT windS windTAfrica_Eastern
+Africa_Northern
+Africa_Southern
+Africa_Western
+Argentina
+Australia_NZ
+Brazil
+Canada
+Central America and Caribbean
+Central Asia
+China
+Colombia
+EU-12
+EU-15
+Europe_Eastern
+Europe_Non_EU
+European Free Trade Association
+India
+Indonesia
+Japan
+Mexico
+Middle East
+Pakistan
+Russia
+South Africa
+South America_Northern
+South America_Southern
+South Asia
+South Korea
+Southeast Asia
+T aiwan
+USA
+back ccs energy ff nuc solarS solarT windS windT
+012345Deriviative-Based Sensitivity Measure (VI) by Sampling StrategyFigure 2: GCAM (left) vs. Emulator (right) local sensitivities of inputs vs Years (Top), Quantities
+(Middle), and Regions (Bottom).
+9

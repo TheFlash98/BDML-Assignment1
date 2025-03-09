@@ -1,0 +1,741 @@
+ACE: A fast, skillful learned global atmospheric model
+for climate prediction
+Oliver Watt-Meyer∗, Gideon Dresdner, Jeremy McGibbon, Spencer K. Clark, Brian Henn,
+Matthew E. Peters, and Christopher S. Bretherton
+Allen Institute for Artificial Intelligence (AI2), Seattle, USA
+James Duncan†
+Graduate Group in Biostatistics, University of California, Berkeley USA
+Noah D. Brenowitz, Karthik Kashinath, Michael S. Pritchard, and Boris Bonev
+NVIDIA, Santa Clara, USA
+Abstract
+Existing ML-based atmospheric models are not suitable for climate prediction,
+which requires long-term stability and physical consistency. We present ACE (AI2
+Climate Emulator), a 200M-parameter, autoregressive machine learning emulator
+of an existing comprehensive 100-km resolution global atmospheric model. The
+formulation of ACE allows evaluation of physical laws such as the conservation
+of mass and moisture. The emulator is stable for 100 years, nearly conserves
+column moisture without explicit constraints and faithfully reproduces the reference
+model’s climate, outperforming a challenging baseline on over 90% of tracked
+variables. ACE requires nearly 100x less wall clock time and is 100x more energy
+efficient than the reference model using typically available resources. Without
+fine-tuning, ACE can stably generalize to a previously unseen historical sea surface
+temperature dataset.
+1 Introduction
+The last year has seen a revolution in the field of numerical weather prediction. Multiple groups
+have shown improvements in key metrics over the state of the art physics-based medium-range
+weather prediction system using deep learning methods [ 2,5,13]. However, the applicability of
+these methods to climate modeling is unclear. Nearly all machine learning based weather prediction
+systems [ 2,5,11,13,16] have reported results for forecasts up to only 14 days—with notable
+exceptions of [3, 23]—and instabilities or unphysical artifacts often occur for longer simulations.
+We claim the requirements of an ML-based atmospheric model for climate prediction are as follows.
+Such a model should maintain realistic weather variability and be stable for indefinite periods.
+Conservation of mass, moisture and energy is key. Surface and top-of-atmosphere fluxes of energy,
+moisture and momentum must be predicted to enable assessment of climate sensitivity and coupling
+with other components such as the ocean. Appropriate forcings should be used—e.g. sea surface
+temperature (SST) in the case of an atmosphere-only model. Its long-term averages should be
+unbiased compared to a reference dataset. Finally, the model’s performance must generalize across a
+broad range of plausible SST distributions and CO 2concentrations.
+∗oliverwm@allenai.org
+†2023 summer intern at AI2
+Tackling Climate Change with Machine Learning: workshop at NeurIPS 2023.Here we present ACE (AI2 Climate Emulator)3, a neural network based atmospheric model which
+satisfies many of the criteria listed above. ACE uses the Spherical Fourier Neural Operator (SFNO)
+architecture [ 3] and is trained to emulate an existing physics-based atmospheric model with 6-hour
+temporal resolution. ACE runs stably for at least 100 years and can simulate a decade in one hour of
+wall clock time, nearly 100 times faster than the reference atmospheric model, while consuming 100
+times less energy. ACE predicts diagnostics such as the fluxes of energy and moisture through the top
+of atmosphere and Earth surface (e.g. precipitation). The model is framed so that precise evaluation
+of conservation of mass and moisture is possible and we find that column moisture is very nearly
+conserved across individual timesteps. External forcings, such as incoming solar radiation and sea
+surface temperature, are used as inputs. Finally, ACE replicates the near-surface climatology of the
+reference model better and runs much faster than a 2x coarser but otherwise identical version of that
+model.
+Related work includes ClimateBench [ 22] which proposes directly predicting climate metrics such
+as annual mean precipitation from input forcing variables like CO 2. The disadvantage of such an
+approach is the limited physical interpretability: for example what sub-annual variability gives rise to
+the annual mean? Another study [ 15] trains on climate model output but makes forecasts with 14- or
+30-day lead times, leading to smooth predictions near the climatological mean (e.g. Fig. 20 of [ 15]).
+2 Methods
+2.1 Dataset
+Most ML-based weather prediction systems have been trained on the ERA5 reanalysis dataset [ 10].
+While appealing due to its relatively accurate representation of historical atmospheric conditions,
+reanalysis data has downsides for the development of machine learning based climate models: it has
+a limited number of samples restricted to the recent past; models trained on reanalysis may not be
+reliable for future climates [ 1,6]; and analysis increment terms (adjustments from observations) have
+no clear physical interpretation [ 19]. Therefore, we generate training data with an existing global at-
+mospheric model (FV3GFS, the atmospheric component of the United States weather model [ 20,24]).
+The training data are an 11-member initial condition ensemble of 10-year simulations (hereafter
+the “reference” simulation; 10 years is length after discarding 3-month spinup time) performed on
+NOAA/GFDL’s GAEA computer. Ten ensemble members are used for training and the eleventh
+for validation. For simplicity, we use annually repeating climatological sea surface temperature
+(1982-2012 average) and fixed greenhouse gas and aerosol concentrations. The reference simulation
+has a cubed-sphere grid [ 17] with a horizontal spacing of about 100 km and 63 vertical layers. Model
+state is saved every 6 hours, with a combination of snapshot and interval-mean variables. See Table 1
+for a complete description of variables used for training. For compatibility with SFNO we regrid
+conservatively from the cubed-sphere geometry of FV3GFS to a 1 °Gaussian grid [ 21], additionally
+filtering the data with a spherical harmonic transform round-trip to remove artifacts in the high
+latitudes. We coarsen the vertical coordinate to 8 layers while conserving moisture and energy
+(Appendix A).
+2.2 Training
+Architecture We use the SFNO architecture [ 3] to predict the state of the atmosphere at time t+6hr
+using the state at time tas input. SFNO is a Fourier Neural Operator-based architecture which uses
+spherical harmonic transforms to enable efficient global convolutions on the sphere, while respecting
+inherent symmetries of the spherical domain. Hyperparameters are described in Appendix B; the
+number of parameters is about 200M. Unlike many prior ML atmospheric prediction systems, we use
+prognostic variables Pwhich are both inputs and outputs, forcing variables Fwhich are inputs only
+and diagnostic variables Dwhich are outputs only (Table 1). Explicitly, with trepresenting the time
+index: [Pt+1, Dt+1] =f(Pt, Ft), where frepresents the SFNO module and forcing variables Ftare
+read from an external dataset (Figure 5). Variables are chosen to be forcing, prognostic or diagnostic
+based on how they are used in the reference physics-based simulation. The diagnostic variables do
+not inform the next step, which is typical for physics-based atmospheric models and has the important
+benefit that fields such as precipitation are not necessary to initialize a simulation. However, because
+3Code, data and model weights are publicly available; see https://github.com/ai2cm/ace.
+2Figure 1: Global mean timeseries of (top) near-surface air temperature T7and (bottom) total water
+path computed as TWP =1
+gP
+kqT
+kdpk. For clarity, the daily average is plotted.
+they are predicted by the same architecture that predicts the prognostic variables one can enforce
+physical constraints such as moisture conservation which affect prognostic model weights. This
+is different than some previous approaches which use a separate model to predict precipitation [16].
+Data Normalization Variables are normalized using a “residual scaling” approach such that
+predicting outputs equal to input would result in each variable contributing equally to the loss
+function (similar to [ 11]). See Appendix H for details and Appendix I.1 for an ablation of this choice.
+This “residual scaling” approach has the largest impact on the surface pressure, which ends up having
+a normalized standard deviation about 20 times larger than otherwise (Figure 12).
+Loss Function Given xirepresenting the normalized target for the i’th sample of a batch for all
+spatial points and channels, and ˆ xias the corresponding prediction, the loss for a batch of size
+Bis1
+BPB
+i=1∥ˆ xi−xi∥2
+∥xi∥2. The loss is computed after a single 6-hour forward step. Optimization
+hyperparameters are listed in Table 4.
+2.3 Evaluation
+We are not aware of any existing purely machine learning based system that allows for long (at least
+10-year) forecasts and includes a vertically resolved view of the entire atmosphere. Therefore, we
+formulate baselines using our physics-based model. Two cases will be considered: first a “reference"
+perfect emulator in which we compare members of the initial condition ensemble against each other,
+giving an upper bound on model skill. Because of the chaotic nature of the atmosphere and the
+limited duration (10 years) of our validation dataset, even a perfect emulator will have non-zero
+errors. Second, we run a difficult-to-beat 200 km “baseline”: the same physics-based FV3GFS model
+but using both horizontal resolution and dynamics time step that are 2x coarser. This mimics the
+typical climate modeling strategy for faster simulation: use coarser resolution at the cost of accuracy.
+Three metrics are used for evaluation: the time-dependent area-weighted global mean and the
+area-weighted global mean bias and RMSE of time-mean fields. These are defined in Appendix C.
+2.4 Random seed ensemble
+Because long-term climate skill is not entirely constrained by the 6-hour prediction that is our training
+objective, we train an ensemble of 5 models which vary only in terms of their initialization random
+seed. Although validation loss is very similar between the models and all models are capable of stable
+10-year forecasts, the magnitude of climate biases varies by up to a factor of 4 (depending on output
+variable). Hereafter, we report results for the model which performs best on the time-mean RMSE
+metric for T7and total water path (TWP) computed over a single 10-year forecast (see Figure 6).
+3 Results
+Long-term stability Initializing from the start of the validation dataset, ACE is able to maintain
+a stable simulation and an unbiased global mean evolution of temperature and total water path for
+3Figure 2: 10-year mean bias in surface precipitation rate. Titles show global and time-mean RMSE
+and bias in units of mm/day (Equations 6 and 7).
+Figure 3: Snapshot of the terms in the column moisture budget (Equation 1) one year into simulation
+for (top) reference data and (bottom) ACE simulation. Given chaotic nature of atmosphere, we do not
+expect details to match between the reference and ACE simulations. If column-integrated moisture is
+exactly conserved, the rightmost column should equal zero, as it is for the reference data.
+at least 10 years (Figure 1). While there is some year-to-year variability, the seasonal cycle of both
+of these fields is well represented by ACE. This result is dependent on choice of forcing variables,
+the normalization strategy (Appendix H) and using the SFNO architecture which has been shown
+to have favorable stability properties compared to Fourier Transform-based FourCastNet [ 3]. The
+two prognostic variables whose global means drift unrealistically are the surface pressure psand
+upper-stratospheric water qT
+0(Figure 9). This run has been extended to 100 years with no sign of
+instability or long-term drift (Figure 10). However, there are unrealistically large annual variations
+in certain fields, such as global mean precipitation rate.
+Climate biases With long-term stability comes the possibility of quantitatively evaluating climate
+biases. Figure 2 shows the time-averaged bias in the spatial pattern of surface precipitation rate. ACE
+has impressively small precipitation biases, with a global RMSE about 42% smaller than the baseline.
+The time-mean biases and RMSEs are shown for all output channels in Appendix E. 41 out of 44
+output variables have a lower time-mean RMSE for ACE compared to the baseline (Figure 7).
+Physical consistency Many aspects of physical consistency are important for interpretability in
+climate model simulations. Here we discuss one example, the conservation of water expressed in
+terms of total water path:
+∂TWP
+∂t=E−P+∂TWP
+∂t
+adv(1)
+where TWP =1
+gP
+kqT
+kdpkis the amount of water in an atmospheric column and∂TWP
+∂t
+adv
+is the tendency of the total water path due to advection. EandPare the surface evaporation
+(E=LHF/L v) and precipitation rate respectively. The physical model exactly satisfies Equation 1
+by design but an ML emulator may not unless explicitly designed to do so. Nonetheless, ACE very
+nearly obeys the column-wise conservation of moisture (Eq. 1). Figure 3 shows the magnitude of
+the violation of the budget is very small compared to the individual terms in the budget: standard
+deviation of total water path tendency is ∼50 times that of the column budget violation term. This is
+true even one year into the inference simulation. Global mean budgets are described in Appendix G.
+Zero-shot generalization to realistic sea surface temperature forcing In this work, as a first
+effort, we chose to train on a simplified dataset with annually repeating climatological SST. However,
+4Figure 4: ACE forced with a realistic SST dataset spanning 1990-2020. Showing (left) timeseries of
+annual mean and global mean T7, with individual lines corresonding to different initial conditions
+and (right) time-mean bias of T7for a single initial condition with time-mean RMSE and global bias
+(Equations 6 and 7) reported in the title. Here, the “reference” is the physics based model (FV3GFS)
+run for the same period and forced by the same SST pattern.
+to be useful as a climate model, ACE must be skillful when forced by a wider variety of more realistic
+SST patterns. In this section we show results of zero-shot generalization to a forcing dataset with
+historical SSTs from 1990 to 2020 (using CMIP forcing data [ 8]). ACE is stable over the full 30-year
+span of this previously unseen forcing dataset (Figure 4a). This is particularly impressive because the
+climatological SST used to generate training data spans 1982-2012 and so the realistic SST dataset
+includes temperatures warmer than any in the training dataset. When forced with the realistic SST
+dataset, ACE has a cold near-surface temperature bias which is particularly amplified over land where
+the surface temperatures are not directly forced (Figure 4b) and it does not reproduce the interannual
+variability of the reference. The time-mean RMSE and bias of T7(0.5K and -0.27K, respectively) are
+somewhat larger than those when comparing ACE to a reference run which uses the climatological
+SST dataset (0.35K and 0.12K; see Figures 7 and 8). Nevertheless, the stability and modest biases of
+ACE when using this previously unseen SST dataset as a forcing are reassuring.
+Computational expense Training time for each seed was about 63 hours on four NVIDIA-A100s.
+Running inference on a single A100 requires about one second of wall clock time per simulated day.
+For comparison, the reference simulation ran on 96 cores of AMD EPYC 7H12 processors and took
+∼77 seconds per simulated day. The 2x coarser resolution baseline ran on 24 cores in ∼45 seconds
+per simulated day.
+4 Conclusions and future work
+This work demonstrates the potential of deep learning for skillful and fast climate model emulation.
+100x speed-up in run time and 100x greater energy efficiency could democratize the use of climate
+models, open new research avenues and potentially reduce energy usage. However, there are
+additional steps before this system is a useful climate model [ 8]. Generalizability is a key challenge.
+To reduce confounding factors, in this study we focused on a training dataset with simplified
+(annually-repeating) forcing. It may be necessary to expand the training and input variable set to be
+able to handle a changing climate. Our suggested approach is to train on a broad range of simulation
+data that covers the regimes of interest [ 6]. However, simulated data are not the real world and have
+their share of biases. Potential solutions are to fine-tune on reanalysis data (e.g. [ 9]) or on a smaller
+amount of high-resolution simulation data that has smaller biases [ 4]. Further improvements to our
+current training regime that are possible, e.g. using appropriate constraints in the loss function [ 18]
+to reduce global non-physical sources of moisture and mass. Finally, coupling to other components
+(ocean, sea-ice, land) of the climate system is necessary. Tackling these challenges is an exciting
+opportunity for the growing field of machine learning based climate modeling.
+Acknowledgments and Disclosure of Funding
+We acknowledge NOAA’s Geophysical Fluid Dynamics Laboratory for providing the computing
+resources used to perform the reference FV3GFS simulations. This research used resources of
+NERSC, a U.S. Department of Energy Office of Science User Facility located at Lawrence Berkeley
+National Laboratory, using NERSC award BER-ERCAP0024832.
+5References
+[1]Tom Beucler, Pierre Gentine, Janni Yuval, Ankitesh Gupta, Liran Peng, Jerry Lin, Sung-
+duk Yu, Stephan Rasp, Fiaz Ahmed, Paul A. O’Gorman, J. David Neelin, Nicholas J.
+Lutsko, and Michael Pritchard. Climate-invariant machine learning. arXiv , 2021.
+doi:10.48550/ARXIV .2112.08440.
+[2]Kaifeng Bi, Lingxi Xie, Hengheng Zhang, Xin Chen, Xiaotao Gu, and Qi Tian. Accurate
+medium-range global weather forecasting with 3d neural networks. Nature , 619(7970):533–538,
+July 2023. doi:10.1038/s41586-023-06185-3.
+[3]Boris Bonev, Thorsten Kurth, Christian Hundt, Jaideep Pathak, Maximilian Baust, Karthik
+Kashinath, and Anima Anandkumar. Spherical fourier neural operators: Learning stable
+dynamics on the sphere. Proceedings of the 40th International Conference on Machine Learning
+(ICML) , 2023. doi:10.48550/ARXIV .2306.03838.
+[4]Christopher S. Bretherton, Brian Henn, Anna Kwa, Noah D. Brenowitz, Oliver Watt-Meyer,
+Jeremy McGibbon, W. Andre Perkins, Spencer K. Clark, and Lucas Harris. Correcting
+coarse-grid weather and climate models by machine learning from global storm-resolving
+simulations. Journal of Advances in Modeling Earth Systems , 14(2), February 2022.
+doi:10.1029/2021ms002794.
+[5]Kang Chen, Tao Han, Junchao Gong, Lei Bai, Fenghua Ling, Jing-Jia Luo, Xi Chen, Leiming
+Ma, Tianning Zhang, Rui Su, Yuanzheng Ci, Bin Li, Xiaokang Yang, and Wanli Ouyang.
+Fengwu: Pushing the skillful global medium-range weather forecast beyond 10 days lead. arXiv ,
+2023. doi:10.48550/ARXIV .2304.02948.
+[6]Spencer K. Clark, Noah D. Brenowitz, Brian Henn, Anna Kwa, Jeremy McGibbon, W. Andre
+Perkins, Oliver Watt-Meyer, Christopher S. Bretherton, and Lucas M. Harris. Correcting
+a 200 km resolution climate model in multiple climates by machine learning from 25 km
+resolution simulations. Journal of Advances in Modeling Earth Systems , 14(9), September 2022.
+doi:10.1029/2022ms003219.
+[7]William Collins, Philip Rasch, Byron Boville, James McCaa, David Williamson, Jeffrey Kiehl,
+Bruce Briegleb, Cecilia Bitz, S.-J. Lin, Minghua Zhang, and Youngjiu Dai. Description of the
+NCAR Community Atmosphere Model (CAM 3.0). Technical report, UCAR/NCAR, 2004.
+[8]Veronika Eyring, Sandrine Bony, Gerald A. Meehl, Catherine A. Senior, Bjorn Stevens, Ronald J.
+Stouffer, and Karl E. Taylor. Overview of the coupled model intercomparison project phase
+6 (CMIP6) experimental design and organization. Geoscientific Model Development , 9(5):
+1937–1958, May 2016. doi:10.5194/gmd-9-1937-2016.
+[9]Yoo-Geun Ham, Jeong-Hwan Kim, and Jing-Jia Luo. Deep learning for multi-year ENSO
+forecasts. Nature , 573(7775):568–572, September 2019. doi:10.1038/s41586-019-1559-7.
+[10] Hans Hersbach, Bill Bell, Paul Berrisford, Shoji Hirahara, András Horányi, Joaquín Muñoz-
+Sabater, Julien Nicolas, Carole Peubey, Raluca Radu, Dinand Schepers, Adrian Simmons,
+Cornel Soci, Saleh Abdalla, Xavier Abellan, Gianpaolo Balsamo, Peter Bechtold, Gionata
+Biavati, Jean Bidlot, Massimo Bonavita, Giovanna Chiara, Per Dahlgren, Dick Dee, Michail
+Diamantakis, Rossana Dragani, Johannes Flemming, Richard Forbes, Manuel Fuentes, Alan
+Geer, Leo Haimberger, Sean Healy, Robin J. Hogan, Elías Hólm, Marta Janisková, Sarah
+Keeley, Patrick Laloyaux, Philippe Lopez, Cristina Lupu, Gabor Radnoti, Patricia Rosnay,
+Iryna Rozum, Freja Vamborg, Sebastien Villaume, and Jean-Noël Thépaut. The ERA5 global
+reanalysis. Quarterly Journal of the Royal Meteorological Society , 146(730):1999–2049, June
+2020. doi:10.1002/qj.3803.
+[11] Ryan Keisler. Forecasting global weather with graph neural networks. arXiv , 2022.
+doi:10.48550/ARXIV .2202.07575.
+[12] Fred Kucharski, Franco Molteni, Martin P. King, Riccardo Farneti, In-Sik Kang, and Laura Feu-
+dale. On the need of intermediate complexity general circulation models: A “SPEEDY” example.
+Bulletin of the American Meteorological Society , 94(1):25–30, January 2013. doi:10.1175/bams-
+d-11-00238.1.
+6[13] Remi Lam, Alvaro Sanchez-Gonzalez, Matthew Willson, Peter Wirnsberger, Meire Fortunato,
+Ferran Alet, Suman Ravuri, Timo Ewalds, Zach Eaton-Rosen, Weihua Hu, Alexander Merose,
+Stephan Hoyer, George Holland, Oriol Vinyals, Jacklynn Stott, Alexander Pritzel, Shakir
+Mohamed, and Peter Battaglia. Graphcast: Learning skillful medium-range global weather
+forecasting. arXiv , 2022. doi:10.48550/ARXIV .2212.12794.
+[14] Zongyi Li, Daniel Zhengyu Huang, Burigede Liu, and Anima Anandkumar. Fourier
+neural operator with learned deformations for pdes on general geometries. arXiv , 2022.
+doi:10.48550/arXiv.2207.05209.
+[15] Tung Nguyen, Johannes Brandstetter, Ashish Kapoor, Jayesh K. Gupta, and Aditya
+Grover. Climax: A foundation model for weather and climate. arXiv , 2023.
+doi:10.48550/ARXIV .2301.10343.
+[16] Jaideep Pathak, Shashank Subramanian, Peter Harrington, Sanjeev Raja, Ashesh Chattopadhyay,
+Morteza Mardani, Thorsten Kurth, David Hall, Zongyi Li, Kamyar Azizzadenesheli, Pedram
+Hassanzadeh, Karthik Kashinath, and Animashree Anandkumar. Fourcastnet: A global data-
+driven high-resolution weather model using adaptive fourier neural operators. arXiv , 2022.
+doi:10.48550/ARXIV .2202.11214.
+[17] William M. Putman and Shian-Jiann Lin. Finite-volume transport on various cubed-
+sphere grids. Journal of Computational Physics , 227(1):55–78, November 2007.
+doi:10.1016/j.jcp.2007.07.022.
+[18] M. Raissi, P. Perdikaris, and G.E. Karniadakis. Physics-informed neural networks: A deep
+learning framework for solving forward and inverse problems involving nonlinear partial
+differential equations. Journal of Computational Physics , 378:686–707, February 2019.
+doi:10.1016/j.jcp.2018.10.045.
+[19] Kevin E. Trenberth, John T. Fasullo, and Jessica Mackaro. Atmospheric moisture transports
+from ocean to land and global energy flows in reanalyses. Journal of Climate , 24(18):4907–4924,
+September 2011. doi:10.1175/2011jcli4171.1.
+[20] UFS Community. Unified forecast system (UFS). UFS, Oct 2020. doi:10.5281/zenodo.4460292.
+[21] Warren M. Washington and Claire L. Parkinson. An Introduction to Three-Dimensional Climate
+Modeling . University Science Books, Sausalito, CA, 2005.
+[22] D. Watson-Parris, Y . Rao, D. Olivié, Ø. Seland, P. Nowack, G. Camps-Valls, P. Stier, S. Bouabid,
+M. Dewey, E. Fons, J. Gonzalez, P. Harder, K. Jeggle, J. Lenhardt, P. Manshausen, M. Novi-
+tasari, L. Ricard, and C. Roesch. ClimateBench v1.0: A benchmark for data-driven cli-
+mate projections. Journal of Advances in Modeling Earth Systems , 14(10), October 2022.
+doi:10.1029/2021ms002954.
+[23] Jonathan A. Weyn, Dale R. Durran, and Rich Caruana. Improving data-driven global weather
+prediction using deep convolutional neural networks on a cubed sphere. Journal of Advances in
+Modeling Earth Systems , 12(9), September 2020. doi:10.1029/2020ms002109.
+[24] Linjiong Zhou, Shian-Jiann Lin, Jan-Huey Chen, Lucas M. Harris, Xi Chen, and Shan-
+non L. Rees. Toward convective-scale prediction within the next generation global predic-
+tion system. Bulletin of the American Meteorological Society , 100(7):1225 – 1243, 2019.
+doi:https://doi.org/10.1175/BAMS-D-17-0246.1.
+7Table 1: Input and output variables for ACE. The ksubscript refers to a vertical layer index, and
+ranges from 0 to 7 starting at the top of atmosphere and increasing towards the surface. The Time
+column indicates whether a variable represents the value at a particular time step (“Snapshot”),
+the average across the 6-hour time step (“Mean”) or a quantity which does not depend on time
+(“Invariant”). “TOA” denotes “Top Of Atmosphere”, the climate model’s upper boundary.
+Prognostic (input and output)
+Symbol Description Units Time
+Tk Air temperature K Snapshot
+qT
+k Specific total water (vapor + condensates) kg/kg Snapshot
+uk Windspeed in eastward direction m/s Snapshot
+vk Windspeed in northward direction m/s Snapshot
+Ts Skin temperature of land or sea-ice K Snapshot
+ps Atmospheric pressure at surface Pa Snapshot
+Forcing (input only)
+Symbol Description Units Time
+DSWRFtoa Downward shortwave radiative flux at TOA W/m2Mean
+Ts Skin temperature of open ocean K Snapshot
+zs Surface height of topography m Invariant
+fl Land grid cell fraction − Invariant
+fo Ocean grid cell fraction − Snapshot
+fsi Sea-ice grid cell fraction − Snapshot
+Diagnostic (output only)
+Symbol Description Units Time
+USWRFtoa Upward shortwave radiative flux at TOA W/m2Mean
+ULWRFtoa Upward longwave radiative flux at TOA W/m2Mean
+USWRFsfc Upward shortwave radiative flux at surface W/m2Mean
+ULWRFsfc Upward longwave radiative flux at surface W/m2Mean
+DSWRFsfc Downward shortwave radiative flux at surface W/m2Mean
+DLWRFsfc Downward longwave radiative flux at surface W/m2Mean
+P Surface precipitation rate (all phases) kg/m2/s Mean
+∂TWP
+∂t
+advTendency of total water path from advection kg/m2/s Mean
+LHF Surface latent heat flux W/m2Mean
+SHF Surface sensible heat flux W/m2Mean
+A Data preprocessing
+The complete list of input and output variables used for ACE is given in Table 1. A schematic
+depiction of the meaning of forcing, prognostic and diagnostic variables is shown in Figure 5.
+Horizontal regridding FV3GFS, the model used to generate reference data, uses a cubed sphere
+grid [ 17]. This grid prevents direct use of the SFNO architecture, which in the formulation of [ 3]
+requires data on a latitude-longitude grid. Therefore, we regrid to latitude-longitude using the “fregrid”
+tool provided by NOAA GFDL. We use the first-order conservative regridding option. This regridding
+procedure leads to unphysical sharp gradients in the high latitudes for some fields. Therefore as
+part of the regridding process, we also perform a round-trip with the spherical harmonic transform
+which has the effect of filtering out these unrealistic artifacts. For the 2x coarser FV3GFS baseline,
+regridding to the 100km latitude-longitude grid upsampled the dataset from its native resolution
+and produced more profound artifacts, and so when performing the spherical harmonic transform
+round-trip on this dataset we truncated the highest-frequency modes (35% of all modes), which had
+the effect of reducing the baseline’s errors against the reference dataset.
+In future work, it would be natural to directly train on the cubed sphere grid data, which would
+prevent complications associated with regridding. The cubed sphere grid has been used for ML-
+8PredictionsPrognostic
+variables Forcing
+variables 
+Prognostic
+variables at
+next time stepDiagnostic
+variables ACEFigure 5: Diagram summarizing the flow of input and output variables. Prognostic variables are
+fed back into the model autoregressively. Forcing variables are read from an external dataset and
+appended to the prognostic variables at each step. The network outputs diagnostic variables, which
+contribute to the loss but are not passed back as inputs for the next step.
+based weather prediction architectures [ 23] and adaptations of Fourier Neural Operators for arbitrary
+geometric discretizations have been proven in low dimensional settings that could be readily extended
+to SFNO [14].
+Vertical coarse-graining After the horizontal regridding is done for all variables, anticipating the
+requirements for precise mass and energy conservation, we vertically integrate the 3D variables (air
+temperature, specific total water, eastward wind and northward wind) from the original 63 vertical
+layers to 8 layers. The reference model FV3GFS uses a hybrid sigma-pressure vertical coordinate
+(e.g. Figure 3.1 of [7]) where the pressure at vertical layer interface kis defined by:
+pk=ak+bkps (2)
+where akandbkare constant coefficients and psis the surface pressure. We also use a hybrid
+sigma-pressure vertical coordinate for ACE, but subselect the akandbkcoordinates from FV3GFS
+to nine interfaces (Table 2) corresponding to eight finite volume vertical layers. The nine interfaces
+were chosen to have a vertical coordinate that corresponds closely to the one in the SPEEDY model
+[12]. The uppermost two layers correspond to the stratosphere while the lowermost layer is roughly
+a boundary layer average. The following equation, using temperature Tas an example, is used to
+transform all 3D variables from the 63-layer to 8-layer vertical coordinate:
+Tk=1
+dpkIk+1X
+i=IkTidpi (3)
+where
+dpk=Ik+1X
+i=Ikdpi (4)
+anddpiandTiare the pressure thickness and temperature of the i’th atmospheric layer in the original
+vertical coordinate and Ikis the index of the original vertical coordinate (fourth column of Table 2).
+The pressure thickness dpi=pi+1−piis computed by taking the difference between the vertical
+interface pressures given by Equation 2. The use of this finite volume vertical coordinate ensures
+that exact vertical integrals of quantities such as mass, moisture and energy can be computed and
+expected to balance with fluxes into and out of the atmosphere.
+9Table 2: ACE vertical coordinate. Here kindicates the vertical layer interface ranging from the top of
+the model’s atmosphere k= 0to the Earth surface k= 8.akandbkdefine the vertical coordinate
+(Equation 2) while Ikindicates what the corresponding vertical index is in the 63-layer reference
+FV3GFS simulation. pref
+kis the pressure at model layer interfaces assuming ps= 1000 hPa.
+k a k[Pa] bk[unitless] Ikpref
+k[hPa]
+0 64.247 0.0 0 0.642
+1 5167.14603 0.0 18 51.7
+2 12905.42546 0.01755 26 147
+3 13982.4677 0.11746 31 257
+4 12165.28766 0.2896 36 411
+5 8910.07678 0.49806 41 587
+6 4955.72632 0.72625 47 776
+7 2155.78385 0.88192 53 903
+8 0.0 1.0 63 1000
+Table 3: SFNO hyperparameters. Names correspond to the definition of the Spherical-
+FourierNeuralOperatorNet class found here: https://github.com/ai2cm/modulus/blob/
+94f62e1ce2083640829ec12d80b00619c40a47f8/modulus/models/sfno/sfnonet.py#
+L292 . All configuration options not listed here are set to the defaults at the linked code.
+Name Value
+embed_dim 256
+filter_type linear
+num_layers 8
+operator_type dhconv
+scale_factor 1
+spectral_layers 3
+B Hyperparameters
+Table 3 lists the SFNO hyperparameters used in this study. See [ 3] for details about the meaning
+of these parameters. The only modification to the architecture of SFNO made in this work is in
+the first spherical harmonic transform and the last inverse spherical harmonic transform, where
+Gauss-Legendre quadrature is used, as our data is on the Gaussian grid as opposed to the equiangular
+latitude-longitude grid used in [3] (see horizontal regridding section of Appendix A).
+Table 4 lists the hyperparameters used for optimization. Model parameters were averaged across
+training step using an exponential moving average (EMA), which led to moderate (up to 15%)
+improvements in the time-mean RMSE metric.
+C Metrics
+Suppose we have an arbitrary predicted field ˆx(t, ϕ, λ )which depends on time t, latitude ϕand
+longitude λand its corresponding target/ground truth x(t, ϕ, λ ). LetA(ϕ, λ)be a normalized weight
+Table 4: Optimization hyperparameters.
+Name Value
+Optimizer Adam
+Initial learning rate 1×10−4
+Learning rate schedule Cosine annealing (single cycle)
+Number of epochs 30
+Batch size 4
+Exponential moving average decay rate 0.9999
+10rs0
+rs1
+rs2
+rs3
+rs4
+run
+rs0
+rs1
+rs2
+rs3
+rs4
+run0.00.51.0T₇ [K]
+02TWP [mm]
+rs0
+rs1
+rs2
+rs3
+rs4runRMSE of time-meanFigure 6: Time-mean RMSE (Equation 6) of T7andTWP =1
+gP
+kqT
+kdpkcomputed over a single
+10-year inference for five ML models which differ only in initialization random seed.
+proportional to the area of a grid cell. Then the three metrics of interest are:
+GM ˆx(t) =X
+ϕ,λA(ϕ, λ)ˆx(t, ϕ, λ ) (5)
+RMSE -TMˆx=sX
+ϕ,λA(ϕ, λ)h
+mean
+t{ˆx(t, ϕ, λ )−x(t, ϕ, λ )}i2
+(6)
+GM-TM-BIAS ˆx= mean
+t[GM ˆx(t)−GMx(t)] (7)
+D Random seed ensemble
+Figure 6 shows the time-mean RMSE across a 5-member random seed ensemble of models. Although
+all models are capable of stable 10-year inference runs, the magnitude of the time-mean RMSE metric
+can vary by up to a factor 4 (depending on output variable being considered). The results in the main
+body of the paper are all based on the “rs1” model which has lowest errors for T7and total water path.
+We have verified that the spread in error across different initial conditions is significantly smaller than
+the spread across random seeds for a single initial condition (not shown).
+E Systematic evaluation of all outputs
+In this section we provide a complete description of the global climate biases of ACE relative to the
+baseline and reference. Figure 7 shows the magnitude of the time-mean pattern errors (Equation 6)
+for each output variable except the total water path advective tendency which was not available for
+the baseline run. Out of the 44 output variables, an impressive 41 have lower RMSE for ACE when
+compared to the baseline.
+Figure 8 shows the time- and global-mean bias (Equation 7) for all output channels. In general biases
+are low for all variables (e.g. radiative flux biases are at most 1.2 W/m2) but they are mostly larger
+compared to the baseline simulation. In particular the approximately -25 Pa psbias is large compared
+to the near-zero bias in the baseline simulation which exactly conserves global dry air mass and
+moisture.
+Figure 9 shows the timeseries of the global mean for all output variables. Most variables track
+the global-mean season cycle well and none have large drifts that persist throughout the 10-year
+simulation. Nevertheless, there are deviations from the expected global mean that are larger than
+interannual variability (specifically in ps,qT
+0and a number of the northward wind vkvariables).
+F 100-year forecasts
+Since our forcing dataset is annually repeating, it is straightforward to repeat it in order to allow
+arbitrarily long forecasts. We used this feature to do a 100-year long forecast. The forecast was stable
+11ACE
+baseline
+referencerun
+ACE
+baseline
+referencerun
+ACE
+baseline
+referencerun
+ACE
+baseline
+referencerun
+ACE
+baseline
+referencerun0.00.51.0Tₛ [K]
+0500pₛ [Pa]
+0.00.51.0TWP [mm]
+0.00.51.0T₇ [K]
+0.00.5T₆ [K]
+0.00.5T₅[K]
+0.00.5T₄[K]
+0.00.5T₃[K]
+0.00.20.40.6T₂[K]
+0.00.20.4T₁[K]
+0.00.20.4T₀ [K]
+0.00.2qᵀ₇ [g/kg]
+0.00.10.2qᵀ₆ [g/kg]
+0.00.10.2qᵀ₅ [g/kg]
+0.000.050.10qᵀ₄ [g/kg]
+0.000.02qᵀ₃ [g/kg]
+0.0000.0010.002qᵀ₂ [g/kg]
+0.00000.0001qᵀ₁ [g/kg]
+0.000000.000050.00010qᵀ₀[g/kg]
+0.00.5u₇ [m/s]
+0.00.5u₆ [m/s]
+0.00.51.0u₅[m/s]
+0.00.51.0u₄ [m/s]
+0.00.51.0u₃ [m/s]
+01u₂[m/s]
+0.00.51.0u₁ [m/s]
+012u₀ [m/s]
+0.00.20.40.6v₇ [m/s]
+0.00.20.4v₆ [m/s]
+0.00.20.4v₅ [m/s]
+0.00.5v₄ [m/s]
+0.00.5v₃ [m/s]
+0.00.51.0v₂ [m/s]
+0.00.5v₁ [m/s]
+0.00.2v₀ [m/s]
+0.00.5P [mm/day]
+0510LHF [W/m²]
+05SHF [W/m²]
+05USWRFtoa [W/m²]
+02ULWRFtoa [W/m²]
+0510DSWRFsfc [W/m²]
+024DLWRFsfc [W/m²]
+024USWRFsfc [W/m²]
+024ULWRFsfc [W/m²]ACE
+baseline
+referencerunRMSE of time-meanFigure 7: The RMSE of the time-mean (Equation 6) of all output variables for ACE, the coarser
+resolution baseline and the reference simulation.
+12ACE
+baseline
+referencerun
+ACE
+baseline
+referencerun
+ACE
+baseline
+referencerun
+ACE
+baseline
+referencerun
+ACE
+baseline
+referencerun−0.10.0Tₛ [K]
+02040pₛ [Pa]
+0.000.05TWP [mm]
+0.00.1T₇ [K]
+−0.20.00.2T₆ [K]
+−0.4−0.20.0T₅[K]
+−0.50.0T₄ [K]
+−0.50.0T₃[K]
+−0.4−0.20.0T₂[K]
+−0.050.00T₁[K]
+0.00.1T₀ [K]
+−0.050.00qᵀ₇ [g/kg]
+−0.010.00qᵀ₆ [g/kg]
+0.000.020.04qᵀ₅ [g/kg]
+0.000.020.04qᵀ₄ [g/kg]
+0.0000.005qᵀ₃ [g/kg]
+−0.00010.00000.0001qᵀ₂[g/kg]
+−0.00010.0000qᵀ₁ [g/kg]
+−0.00010.0000qᵀ₀ [g/kg]
+−0.10.0u₇ [m/s]
+−0.2−0.10.0u₆ [m/s]
+−0.2−0.10.0u₅ [m/s]
+−0.2−0.10.0u₄ [m/s]
+−0.20.0u₃ [m/s]
+−0.20.00.2u₂ [m/s]
+−0.20.0u₁ [m/s]
+−10u₀ [m/s]
+−0.010.000.01v₇[m/s]
+0.0000.005v₆[m/s]
+−0.010.00v₅ [m/s]
+−0.010−0.0050.000v₄ [m/s]
+0.000.01v₃ [m/s]
+−0.04−0.020.00v₂ [m/s]
+−0.020.00v₁[m/s]
+0.000.01v₀ [m/s]
+−0.050.00P [mm/day]
+−2−10LHF [W/m²]
+−0.4−0.20.0SHF [W/m²]
+−0.4−0.20.0USWRFtoa [W/m²]
+−0.50.0ULWRFtoa [W/m²]
+0.00.5DSWRFsfc [W/m²]
+−10DLWRFsfc [W/m²]
+0.000.020.04USWRFsfc [W/m²]
+0.00.2ULWRFsfc [W/m²]ACE
+baseline
+referencerunGlobal and time-mean biasFigure 8: The global- and time-mean bias (Equation 7) of all output variables for ACE, the coarser
+resolution baseline and the reference simulation.
+13Figure 9: The daily averaged global mean (Equation 5) of all output variables for ACE and the
+reference simulation.
+14Figure 10: Timeseries of monthly-mean and global-mean (top) T7, (middle) total water path and
+(bottom) surface precipitation rate Pfrom 100-year forecast.
+and no variables showed long-term drifts. However, there are some unrealistic fluctuations on annual
+timescales, for example for global mean surface precipitation rate (bottom row of Figure 10).
+G Global mean conservation
+The last paragraph of Section 3 discussed the column budget of moisture and showed that ACE
+nearly conserves column moisture for individual timesteps. Here we compute the area-weighted
+global mean of Equation 1 and show the global budget violation (left-hand side of Equation 1 minus
+right-hand side of Equation 1) in the left panel of Figure 11. Although for most of the simulation the
+violation is not overly large (magnitude less than 0.1 mm/day; compared to typical values of global
+mean precipitation or evaporation of 3 mm/day) at certain times in the simulation the global budget
+violation is up to magnitude 0.4 mm/day.
+We also consider the conservation of global dry air mass. Surface pressure due to dry air only is
+pdry
+s=ps−g·TWP. (8)
+On the timescales we are considering, there is no flux of dry air mass through the top of atmosphere
+or through the Earth’s surface. Therefore, the global mean surface pressure due to dry air should
+remain exactly constant. Indeed this is the case for the reference model. The right panel of Figure 11
+shows slight deviations for ACE of magnitude up to 150 Pa, but no systematic multi-year drift.
+It is possible that adding terms to the loss function to encourage global mean conservation of moisture
+and dry air mass [18] would improve these characteristics for long simulations.
+H Normalization Strategy
+This section describes the “residual” scaling strategy and compares it to the “full-field” normalization
+done in [ 16]. First the standard scaling mean and standard deviations are computed over time, latitude
+and longitude, without area weighting:
+µ(a) = mean
+t,ϕ,λa(t, ϕ, λ ) (9)
+σ(a) = std
+t,ϕ,λa(t, ϕ, λ ). (10)
+The “full-field” normalization (as in [ 16]) is defined as aff= (a−µ(a))/σ(a). Some prognostic
+variables, for example surface pressure ps, vary more strongly over space than over time, so their
+15Figure 11: Left: timeseries of the global mean moisture budget violation (LHS minus RHS of
+Equation 1). Right: timeseries of global mean surface pressure due to dry air only (Equation 8).
+normalized timestep-to-timestep differences a′
+ff=aff(t+ 1)−aff(t)(which is what we’d really
+like to get right for each prognostic variable) vary strongly between variables. It is cumbersome to
+change the loss function in FourCastNet to reflect this goal. As a pragmatic substitute, we modify the
+normalization strategy to give equal contributions from tendency errors in each variable to the loss
+function (see also Section 3.3.3 of [ 11] which normalized the loss with a similar motivation). First
+we compute the forward increment of the normalized variables as:
+a′
+ff(t) =aff(t+ 1)−aff(t). (11)
+Define σ(a′
+ff)is the standard deviation of a′
+ff. Neglecting any temporal trend in affacross the
+training period, µ(a′
+ff) = 0 , so
+σ2(a′
+ff) =1
+TXYX
+t,x,y(a′
+ff)2(12)
+We rescale the full-field-normalized variables as follows:
+ares =aff/σres(a) (13)
+σres(a) = σ(a′
+ff)/σ(a′
+ff)g(14)
+This “residual” rescaling includes a factor σ(a′
+ff)g, the geometric mean of σ(a′
+ff)across all variables,
+so that the standard deviations of the rescaled variables stay scattered about 1.
+Figure 12 shows the “residual” rescaling factors σres(a)of all variables a. The range is about a factor
+of 30, with the surface pressure being up-weighted the most relative to the “full field” normalization.
+Residual normalization is more justifiable for prognostic variables (which are both inputs and outputs)
+than for diagnostic variables. Hence, we attempted to apply residual scaling only to prognostic
+variables, but this leads to slightly larger time-mean biases than also rescaling diagnostic variables.
+I Ablations
+I.1 Normalization
+Note that neither of the models used in this ablation (Figure 13) have the same configuration as the
+for the results shown in the main body of the manuscript. In particular, neither of them use the surface
+type fractions as inputs.
+To show the impact of the “residual scaling” normalization choice described in Appendix H, Figure 13
+shows the 1-step validation RMSE, 5-day RMSE and time-mean RMSE ( RMSE -TMps) of surface
+pressure and 5-day RMSE of USWRFtoa as a function of training steps. Not surprisingly since we
+are weighting it more strongly, a large (about 50%) decrease in 1-step RMSE is seen for ps. We
+also see a large improvement for 5-day RMSE, and smaller improvement for time-mean RMSE of
+ps. Notably, even though the USWRFtoa variable is weighted less heavily in the loss function (see
+Figure 12) its 5-day RMSE is substantially improved with residual scaling. We believe this is because
+the improved autoregressive performance of psleads to more accurate predictions for other variables
+also.
+16Figure 12: The standard deviation of normalized variables using the “residual” scaling strategy.
+Table 1 gives meaning of each variable.
+17Figure 13: Four metrics evaluated on models which use (blue) full field normalization and (olive)
+residual normalization, shown as a function of training step and reported once per epoch. The
+metrics are (top-left) RMSE of 1-step psprediction on validation data, (top-right) RMSE of psafter
+5 days of autoregressive inference, (bottom-left) RMSE of time-mean psover 1-year simulation and
+(bottom-right) RMSE of USWRFtoa after 5 days of autoregressive inference.
+I.2 Dataset size
+To show importance of dataset, here we compare training curves for two experiments which are
+similarly configured. The only difference is that the first uses a dataset with 10-years of training data
+(14607 samples; a single member of the 10-member ensemble of reference simulations) and trains
+for 75 epochs while the second uses a 100-year dataset (146070 samples) and trains for 15 epochs.
+Note the latter training is not the same as the one described in the main text above. It does not use
+surface height or surface type fractions as inputs and it uses a 5x larger initial learning rate.
+Figure 14 shows the training and validation loss for the models trained on the two datasets. The
+validation loss here is computed on 80 samples from the independent validation dataset. The model
+trained on only 10 years of data shows clear signs of overfitting that does not occur for the 100-year
+dataset.
+When examining the variable-by-variable validation RMSE, we find that only stratospheric variables
+overfit for the 10-year dataset. As an example, Figure 15 compares the validation RMSE for the upper
+stratospheric T0and the near-surface T7. This makes it apparent that the overfitting is happening for
+temperature in the stratosphere. This is also the case for other stratospheric variables T1,v0,u0,qT
+0
+andqT
+1(not shown). Given that stratospheric dynamics are typically slower than variability in the
+troposphere, it is not a surprise that overfitting is a particular concern in the uppermost model layers.
+Interestingly, ML-based weather prediction systems have reported relatively poor performance in the
+stratosphere (e.g. Fig. 2 of [13]).
+18Figure 14: The (solid) train loss and (dashed) validation loss for training runs on (blue) a 10-year
+dataset and (olive) a 100-year dataset.
+Figure 15: The validation RMSE of (left) T0and (right) T7for models trained on (blue) a 10-year
+dataset and (olive) a 100-year dataset.
+19

@@ -1,0 +1,295 @@
+Published as a workshop paper at “Tackling Climate Change with Machine Learning”, ICLR 2023
+DIFFESM: C ONDITIONAL EMULATION OF EARTH
+SYSTEM MODELS WITH DIFFUSION MODELS
+Seth Bassetti1, Brian Hutchinson1,2, Claudia Tebaldi3, Ben Kravitz4
+1Computer Science Department, Western Washington University, Bellingham, WA
+2Foundational Data Science Group, Pacific Northwest National Laboratory, Richland, WA
+3Joint Global Change Research Institute, Pacific Northwest National Laboratory, College Park, MD
+4Earth and Atmospheric Sciences Department, Indiana University, Bloomington, IN
+{bassets,brian.hutchinson }@wwu.edu, claudia.tebaldi@pnnl.gov, bkravitz@iu.edu
+ABSTRACT
+Earth System Models (ESMs) are essential tools for understanding the impact of
+human actions on Earth’s climate. One key application of these models is studying
+extreme weather events, such as heat waves or dry spells, which have significant
+socioeconomic and environmental consequences. However, the computational de-
+mands of running a sufficient number of simulations to analyze the risks are often
+prohibitive. In this paper we demonstrate that diffusion models – a class of gen-
+erative deep learning models – can effectively emulate the spatio-temporal trends
+of ESMs under previously unseen climate scenarios, while only requiring a small
+fraction of the computational resources. We present a diffusion model that is con-
+ditioned on monthly averages of temperature or precipitation on a 96×96global
+grid, and produces daily values that are both realistic and consistent with those av-
+erages. Our results show that the output from our diffusion model closely matches
+the spatio-temporal behavior of the ESM it emulates in terms of the frequency of
+phenomena such as heat waves, dry spells, or rainfall intensity.
+1 I NTRODUCTION
+Earth System Models (ESMs) play an important role in estimating the risk of extreme weather
+events under different emissions scenarios. The rarity of such weather events means that data must
+be aggregated over numerous runs to get reliable statistics. However, the computational demands of
+ESMs limits the number of realizations that can be performed. By using existing data to learn the
+statistical characteristics of ESM output, emulators can address this issue, by generating thousands
+of realizations on the scale of minutes or hours rather than weeks or months. Machine learning
+approaches are well-suited to building such emulators, especially generative deep learning methods
+capable of learning to approximate complicated, high dimensional distributions. We present a de-
+noising diffusion probabilistic model that learns to closely model the spatio-temporal behavior of an
+ESM, producing month-long samples of either daily mean temperature or precipitation. Our emula-
+tor, DiffESM, can be steered to generate samples under novel climate scenarios (or existing climate
+scenarios for which we want to enlarge the sample size of daily variables) by conditioning genera-
+tion on a monthly mean map of the climate variable. Such monthly mean maps can be produced by
+existing emulators, like fldgen (Link et al., 2019) or STITCHES (Tebaldi et al., 2022). Once trained,
+the emulator offers a dramatic improvement over traditional ESMs in terms of speed, allowing for
+rapid investigation of the effect of climate scenarios on the distribution of extreme weather events,
+making it a valuable tool for climate researchers and policy-makers.
+Many researchers have utilized machine learning for weather and climate modeling. One key ap-
+plication is the use of machine learning for forecasting, including now-casting (Bromberg et al.,
+2019; Shi et al., 2017), sub-seasonal forecasting (He et al., 2020; Weyn et al., 2021) and seasonal
+climate forecasting (Monego et al., 2022). Using machine learning to improve the resolution of
+ESMs is another active area of research, as many ESM outputs are too coarse for local-scale predic-
+tions. Data-driven methods can be used to construct models of local-scale phenomena; for example,
+modeling clouds with physics-informed neural networks (Beucler et al., 2019; Rasp et al., 2018), or
+1Published as a workshop paper at “Tackling Climate Change with Machine Learning”, ICLR 2023
+improving the resolution of regional climate models with generative adversarial networks (GANs)
+and — more recently — diffusion models (Addison et al., 2022; Leinonen et al., 2021; Stengel et al.,
+2020). Certainly, computationally efficient emulation of ESMs themselves has a long tradition, from
+statistics-based methods (Holden et al., 2015; Castruccio et al., 2014) to generative deep learning
+approaches (Ayala et al., 2021; 2022; Puchko et al., 2020). In contrast to these prior generative deep
+learning approaches to ESM emulation using GANs, which are notoriously difficult to train, we find
+that our DiffESM is significantly easier to train and better approximates the ESMs as measured by
+several of the same metrics.
+2 M ETHODS
+Diffusion models generate samples from a target distribution via an iterative denoising process that
+maps samples from a known distribution (Gaussian) to samples from the unknown target distribu-
+tion. This iterative denoising is often easier to accomplish than attempting to map noise samples to
+the target distribution directly. Such models are trained by progressively destroying the information
+in real samples using a forward process, and then learning to progressively reconstruct the destroyed
+sample (Ho et al., 2020; Nichol & Dhariwal, 2021).
+Our model architecture is highly inspired by the Video Diffusion (Ho et al., 2022b) and Imagen
+Video (Ho et al., 2022a) model architectures. Specifically, for each denoising step we use a fully
+convolutional U-Net (Ronneberger et al., 2015) architecture with interleaved spatial and temporal
+convolution layers. We exclude self-attention due to computational limitations. The input to the
+model is a noisy sample of shape C×T×H×W, where C= 1 is the number of variables
+(temperature or precipitation), T= 28 is the sequence length in days, and H= 96 andW= 96 are
+the spatial dimensions of the grid. The model outputs a sample of the same size, which represents
+daily temperature or precipitation values for each spatial location over the globe for a 28-day (i.e.,
+four week) “month.” The architecture consists of four downsampling/upsampling layers with a
+bottleneck layer in between. Each layer uses two ResNet blocks (He et al., 2015), a temporal-only
+convolution operation, and a respective upsampling or downsampling convolutional operation. The
+bottleneck has the same structure except for the lack of upsampling or downsampling. In addition to
+downsampling or upsampling the spatial dimension in each layer, the model increases the channel
+dimension at each depth. The respective channel dimensions per level are: 48, 128, 192, and 256
+respectively. To steer the outputs of our model, we provide as conditioning: A spatial map of the
+monthly average of the variable, the day of the year that the 28-day sequence begins on, and the
+timestep that indicates the stage of the reverse (denoising) diffusion process.
+To train, we use a continuous-time diffusion model (Kingma et al., 2021) with v-parameterization
+(Salimans & Ho, 2022). The timesteps for noising each sample are randomly chosen from (0,1]. The
+noisy samples, along with all conditioning, are passed into the model, and we use mean squared error
+to impose a reconstruction loss on the v-term and the model’s outputs. We additionally implement
+classifier-free guidance on the day labels (Ho & Salimans, 2022). During training, 15% of the
+day labels are randomly dropped out, letting the model learn a joint unconditional and conditional
+representation of the data. Each model is trained for a total of 10 epochs with a batch size of 256
+split between four GPUs. We use the Adam optimizer (Kingma & Ba, 2015) with a learning rate
+of 0.0004, and β1andβ2initialized to 0.9 and 0.99. All sampling is done with 250 timesteps,
+uniformly spaced between 0 and 1.
+3 E XPERIMENTS
+3.1 D ATASET
+Our dataset is composed of daily output on a 96×96spatial grid from the IPSL-CM5A ESM. In this
+study, we use only the daily mean temperature and daily precipitation variables. Our dataset consists
+of six total realizations (initial condition ensemble members), each representing the outputs from a
+full run of the ESM from pre-industrial times to 2100. These realizations are split into a “historical”
+period of values from 1850 to 2006 and realizations from the RCP8.5 scenario from 2006 to 2100.
+A “scenario” represents a potential human-driven emission pathway, and RCP8.5 represents the
+most extremescenario, in the sense of projecting the highest, unmitigated greenhouse gas emissions
+2Published as a workshop paper at “Tackling Climate Change with Machine Learning”, ICLR 2023
+Generated vs. T est Validated vs. T est
+2
+ 1
+ 0 1 202004006008001000Difference between {Generated, Validation} and T est Data
+Validation
+Generated-4.1-2.5-0.80.82.54.1 -4.1-2.5-0.80.82.54.1
+Monthly Hot Streak
+Generated vs. T est Validated vs. T est
+2
+ 1
+ 0 1 2020040060080010001200Difference between {Generated, Validation} and T est Data
+Validation
+Generated-2.6-1.5-0.50.51.52.6 -2.6-1.5-0.50.51.52.6 Monthly Hot Days
+Generated vs. T est Validated vs. T est
+2
+ 1
+ 0 1 20500100015002000Difference between {Generated, Validation} and T est Data
+Validation
+Generated-1.3-0.8-0.30.30.81.3 -1.3-0.8-0.30.30.81.3 90th Quantile Values
+Generated vs. T est Validated vs. T est
+2
+ 1
+ 0 1 2025050075010001250150017502000Difference between {Generated, Validation} and T est Data
+Validation
+Generated-2.4-1.5-0.50.51.52.4 -2.4-1.5-0.50.51.52.4
+Monthly Dry Spell
+Generated vs. T est Validated vs. T est
+2
+ 1
+ 0 1 202004006008001000120014001600Difference between {Generated, Validation} and T est Data
+Validation
+Generated-2.3-1.4-0.50.51.42.3 -2.3-1.4-0.50.51.42.3 Monthly Dry Days
+Generated vs. T est Validated vs. T est
+0.75
+ 0.50
+ 0.25
+ 0.00 0.25 0.50 0.7505001000150020002500300035004000Difference between {Generated, Validation} and T est Data
+Validation
+Generated-1.2-0.7-0.20.20.71.2 -1.2-0.7-0.20.20.71.2 SDII (Wet Day Precipitation)
+Figure 1: Error Histograms and Spatial Maps Averaged across 2080 - 2100
+among the set of scenarios that are run by climate models to explore the range of uncertain future
+anthropogenic forcings on the climate system. We use four realizations of combined historical and
+RCP8.5 data to form a training set, one realization of historical and RCP8.5 as a validation set, and
+one realization as a test set. To test the model’s generalization capabilities to novel climate scenarios,
+we use one realization each from RCP4.5, a less extreme emission scenario not seen during training,
+as distinct validation and test sets. For brevity, in this paper we will report results on cross-scenario
+performance in the 2080-2100 period, as the matched-scenario and earlier future tasks are easier.
+3.2 M ETRICS
+The goal of our emulator is not to accurately predict a single realization of the future climate, but
+rather, model realizations from a spatio-temporal statistical distribution that closely correlates with
+the ESM’s distribution. Towards this end, we look at the spatial and temporal distributions of statis-
+tics computed from each 28-day “month,” such as the number of days in the month exceeding the
+90th percentile temperature, the length of the longest dryspell in the month, or the average precipita-
+tion on days exceeding the 90th percentile. First, for each of the 252 validation set months between
+2080-2100 (inclusive), we create a monthly mean map by averaging over the 28 days, and then
+generate one 28-day sample from our diffusion model. We then compute statistics at each spatial
+location over each monthly sample in the validation, test, and generated sets. For each statistic, we
+then average over all 252 months, giving us one spatial map per dataset. We produce two signed
+difference maps: validation minus test (which differ only due to internal variability produced by the
+ESM) and generated minus test, showing the similarity in spatial distribution between the two pairs
+of datasets. We do not expect either of these difference maps to be exactly zero, due to inherent vari-
+ability between runs of the same ESM, and hope only that the level of variability between generated
+and test is comparable to the level of variability between validation and test.
+3.3 R ESULTS
+Figure 1 plots six pairs of the difference maps described in the previous section, with three temper-
+ature statistics in the top row and three precipitation statistics in the bottom row. For each pair, the
+gen-test map is on the left while the val-test map is on the right. Below each pair of maps we also
+show overlaid histograms of the 9216 = 962spatial difference values (orange from gen-test and blue
+3Published as a workshop paper at “Tackling Climate Change with Machine Learning”, ICLR 2023
+0 5 10 15 20 25102030Generated
+0 5 10 15 20 25102030Validation
+(a) 28-day overlaid temperature sequences
+0 5 10 15 20 2502040Generated
+0 5 10 15 20 2502040Validation (b) 28 day overlaid precipitation sequences
+Figure 2: Distribution of 28-day sequences of daily values for 252 months from 2080-2100 in Mel-
+bourne, Australia.
+from val-test). The maps show strong correlation in the differences produced by the generated and
+validation sets. The histograms show that the distribution of differences for gen-test is very close to
+that of val-test, especially for the temperature metrics. We do note a tendency for the generated data
+to slightly under-predict rainfall values.
+As qualitative examples of the time series produced by our model, the 252 validation and 252 gen-
+erated samples used to compute the above results were also plotted in Fig. 2 as temperature or
+precipitation time series at the spatial location closest to Melbourne, Australia. Each line repre-
+sents a 28 day sequence from the years 2080-2100, all overlaid on top of each other. They show,
+qualitatively, that the temporal behavior of our samples approximates that of the validation data.
+4 C ONCLUSION AND FUTURE WORK
+In this paper, we have demonstrated the capability of conditional video diffusion models to emulate
+ESM output of daily temperature and precipitation under a climate scenario unseen during training.
+We observe that the samples produced by our models are comparable to those of ESMs in several
+extreme-relevant metrics, such as frequency and spatial distribution of hot streaks or dry spells, and
+intensity of precipitation during extremely wet days. The ability to generate such simulations in
+a timely manner will significantly enhance our ability to characterize the risks of extreme weather
+events under various future climate scenarios. Another – pragmatic – use of emulation of daily
+quantities from monthly means could be as a solution to decrease the cost of archiving and handling
+ESM output, which is becoming increasingly high due to ESMs’ higher and higher resolution.
+There are numerous directions for future work. One promising area would be to integrate multiple
+variables into a single diffusion model, since modeling the correlation between temperature and
+precipitation would likely lead to increased performance. This would also result in output that
+preserves the joint characteristics of the variables and allow to address more consistently those types
+of extremes that result from the combination of hot and dry, or cool and wet behavior of the climate
+system. Despite its speed advantages over ESMs, the diffusion models could themselves be further
+sped up using sampling techniques such as progressive distillation (Salimans & Ho, 2022). Lastly,
+while the work reported in this paper emulates just one ESM and evaluates on one novel scenario,
+we plan to replicate these findings over multiple ESMs and scenarios to provide further evidence of
+the promise of these techniques.
+ACKNOWLEDGMENTS
+This work was conducted with the support of the US Department of Energy, Office of Science, as
+part of the GCIMS project within the MultiSector Dynamics program area of the Earth and Environ-
+mental System Modeling program. The authors also thank the NVIDIA corporation for the donation
+of GPUs used in this work.
+4Published as a workshop paper at “Tackling Climate Change with Machine Learning”, ICLR 2023
+REFERENCES
+Henry Addison, Elizabeth Kendon, Suman Ravuri, Laurence Aitchison, and Peter Watson. Machine
+learning emulation of a local-scale uk climate model. In NeurIPS 2022 Workshop on Tackling
+Climate Change with Machine Learning , 2022. URL https://www.climatechange.ai/
+papers/neurips2022/21 .
+Alexis Ayala, Christopher Drazic, Brian Hutchinson, Ben Kravitz, and Claudia Tebaldi. Loosely
+conditioned emulation of global climate models with generative adversarial networks. arXiv
+preprint arXiv:2105.06386 , 2021.
+Alexis Ayala, Chris Drazic, Seth Bassetti, Eric Slyman, Brenna Nieva, Piper Wolters, Kyle Bittner,
+Claudia Tebaldi, Ben Kravitz, and Brian Hutchinson. Conditional emulation of global precipita-
+tion with generative adversarial networks. 2022.
+Tom Beucler, Stephan Rasp, Michael Pritchard, and Pierre Gentine. Achieving conservation of
+energy in neural network emulators for climate modeling. 2019. doi: 10.48550/ARXIV .1906.
+06622. URL https://arxiv.org/abs/1906.06622 .
+Carla L. Bromberg, Cenk Gazen, Jason J. Hickey, John Burge, Luke Barrington, and Shreya
+Agrawal. Machine learning for precipitation nowcasting from radar images. pp. 4, 2019.
+Stefano Castruccio, David J. McInerney, Michael L. Stein, Feifei Liu Crouch, Robert L. Jacob, and
+Elisabeth J. Moyer. Statistical emulation of climate model projections based on precomputed gcm
+runs. Journal of Climate , 27(5):1829 – 1844, 2014. doi: 10.1175/JCLI-D-13-00099.1.
+Kaiming He, X. Zhang, Shaoqing Ren, and Jian Sun. Deep residual learning for image recognition.
+2016 IEEE Conference on Computer Vision and Pattern Recognition (CVPR) , pp. 770–778, 2015.
+Sijie He, Xinyan Li, Timothy DelSole, Pradeep Ravikumar, and Arindam Banerjee. Sub-seasonal
+climate forecasting via machine learning: Challenges, analysis, and advances. In AAAI Confer-
+ence on Artificial Intelligence , 2020.
+Jonathan Ho and Tim Salimans. Classifier-free diffusion guidance, 2022. URL https://arxiv.
+org/abs/2207.12598 .
+Jonathan Ho, Ajay Jain, and Pieter Abbeel. Denoising diffusion probabilistic models. In
+H. Larochelle, M. Ranzato, R. Hadsell, M.F. Balcan, and H. Lin (eds.), Advances in Neural Infor-
+mation Processing Systems , volume 33, pp. 6840–6851. Curran Associates, Inc., 2020.
+Jonathan Ho, William Chan, Chitwan Saharia, Jay Whang, Ruiqi Gao, Alexey Gritsenko, Diederik P
+Kingma, Ben Poole, Mohammad Norouzi, David J Fleet, et al. Imagen video: High definition
+video generation with diffusion models. arXiv preprint arXiv:2210.02303 , 2022a.
+Jonathan Ho, Tim Salimans, Alexey A. Gritsenko, William Chan, Mohammad Norouzi, and David J.
+Fleet. Video diffusion models. In Alice H. Oh, Alekh Agarwal, Danielle Belgrave, and
+Kyunghyun Cho (eds.), Advances in Neural Information Processing Systems , 2022b.
+Philip B. Holden, Neil R. Edwards, Paul H. Garthwaite, and Richard D. Wilkinson. Emulation and
+interpretation of high-dimensional climate model outputs. Journal of Applied Statistics , 42(9):
+2038–2055, 2015. doi: 10.1080/02664763.2015.1016412.
+Diederik P. Kingma and Jimmy Ba. Adam: A method for stochastic optimization. In Yoshua
+Bengio and Yann LeCun (eds.), 3rd International Conference on Learning Representations, ICLR
+2015, San Diego, CA, USA, May 7-9, 2015, Conference Track Proceedings , 2015. URL http:
+//arxiv.org/abs/1412.6980 .
+Diederik P Kingma, Tim Salimans, Ben Poole, and Jonathan Ho. Variational diffusion models.
+In A. Beygelzimer, Y . Dauphin, P. Liang, and J. Wortman Vaughan (eds.), Advances in Neu-
+ral Information Processing Systems , 2021. URL https://openreview.net/forum?id=
+2LdBqxc1Yv .
+Jussi Leinonen, Daniele Nerini, and Alexis Berne. Stochastic super-resolution for downscaling
+time-evolving atmospheric fields with a generative adversarial network. IEEE Transactions on
+Geoscience and Remote Sensing , 59(9):7211–7223, 2021. doi: 10.1109/TGRS.2020.3032790.
+5Published as a workshop paper at “Tackling Climate Change with Machine Learning”, ICLR 2023
+Robert Link, Abigail Snyder, Cary Lynch, Corinne Hartin, Ben Kravitz, and Ben Bond-Lamberty.
+Fldgen v1.0: An emulator with internal variability and space–time correlation for earth sys-
+tem models. Geoscientific Model Development , 12(4):1477–1489, 2019. doi: 10.5194/
+gmd-12-1477-2019. URL https://www.geosci-model-dev.net/12/1477/2019/ .
+Vinicius Schmidt Monego, Juliana Aparecida Anochi, and Haroldo Fraga de Campos Velho. South
+america seasonal precipitation prediction by gradient-boosting machine-learning approach. At-
+mosphere , 13(2), 2022. ISSN 2073-4433. doi: 10.3390/atmos13020243.
+Alex Nichol and Prafulla Dhariwal. Improved denoising diffusion probabilistic models. CoRR ,
+abs/2102.09672, 2021. URL https://arxiv.org/abs/2102.09672 .
+Alexandra Puchko, Robert Link, Brian Hutchinson, Ben Kravitz, and Abigail Snyder. Deepclimgan:
+A high-resolution climate data generator. arXiv preprint arXiv:2011.11705 , 2020.
+Stephan Rasp, Michael S Pritchard, and Pierre Gentine. Deep learning to represent subgrid processes
+in climate models. Proceedings of the National Academy of Sciences , 115(39):9684–9689, 2018.
+Olaf Ronneberger, Philipp Fischer, and Thomas Brox. U-net: Convolutional networks for biomedi-
+cal image segmentation. In International Conference on Medical image computing and computer-
+assisted intervention , pp. 234–241. Springer, 2015.
+Tim Salimans and Jonathan Ho. Progressive distillation for fast sampling of diffusion models. In
+International Conference on Learning Representations , 2022.
+Xingjian Shi, Zhihan Gao, Leonard Lausen, Hao Wang, Dit-Yan Yeung, Wai-kin Wong, and Wang-
+chun Woo. Deep learning for precipitation nowcasting: A benchmark and a new model. Advances
+in neural information processing systems , 30, 2017.
+Karen Stengel, Andrew Glaws, Dylan Hettinger, and Ryan N King. Adversarial super-resolution of
+climatological wind and solar data. Proceedings of the National Academy of Sciences , 117(29):
+16805–16815, 2020.
+Claudia Tebaldi, Abigail Snyder, and Kalyn Dorheim. Stitches: creating new scenarios of climate
+model output by stitching together pieces of existing simulations. Earth System Dynamics , 13(4):
+1557–1609, 2022.
+Jonathan A. Weyn, Dale R. Durran, Rich Caruana, and Nathaniel Cresswell-Clay. Sub-seasonal
+forecasting with a large ensemble of deep-learning weather prediction models. Journal of Ad-
+vances in Modeling Earth Systems , 13(7):e2021MS002502, 2021. doi: https://doi.org/10.1029/
+2021MS002502. e2021MS002502 2021MS002502.
+6

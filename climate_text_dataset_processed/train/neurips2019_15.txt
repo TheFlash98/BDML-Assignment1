@@ -1,0 +1,815 @@
+Reducing Inefﬁciency in Carbon Auctions
+with Imperfect Competition
+Kira Goldner
+Columbia University
+kgoldner@cs.columbia.eduNicole Immorlicay
+Microsoft Research
+nicimm@microsoft.comBrendan Lucier
+Microsoft Research
+brlucier@microsoft.com
+Abstract
+We study auctions for carbon licenses, a policy tool used to control the social cost of pollution.
+Each identical license grants the right to produce a unit of pollution. Each buyer (i.e., ﬁrm that
+pollutes during the manufacturing process) enjoys a decreasing marginal value for licenses,
+but society suffers an increasing marginal cost for each license distributed. The seller (i.e.,
+the government) can choose a number of licenses to auction, and wishes to maximize societal
+welfare: the total economic value of the buyers minus the social cost. Motivated by emission
+license markets deployed in practice, we focus on uniform price auctions with a price ﬂoor
+and/or price ceiling. The seller has distributional information about the market, and their goal
+is to tune the auction parameters to maximize expected welfare. The target benchmark is
+the maximum expected welfare achievable by any such auction under truth-telling behavior.
+Unfortunately, the uniform price auction is not truthful, and strategic behavior can signiﬁcantly
+reduce (even below zero) the welfare of a given auction conﬁguration.
+We use tools from theoretical computer science and algorithmic game theory to address the
+strategic vulnerabilities of these auctions. We describe a subclass of “safe-price” auctions for
+which the welfare at any Bayes-Nash equilibrium will approximate the welfare under truth-
+telling behavior. We then show that the better of a safe-price auction, or a truthful auction that
+allocates licenses to only a single buyer, will approximate the target benchmark. In particular, we
+show how to choose a number of licenses and a price ﬂoor so that the worst-case welfare, at any
+equilibrium, is a constant approximation to the best achievable welfare under truth-telling after
+excluding the welfare contribution of a single buyer. This provides a concrete recommendation
+for how to set the auction parameters in practice in order to achieve guarantees, even in the face
+of strategic participants.
+Supported in part by NSF CCF-1420381 and by a Microsoft Research PhD Fellowship. Supported in part by NSF award
+DMS-1903037 and a Columbia Data Science Institute postdoctoral fellowship.
+ySupported in part by NSF Award 1841550, “EAGER: Algorithmic Approaches for Developing Markets.”
+33rd Conference on Neural Information Processing Systems (NeurIPS 2019), Vancouver, Canada.1 Introduction
+Licenses for carbon and other emissions are a market-based policy tool for reducing pollution and mitigating
+the effects of climate change. Roughly speaking, a government agency distributes pollution licenses to ﬁrms
+according to some mechanism. At the end of a period of time (e.g., a year), ﬁrms must submit licenses to cover
+their pollution or else face severe penalties. Different ways of distributing licenses are possible. For example, if
+licenses are simply sold at a ﬁxed price to anyone who wishes to pay, then this is equivalent to a carbon tax where
+polluters must pay a linear fee to offset their emissions. Alternatively, in a cap-and-trade mechanism, the agency
+releases a ﬁxed number Cof pollution licenses, either via a pre-determined allocation at no price (e.g., based
+on prior pollution or industry averages) or via auction, and then polluters can trade these licenses on the open
+market. Many emission trading systems take features of both schemes, combining a cap-and-trade market with a
+price ﬂoorp, where each license must be sold above the reserve price of p, and/or a price ceiling p, where an
+extra license beyond the cap can always be purchased at a price of p. In general, such a pollution license market is
+referred to as an Emission Trading System (ETS).
+There are many important ETS in effect today. The EU ETS has thousands of participating ﬁrms and has raised
+billions of dollars in auction revenue over the past 10 years [ 2]. The Western Climate Initiative runs a license
+auction that is linked between California and Quebec [ 4,1], and the Regional Greenhouse Gas Initiative (RGGI,
+pronounced ‘Reggie’) serves New England and the New York region [ 3]. These markets differ in the details of
+their implementations, but in each case, licenses are distributed on a regular schedule, with a signiﬁcant quantity
+of those licenses sold at auction.
+One can model such a license auction as a multi-unit auction; that is, an auction for multiple identical goods.
+There is no bound on the supply of goods, but there is a cost of production corresponding to the social cost of
+more pollution. The social cost is typically assumed to be increasing and convex, and the value for licenses
+for each buyer is commonly assumed to be increasing and concave [ 27]. Each of the ETS described above
+uses a uniform-price auction rule to resolve this multi-unit auction. Such auctions proceed roughly as follows.
+Participating ﬁrms declare bids, as a non-decreasing concave function that describes their willingness-to-pay for
+varying quantities of licenses. This can alternatively be viewed as a list of non-increasing marginal bids for each
+successive license. Any marginal bids below the reserve price pare removed, and licenses are then distributed to
+the highest remaining marginal bids while supplies last. Each ﬁrm then pays a ﬁxed price pper license, where pis
+set to some value between the lowest marginal winning bid and the highest marginal losing bid. Such auctions are
+not truthful, but are common in practice due to their many advantageous properties; see, e.g., Chapter 7 of [22].
+Implementing a uniform-price auction for carbon licenses presents an optimization challenge: good outcomes
+require that the system designer correctly sets the quantity of licenses to distribute and/or the price (either direct
+price or auction reserve) at which they will be sold. The goal is to maximize social welfare : the aggregate value
+that ﬁrms receive for their licenses (i.e., by producing goods) minus the externality on society caused by polluting
+the corresponding amount during production. This optimization problem is complicated by uncertainty. Even
+if the social cost of pollution is fully known, the designer may not know what the demand for licenses will be,
+which makes it hard to predict the optimal level of pollution to allow. The goal of the designer, then, is to set
+the parameters of the uniform price auction to maximize the expected outcome over uncertainty in the market.
+Notably, the presence of social costs signiﬁcantly increases the complexity of multi-unit auctions, since efﬁciency
+becomes a mixed-sign objective. Even a slight misallocation of the licenses, resulting in a small reduction of
+received value, might have a disproportionately large effect on net welfare. In practice, inefﬁcient allocations may
+be partially resolved in the trade phase of cap-and-trade systems. However, there are signiﬁcant trading frictions,
+so it is imperative to choose an initial allocation, via the auction, that is as efﬁcient as possible.
+Since uniform price auctions are not truthful, one must account for strategic behavior. A notable feature of ETS
+markets in practice is that, despite their size, they commonly have a small number of participants with signiﬁcant
+market power.3The presence of dominant players suggests imperfect competition and raises the issue of strategic
+manipulation, in which large individual ﬁrms try to inﬂuence the market in their favor. One particular concern is
+demand reduction, where ﬁrms reduce their bids to suppress the price determined by the auction. We ask: how
+should one set auction parameters to (approximately) maximize welfare, in the face of strategic bidding?
+1.1 Roadmap
+In this paper we apply ideas from theoretical computer science to approach the design of carbon license auctions
+with strategic ﬁrms. As a result, we provide a concrete recommendation, backed by provable approximation
+guarantees, for how to set the parameters of the mechanism used in practice.
+3For example, in the EU ETS, the top 10 ﬁrms together control approximately 30 percent of all licenses allocated and
+traded; see [9], page 127.
+1Our main result is a cap-and-price auction whose welfare in equilibrium approximates the maximum welfare of a
+cap-and-price auction with non-strategic reporting in markets without a single dominant bidder. In Section 2, we
+introduce our model and formally deﬁne cap-and-price auctions. In Section 3, we ﬁrst show that we can restrict
+attention to cap-and-price auctions with an inﬁnite price ceiling (i.e., ones who never sell more licenses than the
+cap). We then derive a class of such cap-and-price auctions, which we call safe-price auctions, whose performance
+in equilibrium approximates the performance in a non-strategic setting. Thus it sufﬁces to show that the best
+safe-price auction approximates the best cap-and-price auction in a non-strategic setting. However, this is not true:
+we give an example where it can be unboundedly worse. In Section 4, we demonstrate that the only barrier to this
+is the existence of a dominant bidder, yielding our main result.
+1.2 Related Work
+Our work is related to rich line of literature in economics comparing emission licence auction formats and
+ﬂat “carbon tax” pricing methods to control the externalities of pollution. Weitzman [ 27] proposed a model of
+demand uncertainty and initiated a study comparing price-based vs quantity-based screening in the context of
+pollution externalities. Kerr and Cramton [ 10] noted that auctions tend to generate more efﬁcient outcomes than
+grandfathered contracts (i.e., pre-determined allocations based on prior usage), which distort incentives to reduce
+pollution and efﬁciently redistribute licenses. Cramton, McKay, Ockenfels and Stoft [ 11] subsequently lay out
+arguments in favor of tax-based approaches. Murray, Newell, and Pizer [ 23] analyze the use of price ceilings
+in emission license auctions, and argue that they provide beneﬁts of both auction-based and tax-based systems,
+improving efﬁciency in dynamic markets with intertemporal arbitrage. For a recent overview of auction-based
+systems used in practice, from both the economic and legal perspectives, we recommend [9].
+Within the theoretical computer science community, there have been numerous studies of the efﬁciency of auction
+formats at equilibrium. For multi-unit auctions without production costs (or, equivalently, no social cost of
+pollution), the price of anarchy of the uniform-price auction was shown to be constant for full-information settings,
+and this was subsequently extended to Bayes-Nash equilibria [ 20,13]. Our work can be seen as an extension
+of that work to the setting with a convex cost of allocation. Auctions with production costs have also been
+studied [ 6,15], but primarily from the perspective of mechanism design, where the goal is to develop allocation
+and payment rules to achieve efﬁcient outcomes. In the present work we do not take a mechanism design approach;
+we instead restrict our attention to (non-truthful) uniform price auctions, as these are used in practice, and study
+bounds on the worst-case welfare at equilibrium under different choices of the auction parameters. For additional
+related work, see Appendix A.
+2 Preliminaries
+There arenﬁrms seeking to purchase carbon licenses. Licenses are identical, and each permits one pollution
+unit. Each ﬁrm ihas a concave non-decreasing valuation curve Vi()that maps a number of pollution units
+x2Z0to a value R0; this is the value they enjoy for polluting this amount. The proﬁle of valuation curves
+V= (V1;:::;Vn)is drawn from a publicly-known distribution Fover proﬁles, where the draw of Vi()is the
+private information of ﬁrm i. Valuations are drawn independently across ﬁrms, so F=F1:::Fnis a product
+distribution and ViFi.
+There is a publicly known convex increasing cost function Q()that maps pollution units x2Z0to the value of
+externality that society faces for this much pollution. Given a valuation proﬁle (V1;:::;Vn), the welfare of an
+allocation rule x= (x1;:::;xn)isP
+iVi(xi) Q(Pn
+i=1xi). Our objective is to maximize expected welfare.
+Given an auction Mand a distribution Fover input proﬁles, we will write W(M;F )for the expected welfare of
+Mon input distribution F. We will sometimes drop the dependence of Fand simply write W(M)whenFis
+clear from context. We emphasize that W(M)is a non-strategic notion of welfare; it is the expected welfare of
+Mwith respect to inputs drawn from F, or equivalently the welfare of Munder truthful reporting when agent
+valuations are distributed according to F.
+Motivated by license auctions used in practice, we study a particular form of uniform price auction that we call a
+cap-and-price auction which forces prices to be within some ﬁxed interval.4A uniform-price auction allocates
+Clicenses and determines a per-license price pand each ﬁrm ipayspi=pxi. We can think of cap-and-price
+(formally deﬁned in deﬁnition B.1) as a uniform price auction of up to Clicenses, where the price is set to the
+lowest winning marginal bid, with two modiﬁcations. First, there is a reserve price p, so that possibly fewer than
+Clicenses are sold if there is not enough demand at price p. Second, if the lowest winning marginal bid would be
+larger thanp, then the price is lowered to pand ﬁrms can purchase as many licenses as they like at this price.
+4Note the cap is not a hard constraint, but rather governs which prices bind.
+23 Safe-Price Auctions
+We will derive a class of cap-and-price auctions, which we will call safe-price auctions, whose performance in
+equilibrium approximates their non-strategic welfare. The hope is that the non-strategic welfare of this class then
+approximates the non-strategic welfare of the larger class of cap-and-price auctions.
+Deﬁnition 3.1. Asafe-price auction M(C) is a cap-and-price auction M(C;p;p)parameterized by a license
+quantityC, a price ﬂoor p=Q(C)=C, and price ceiling p=1.
+This deﬁnition restricts cap-and-price auctions in two ways. First, the price ceiling is now inﬁnite. Second,
+we have imposed a lower bound on the price ﬂoor.5The ﬁrst restriction is for convenience, since Lemma 3.1
+shows that this does not cause much loss in welfare. We notate mechanisms with no price ceiling (p=1)as
+M= (C;p). Note that, when is there is no price ceiling, only exactly Cor less thanClicenses will be allocated.
+The proof of Lemma 3.1 appears in Appendix C.
+Lemma 3.1. For any distribution Fand any cap-and-price auction M(C;p;p), there exist a cap C0and price
+ﬂoorp0such thatW(M(C0;p0;1))1
+2W(M(C;p;p)).
+The second way safe-price auctions restrict price-and-cap auctions is with a lower bound on the price ﬂoor. As
+Example C.1 shows, the equilibrium welfare of cap-and-price auctions, even those with an inﬁnite price ceiling,
+suffer from “demand reduction" in which a bidder improves her price, and hence utility, by asking for fewer
+units. This can have drastic consequences on welfare, causing it to become negative, due to the existence of the
+social cost. In particular, this means the approximation of such auctions, relative to the best welfare attainable in
+non-strategic settings, is unbounded.
+Example C.1 illustrates that strategic behavior can cause licenses to be allocated to agents whose marginal values
+for these licenses are below Q(C)=C, causing the aggregate value from allocating Clicenses to fall below Q(C).
+Safe-price auctions seek to prevent this by imposing a sufﬁciently high price ﬂoor; the following lemma (with
+proof in Appendix C) shows they are successful. Namely, we show safe-price auctions have good equilibria
+compared to their own non-strategic welfare. This motivates us to focus on analyzing the non-strategic welfare of
+safe-price auctions.
+Lemma 3.2. For any safe-price auction M(C), the expected welfare at any Bayes-Nash equilibrium is at least
+(1
+3:15)W(M(C)).
+4 Welfare Approximation
+Motivated by Lemma 3.2, we would like to show that the non-strategic welfare of safe-price auctions approximates
+that of cap-and-price auctions. Unfortunately, there are cases where this does not hold, as demonstrated by
+Example D.1. The example is driven by a single ﬁrm that dominates the market and has high variance in their
+demand. We next show that this is the only barrier to a good approximation: either a safe-price auction is
+constant-approximate, or else one can approximate the optimal welfare by selling to just a single ﬁrm. To this end,
+we will be interested in the expected maximum welfare attainable by allocating licenses to just one ﬁrm, which we
+will denoteW(1) 6
+The following theorem is our main result; its proof is found in Appendix D.
+Theorem 4.1. There exists a constant csuch that, for any cap Cand price ﬂoor p, there exists C0such that
+cW(M(C0)) +W(1)W(M(C;p)).
+Note that a corollary of Theorem 4.1 (combined with Lemmas 3.1 and 3.2) is that for any cap-and-price auction
+M(C;p;p), there exists some C0such that the expected welfare of any Bayes-Nash equilibrium of M(C0)is at
+least a constant factor of W(M(C;p;p)) W(1). That is, the worst-case equilibrium welfare is a constant-factor
+approximation to the best welfare achievable by any cap-and-price auction under truth-telling, excluding the
+welfare contribution of a single ﬁrm.
+Also,W(1)is the expected welfare of a truthful mechanism that we call M(1), described in Appendix D. Another
+corollary of Theorem 4.1 is that one can approximate the non-strategic welfare of any cap-and-price auction using
+either a safe-price auction (so the approximation holds at any Bayes-Nash equilibrium), or using the (truthful)
+mechanismM(1)that allocates licenses to at most one ﬁrm.
+5In fact we set pto be equal toP(C), but our results still hold if this is relaxed to pP(C).
+6That is, W(1)=EVF[max i;x0fVi(x) Q(x)g].
+3References
+[1]California Air Resources Board | Quarterly Auction Information. https://ww3.arb.ca.gov/cc/
+capandtrade/auction/auction.htm . Accessed: 2019-09-06.
+[2]EU Emissions Trading System (EU ETS). https://ec.europa.eu/clima/policies/ets_en . Ac-
+cessed: 2019-09-06.
+[3] RGGI, Inc. https://www.rggi.org/ . Accessed: 2019-09-06.
+[4] Western Climate Initiative, Inc. http://www.wci-inc.org/ . Accessed: 2019-09-06.
+[5]Lawrence M. Ausubel, Peter Cramton, Marek Pycia, Marzena Rostek, and Marek Weretka. Demand
+Reduction and Inefﬁciency in Multi-Unit Auctions. Review of Economic Studies , 81(4):1366–1400, 2014.
+[6]A. Blum, A. Gupta, Y . Mansour, and A. Sharma. Welfare and Proﬁt Maximization with Production Costs. In
+2011 IEEE 52nd Annual Symposium on Foundations of Computer Science , pages 77–86, Oct 2011.
+[7]Chi Kin Chau and Kwang Mong Sim. The price of anarchy for non-atomic congestion games with symmetric
+cost maps and elastic demands. Operations Research Letters , 31(5):327 – 334, 2003.
+[8]Richard Cole, Yevgeniy Dodis, and Tim Roughgarden. Bottleneck Links, Variable Demand, and the Tragedy
+of the Commons. Netw. , 60(3):194–203, October 2012.
+[9] Deborah Cotton. Emissions Trading Design – A Critical Overview, edited by stefan e. weishaar. published
+by edward elgar, uk, 2014, pp. 249, isbn: 978 1 78195 221 4, aud$114.00 (hardcover). Australian Journal of
+Agricultural and Resource Economics , 59(1):156–158, 2015.
+[10] Peter Cramton and Suzi Kerr. Tradeable carbon permit auctions: How and why to auction not grandfather.
+Energy Policy , 30(4):333–345, 2002.
+[11] Peter Cramton, David JC MacKay, Axel Ockenfels, and Steven Stoft. Global Carbon Pricing: The Path to
+Climate Cooperation . The MIT Press, 06 2017.
+[12] Peter Cramton and Steven Stoft. Why We Need to Stick with Uniform-Price Auctions in Electricity Markets.
+The Electricity Journal , 20(1):26–37, 2007.
+[13] Bart de Keijzer, Evangelos Markakis, Guido Schäfer, and Orestis Telelis. Inefﬁciency of Standard Multi-unit
+Auctions. In Hans L. Bodlaender and Giuseppe F. Italiano, editors, Algorithms – ESA 2013 , pages 385–396,
+Berlin, Heidelberg, 2013. Springer Berlin Heidelberg.
+[14] Arpita Ghosh and Mohammad Mahdian. Externalities in Online Advertising. In Proceedings of the 17th
+International Conference on World Wide Web , WWW ’08, pages 161–168, New York, NY , USA, 2008.
+ACM.
+[15] Zhiyi Huang and Anthony Kim. Welfare Maximization with Production Costs: A Primal Dual Approach. In
+Proceedings of the Twenty-sixth Annual ACM-SIAM Symposium on Discrete Algorithms , SODA ’15, pages
+59–72, Philadelphia, PA, USA, 2015. Society for Industrial and Applied Mathematics.
+[16] Philippe Jehiel, Benny Moldovanu, and Ennio Stacchetti. How (not) to sell nuclear weapons. The American
+Economic Review , pages 814–829, 1996.
+[17] Thomas Kesselheim, Robert Kleinberg, and Eva Tardos. Smooth Online Mechanisms: A Game-Theoretic
+Problem in Renewable Energy Markets. In Proceedings of the Sixteenth ACM Conference on Economics and
+Computation , EC ’15, pages 203–220, New York, NY , USA, 2015. ACM.
+[18] Ilan Kremer and Kjell Nyborg. Underpricing and Market Power in Uniform Price Auctions. Review of
+Financial Studies , 17(3):849–877, 2004.
+[19] Renato Paes Leme, Vasilis Syrgkanis, and Éva Tardos. Sequential auctions and externalities. In Proceedings
+of the twenty-third annual ACM-SIAM symposium on Discrete Algorithms , pages 869–886. SIAM, 2012.
+[20] Evangelos Markakis and Orestis Telelis. Uniform Price Auctions: Equilibria and Efﬁciency. Theory of
+Computing Systems , 57(3):549–575, Oct 2015.
+[21] David McAdams. Adjustable supply in uniform price auctions: Non-commitment as a strategic tool.
+Economics Letters , 95(1):48–53, April 2007.
+4[22] Paul Milgrom. Putting Auction Theory to Work . Churchill Lectures in Economics. Cambridge University
+Press, 2004.
+[23] Brian Murray, Richard Newell, and William Pizer. Balancing Cost and Emissions Certainty: An Allowance
+Reserve for Cap-and-Trade. Review of Environmental Economics and Policy , 3(1):84–103, 2009.
+[24] Stephen J Rassenti, Vernon L Smith, and Bart J Wilson. Discriminatory Price Auctions in Electricity Markets:
+Low V olatility at the Expense of High Price Levels. Journal of Regulatory Economics , 23(2):109–123,
+March 2003.
+[25] Adrian Vetta. Nash Equilibria in Competitive Societies, with Applications to Facility Location, Trafﬁc
+Routing and Auctions. In 43rd Symposium on Foundations of Computer Science (FOCS 2002), 16-19
+November 2002, Vancouver, BC, Canada, Proceedings , page 416, 2002.
+[26] Robert J. Weber. Making More from Less: Strategic Demand Reduction in the FCC Spectrum Auctions.
+Journal of Economics & Management Strategy , 6(3):529–548, 1997.
+[27] Martin L Weitzman. Prices vs. quantities. The review of economic studies , 41(4):477–491, 1974.
+[28] Robert Wilson. Auctions of Shares. The Quarterly Journal of Economics , 93(4):675–689, 1979.
+5A Additional Related Work
+A similar line of literature studied alternative approaches to the related electricity markets, where individual
+providers sell electricity into a central grid. Whereas the main issue in emission license sales is the social
+externality of production, the main focus in electricity markets was incentivizing participation of small ﬁrms. The
+primary discussion focused on using uniform pricing versus discriminatory pricing in the resulting procurement
+auction [12, 24].
+Uniform-price auctions with costs can be viewed as games for which the designer has a mixed-sign objective (i.e.,
+total value generated minus the social cost of production). Prior work on the price of anarchy under mixed-sign
+objectives has focused primarily on routing games [ 25,7,8]. Results in this space tend to be negative, motivating
+alternative measures of performance (such as minimizing a transformed measure of total cost) that avoid the
+pitfalls of mixed-sign optimization. Our work shows that in an auction setting, use of an appropriately-chosen
+thresholding rule (in the form of a reserve price) can enable a constant approximation to our mixed-sign objective
+of total value minus a convex social cost.
+There is a vast amount of work on auctions with externalities, such as the seminal work of [ 16], and other work
+including externalities in advertising auctions [ 14], characterizations of equilibria in auctions with externalities [ 19],
+and more. However, these externalities are private and held by the buyers, as opposed to public and suffered by
+the seller as in this paper. In this case, the externality functions more like a production cost, as described above.
+Kesselheim, Kleinberg and Tardos [ 17] study the price of anarchy of an energy market auction, which is a similar
+application to the carbon license auction that we study. Their focus is on the uncertainty of the supply and temporal
+nature of the auction, and not on externalities of production, and hence their technical model is quite different.
+The theory of bidding in uniform-price auctions with imperfect competition is well-developed in the economic
+theory literature. Much of this work focuses speciﬁcally on the efﬁciency and revenue impact of demand
+reduction, and how modiﬁcations to the auction format or context might impact it. Demand reduction occurs at
+equilibrium even in very simple settings of full information, can dramatically reduce welfare, and is a concern
+in practice [ 28,26,5]. One way to reduce the inefﬁciency of demand reduction is to perturb the supply, either
+by allowing the seller to adjust the supply after bids are received [ 21], or by randomizing the total quantity of
+goods for sale (or otherwise smoothing out the allocation function) [ 18]. Such results are typically restricted to
+full-information settings. Moreover, these approaches are not necessarily appropriate in the sale of government-
+issued licenses, where one typically expects commitment and certainty about the quantity being sold. In contrast,
+we forego a precise equilibrium analysis and instead argue that setting a sufﬁciently high price ﬂoor can likewise
+mitigate the impact of demand reduction.
+B Additional Preliminaries
+Given some integer x0, we writeV(x)for the maximum aggregate value that could be obtained by optimally
+dividingxlicenses among the ﬁrms. That is, V(x) = max~ y2Zn
++:jjyjj1=xP
+iVi(yi):We refer toVas the combined
+valuation curve . As eachVi()is weakly concave, so is V(). We will sometimes abuse notation and write VF
+to mean that Vis distributed as the aggregate value when (V1;:::;Vn)F. We’ll write W(V;x) =V(x) Q(x)
+for the welfare generated by allocating xlicenses optimally among the ﬁrms.
+We’ll write vi(j) =Vi(j) Vi(j 1)for ﬁrmi’s marginal value for aquiring license j, for eachj1. By
+concavity,vi()is non-increasing. We’ll also write Vi(jjk) =Vi(j+k) Vi(k)for the marginal value of j
+additional items given kalready allocated. We’ll write di(p) = maxfj:vi(j)pgfor the number of units
+demanded by bidder iat pricep.
+We will study equilibria and outcomes of license allocation auctions. An auction takes as input a reported valuation
+Vifrom each ﬁrm i. The auction then determines an allocation x= (x1;:::;xn)and a pricepi0that each ﬁrm
+must pay. The auctions we consider will be uniform price auctions, where the auction determines a per-license
+pricepand each ﬁrm ipayspi=pxi. Given an implicit uniform-price auction, we will tend to write xi(~V)
+(resp.,p(~V)) for the allocation to agent i(resp., per-unit price) when agents report according to ~V. For a given
+valuation proﬁle V, we’ll also write Ui(~V)for the utility enjoyed by ﬁrm iwhen agents bid according to ~V:
+Ui(~V) =Vi(xi(~V)) p(~V)xi(~V):
+ABayes-Nash equilibrium of a uniform-price auction is a choice of bidding strategies = (1;:::;n)for each
+agent, mapping each realized valuation curve Vito a (possibly randomized) reported valuation i(Vi), so that each
+agent maximizes their expected utility by bidding according to igiven that other agents are bidding according to
+6 i. That is, for all Viand all ~Vi, we have
+EV iF i[Ui(i(Vi); i(V i))]EV iF i[Ui(~Vi; i(V i))]:
+We make a standard assumption of no overbidding on behalf of the ﬁrms uniform-price auction, which is motivated
+by the fact that overbidding is a weakly-dominated strategy.
+Deﬁnition B.1. Acap-and-price auction M(C;p;p)is parameterized by a quantity C1, a price ﬂoor p, and a
+price ceiling p>p . The allocation and price are determined as follows:
+1. IfP
+idi(p)C, thenxi=di(p)for alliandp=p.
+2. IfP
+idi(p)<C, thenxi=di(p)for alliandp=p.
+3.Otherwise, choose p=V(C) V(C 1), theCthhighest bid, and choose ~ xto be any optimal allocation
+ofClicenses among the ﬁrms: x2arg max~ y2Zn
++:jjyjj1=CP
+iVi(yi).
+Given social cost function Qand valuation distribution F, we will write OPT for the optimal expected welfare
+obtained by any cap-and-price auction under truthful reporting. That is, OPT= maxC;p;pfW(M(C;p;p))g. We
+will also tend to write C,p, andpfor the parameters that achieve this maximum. We emphasize that this is a
+non-strategic notion: OPTis the maximum expected welfare attainable when bidders report truthfully. We view
+OPT as a benchmark against which we will compare performance at Bayes-Nash equilibrium. Note also that, in
+general, OPTmay be strictly less than the expected welfare of the unconstrained welfare-optimal allocation; an
+example is provided in Appendix E.
+C Omitted Details from Section 3
+Lemma C.1. For any distribution Fand any cap-and-price auction M(C;p;p), there exist a cap C0and price
+ﬂoorp0such thatW(M(C0;p0;1))1
+2W(M(C;p;p)).
+Proof. We show that given any mechanism M= (C1;p;p), we can construct a mechanism M0with price ceiling
+1such thatW(M0)1
+2W(M).
+We can decompose the expected welfare of Minto (a) the welfare attained from the ﬁrst (at most) C1licenses
+sold, and (b) the incremental welfare attained from any licenses sold after the ﬁrst C1.
+Note that the auction M1= (C1;p;1), which isMbut with price ceiling set to 1, achieves welfare precisely
+equal to the former of these two parts. This is because M1always allocates at most C1licenses, and will allocate
+them efﬁciently subject to all marginal values being at least p.
+Next consider the second of these two parts of the welfare of M. If the expected welfare in the second part is
+negative, then we are already done, so suppose not. Whenever more than C1licenses are sold, all licenses are sold
+at pricep, and therefore have marginal value at least p. AuctionM2= (1;p;1), with no license cap and with a
+price ﬂoor of p, will also sell all such licenses that have marginal value at least p. We note, however, that M2
+additionally also includes the marginal contribution of the ﬁrst C1licenses. But we claim that this contribution is
+non-negative: when the event occurs that more than C1licenses are sold, the marginal contribution of the ﬁrst C1
+licenses to the welfare can only be greater than that of those beyond the ﬁrst C1. Thus, since the expected welfare
+in the second part is non-negative, the welfare is only higher if we also include the contribution of the ﬁrst C1
+licenses whenever more than C1licenses are sold. This is precisely the welfare of auction M2= (1;p;1), so
+the welfare of M2is therefore at least that of the second of the two parts of the welfare of M.
+We conclude that W(M1) +W(M2)W(M), and hence either W(M1)orW(M2)is at least1
+2W(M).
+The second way safe-price auctions restrict price-and-cap auctions is with a lower bound on the price ﬂoor. As the
+following example shows, the equilibrium welfare of cap-and-price auctions, even those with an inﬁnite price
+ceiling, suffer from a problem known as demand reduction in which a bidder improves her price, and hence utility,
+by asking for fewer units. This can have drastic consequences on welfare, causing it to become negative, due to
+the existence of the social cost. In particular, this means the approximation of such auctions, relative to the best
+welfare attainable in non-strategic settings, is unbounded.
+Example C.1. Consider two agents, 1and2. Their distributions over valuations will be point-masses, so that the
+valuations are actually deterministic. These valuation functions are given by the following marginals: v1(1) = 10 ,
+v1(2) = 10 ,v2(1) = 6 ,v2(2) = 1 , and all other marginals are 0. We will have C= 2,p= 0,p=1, and the
+7social cost function is given by Q(x) = 9x. Under truthful reporting, the auction M(C;p)allocates 2licenses to
+agent 1at a price of 6each, resulting in a welfare of V1(2) Q(2) = 20 18 = 2 . However, we note that ﬁrm
+1could improve their utility from 8to9by instead reporting a modiﬁed valuation ~Vgiven by ~v1(1) = 10 and
+~v1(2) = 1 . If agent 2continues to report truthfully, M(C;p)will allocate 1license to each agent at a price of 1
+each, resulting in a welfare of V1(1) +V2(1) Q(2) = 16 18 = 2. One can verify that this is indeed a pure
+Nash equilibrium of the auction, and hence a Bayes-Nash equilibrium as well.
+The issue illustrated in Example C.1 is that strategic behavior can cause licenses to be allocated to agents whose
+marginal values for these licenses are below Q(C)=C, causing the aggregate value derived from allocating C
+licenses to fall below Q(C). Safe-price auctions seek to prevent this by imposing a sufﬁciently high price ﬂoor.
+Indeed, the following lemma shows that price ﬂoors do indeed circumvent the issue in the above example. Namely,
+we show safe-price auctions have good equilibria, compared to their own non-strategic welfare. This is the main
+result of this section, and motivates us to focus on analyzing the non-strategic welfare of safe-price auctions.
+Lemma C.2. For any safe-price auction M(C), the expected welfare at any Bayes-Nash equilibrium is at least
+(1
+3:15)W(M(C)).
+Proof. Fix a license cap Cand writep=Q(C)=Cfor the corresponding safe price, and recall that M(C) =
+M(C;p). We claim that this auction is strategically equivalent to a modiﬁed auction, as follows. First, since
+each agent pays at least pper license, we can deﬁne ^vi(j) =vi(j) pfor the residual marginal utility of agent i
+for theirjthlicense, after taking into account that they must pay at least p. Then from each agent’s perspective,
+playing inM(C;p)with marginal values vi(j)is equivalent to playing in M(C;0)with marginal values ^vi(j).
+The welfare generated by the original auction is V(x) Q(x), which is equal to ^V(x) (Q(x) px). So the
+welfare generated by Mis equivalent to the welfare generated with modiﬁed valuations ^V, where the marginal
+social cost of each unit of pollution is reduced by p. But now note that from the deﬁnition of p,Q(x) px0
+for allxC. So in an auction with a cap of C, the welfare is at least the welfare obtained with a social cost of 0;
+it is always non-negative.
+We conclude that the welfare generated by M(C;p), at any equilibrium, is equal to the welfare generated at an
+equilibrium of the standard uniform price auction with modiﬁed valuations ^V. Theorem 3 of [ 13] (which bounds
+the welfare in Bayes-Nash equilibria of uniform auctions without costs) therefore applies7, and the welfare at
+any equilibrium is at least1
+3:15times the optimum achievable under the modiﬁed valuations, which is at most
+W(M(C)).
+D Omitted Details from Section 4
+The following example shows that there are cases where the non-strategic welfare of safe-price auctions does not
+approximate that of cap-and-price auctions. The example consists of just a single ﬁrm that dominates the market
+and whose demand for licenses has high variance. The ﬁrm’s value is always large enough that even at a low price
+and high license cap, the resulting allocation has high net welfare. However, safe-price auctions will generate
+much lower welfare. Roughly speaking, for any number of licenses Cthat the auction designer selects as the cap
+for a safe-price auction, signiﬁcant welfare will be lost from realizations where the ﬁrm’s demand is much higher
+thanC, and the corresponding safe price will exclude welfare gains from realizations where the ﬁrm’s demand
+is much lower than C. If the variance is high enough, this will cause overall welfare to be low regardless of the
+choice ofC.
+Example D.1. We will present an example for which the expected welfare of any safe-price auction M(C)is
+at most anO(1=n)-approximation to OPT. LetQ(x) =x2. There is a single ﬁrm participating in the auction.
+That ﬁrm’s valuation curve is drawn according to a distribution Foverndifferent valuation curves, which we’ll
+denoteV(1);:::;V(n). For alli, valuationV(i)is deﬁned by V(i)(x) = maxf2i+1x;22i+1g. The probability
+thatV(i)()is drawn from Fis proportional to1
+22i. That is, the ﬁrm has valuation V(i)with probability1
+22i,
+where=Pn
+i=12 2i=1
+3(1 2 2n)is the normalization constant. Note that a cap-and-price auction with cap
+C=1and price ﬂoor p= 1achieves welfarePn
+i=122i1
+22i=1
+n;soOPT is at least this large.8
+7The proof of the 3.15 bound in [ 13] is actually for a uniform-second-price auction that charges the highest losing bid, or
+V(C+ 1) V(C); however, the proof is also correct for charging a price of the lowest winning bid V(C) V(C 1).
+8In fact, this is the “ﬁrst-best” welfare obtainable at every possible realization, so this is actually the best possible
+cap-and-price auction and hence the exact value of OPT.
+8(a)
+ (b)
+Figure 1: A visualization of the proofs of Theorem D.1 (a) and Theorem 4.1 (b). The x-axis represents quantity of
+licenses; the y-axis represents value. The expected welfare of benchmark W(M(C;p))is divided into separate
+contributions, based on the location of allocation outcome (x;V(x)); these are depicted as shaded regions. Each
+of these contributions is bounded by either the welfare of a safe-price auction or the welfare obtained from a single
+buyer. Figure (a) is the (simpler) partition used in Theorem D.1, and (b) is the partition used in Theorem 4.1.
+Consider a safe-price auction with cap C0. Suppose that C02(2k;2k+1]for somek1. Then the safe price is
+P(C0) =Q(C0)=C0= (C0)2=C0=C0>2k. If the ﬁrm has valuation V(i)withik 1, then all marginal
+values are strictly below P(C0), then no licenses are allocated and the welfare generated is 0. On the other hand,
+if the ﬁrm has valuation V(i)for anyik, then since at most C02k+1licenses can be purchased, the auction
+generates welfare at most 2i+1(2k+1) (2k+1)2= 22k+2(2i k 1).
+The total expected welfare of M(C0)is therefore at most
+nX
+i=k22k+2(2i k 1)1
+22i=4
+nX
+i=k2 2(i k)(2i k 1)4
+=O(1):
+Since OPT1
+nbutW(M(C0)) =O(1)for allC0, we conclude that no auction with a safe price achieves an
+o(n)-approximation to OPT. This concludes the example.
+We now prove Theorem 4.1, which we restate here for convenience.
+Theorem 4.1. There exists a constant csuch that, for any cap Cand price ﬂoor p, there exists C0such that
+cW(M(C0)) +W(1)W(M(C;p)).
+Recall thatW(1)is the expected welfare of a truthful mechanism that we call M(1). InM(1), the ﬁrms ﬁrst
+participate in a second-price auction for the right to buy licenses. The ﬁrm with the highest bid wins, and pays the
+second-highest bid. The winning ﬁrm can then purchase any number of licenses x0, for which they pay Q(x)
+(in addition to their payment from the initial second-price auction). Since the utility obtained by ﬁrm iif they win
+the initial auction is precisely maxxfVi(x) Q(x)g, and since a second-price auction is truthful and maximizes
+welfare, we can conclude that W(M(1)) =W(1).
+We are now ready to prove Theorem 4.1. Fix a cost function Qand distribution F, and choose the optimal cap C
+and price ﬂoor psuch thatW(M(C;p))is maximized. Let d()andx()be the demand and allocation functions
+forM(C;p). For any given realization of preferences V, there is a total demand d(V) =P
+idi(p), where again,
+di(p) = arg maxxVi(x) px. Recall also that W(x;V) =V(x) Q(x)is the welfare generated by allocation
+xgiven aggregate valuation V.
+We will begin by proving a simpler version of Theorem 4.1, which is parameterized by q:= Pr[d(V)C], the
+probability that the auction sells Clicenses. When qis bounded away from 0, we show that there is a safe-price
+auction that achieves an O(1=q)-approximation to W(M(C;p)). We note that this result does not require ﬁrm
+valuations to be independent, and holds even if the valuations are drawn from an arbitrarily correlated distribution
+F. We will explain in Section D.1 how to extend the argument to the general case of Theorem 4.1, with details
+deferred to the appendix.
+Theorem D.1. For the welfare-optimal cap Cand price ﬂoor p, there exists a cap C0such that (1 + 2=q)
+W(M(C0))W(M(C;p)).
+9Proof. The welfare generated by M(C;p)can be broken down as follows:
+W(M(C;p)) = PrVF[d(V)C]E[W(x(V);V)jd(V)C]
++ PrVF[d(V)<C]E[W(x(V);V)jd(V)<C]:
+The ﬁrst term is the contribution to the welfare from events where Clicenses are sold (or, equivalently, at least C
+licenses are demanded). The second term is the contribution from events where the total demand for licenses is
+less thanC.
+Consider price P(C), the safe price for quantity C. We wish to decompose the second term in the expression
+above into marginal values above P(C)and those below P(C). For this, we need to introduce some notation.
+Writeifor the largest j1such thatVi(j)P(C), ori= 0ifVi(1)<P(C). Writex>
+i= minfxi;ig, and
+writex<
+i=xi x>
+i. Thenx>
+iis the part of allocation xifor which ﬁrm ihas marginal value is at least P(C)
+per unit, and x<
+iis the part of xifor which ﬁrm ihas a marginal value less than P(C)per unit. We’ll also deﬁne
+V<
+iasV<
+i(x) =V<
+i(xji); this is the marginal value of ifor receiving xadditional licenses after already having
+receivedilicenses. Note then that Vi(xi) =Vi(x>
+i) +V<
+i(x<
+i), for alli. We then have
+PrVF[d(V)<C]E[W(x(V);V)jd(V)<C]
+=Z
+V:d(V)<C X
+iVi(xi(V)) Q(x(V))!
+dFV
+Z
+V:d(V)<C X
+iVi(x>
+i(V)) Q(x>(V))!
+dFV +Z
+V:d(V)<C X
+iV<
+i(x<
+i(V)) Q(x<(V))!
+dFV
+where the ﬁnal inequality used the fact that Q(x)Q(x<) +Q(x>), due to the convexity of Q. We conclude
+that
+W(M(C;p))PrVF[d(V)C]E[W(x(V);V)jd(V)C] (1A)
++Z
+V:d(V)<C X
+iVi(x>
+i(V)) Q(x>(V))!
+dFV (1B)
++Z
+V:d(V)<C X
+iV<
+i(x<
+i(V)) Q(x<(V))!
+dFV (1C)
+so thatW(M(C;p))(1A) +(1B)+(1C). See Figure D(a) for an illustration.
+We claim that the welfare obtained from the ﬁrst two terms, (1A) and(1B), are covered by the safe-price auction
+with capC. The intuition is that a price ﬂoor of P(C)does not interfere with the welfare contribution due to
+licenses with marginal values greater than P(C). One subtlety is that some of the licenses in the summation
+(1A) might have marginal values less than P(C), but it turns out that it can only improve welfare to exclude such
+licenses from the allocation.
+Claim D.1. W(M(C))(1A) +(1B).
+Proof. Writed0andx0for the demand and allocation under auction M(C), respectively. We have
+W(M(C)) = PrVF[d(V)C]E[W(x0(V);V)jd(V)C]
++ PrVF[d(V)<C]E[W(x0(V);V)jd(V)<C]:
+Note that we intentionally use d(V), the demand for M(C;p), rather than d0(V)in the expressions above. The
+second term is precisely (1B), sincex0
+i=x>
+ifrom the deﬁnition of x>. We claim that the ﬁrst term is at least (1A) .
+To see why, ﬁx any Vwithd(V)C(and corresponding allocation x=x(V)where necessarilyjxj=C), and
+note thatx0
+ixifor alli. Furthermore, Vi(x0
+i)Vi(xi) (xi x0
+i)P(C), sincex0
+iis simplyxiafter possibly
+excluding some items with marginal value less than P(C). Thus, sincejxj=C,
+V(x0) jx0jP(C)V(x) jxjP(C) =V(x) Q(jxj):
+Also, by convexity, we have Q(y)yP(C)for ally2[0;jxj]. In particular, we have V(x0) Q(jx0j)
+V(x0) jx0jP(C)V(x) Q(jxj), and hence
+PrVF[d(V)C]E[W(x0(V);V)jd(V)C]PrVF[d(V)C]E[W(x(V);V)jd(V)C]
+as claimed.
+10The more difﬁcult part of the proof of Theorem D.1 is to account for term (1C). This represents the contribution
+of licenses whose marginal values lie below P(C), and are therefore excluded when the price ﬂoor is set to
+p=P(C). What we show is that the welfare contribution from all such licenses is approximated by W(M(C=2)),
+the welfare obtained by the safe auction with cap C=2.9We do this in three steps. First, we show that any optimal
+cap-and-price auction M(C;p)must generate non-negative expected welfare conditional on selling Clicenses.
+The intuition is that if the expected welfare from selling Clicenses is negative, then it must be strictly preferable
+to reduce the quantity of licenses.
+Lemma D.1. If capCand price ﬂoor pare chosen to maximize W(M(C;p)), thenEVF[W(M(C;p))jd(V)
+C]0;whered(V)is the total quantity of licenses demanded at price p.
+Proof. Suppose not. Then it must be that E[W(V;x(V))jd(V)C]<0:We will show this implies W(M(C 
+1;p))>W (M(C;p)), contradicting the optimality of C. To see why, note that when d(p)<C, the welfare of the
+two auctions is identical. Write xandx0for the allocation functions from M(C;p)andM(C 1;p), respectively.
+WhenxC, we havex0=C 1, andV(x0)C 1
+xV(x)by concavity. Similarly, Q(x0)C 1
+xQ(x)by
+convexity. Thus, for any Vsuch thatd(V)Cand hencex(V) =C, we have
+V(x0(V)) Q(x0(V))C 1
+x(V)(V(x(V)) Q(x(V))) =C 1
+C(V(x(V)) Q(x(V))):
+Taking expectations, we therefore have
+E[V(x0(V)) Q(x0(V))jd(V)C]C 1
+C(E[V(x(V)) Q(x(V))jd(V)C])
+>E[V(x(V)) Q(x(V))jd(V)C]
+where the last inequality follows because E[V(x(V)) Q(x(V))jd(V)C]<0by assumption. This implies
+W(M(C 1;p))>W (M(C;p)), which is the desired contradiction.
+Next, for any cap-and-price auction M, we provide an upper bound on the total welfare contribution that comes
+from events where x<C licenses are sold, and the average marginal value of the sold licenses, V(x)=x, is less
+thanP(C). In fact, it will be useful to state the lemma more generally: we provide a more general bound that
+applies to any ~CCand any valuation that is at most P(~C)x(not necessarily V(x)). The lemma bounds the
+total welfare contribution, P(~C)x Q(x), by the difference in price between (a) ~Clicenses sold at the safe
+price for ~C, and (b) the same ~Clicenses sold at the safe price for ~C=2.
+Lemma D.2. Choose some quantity ~Cand a number of licenses x~C. ThenP(~C)x Q(x)~C(P(~C) 
+P(~C=2)).
+Proof. Supposex~C=2. ThenQ(x)x
+~C=2Q(~C=2)by convexity. So P(~C)x Q(x)x
+P(~C) Q(~C=2)=(~C=2)
+~C(P(~C) P(~C=2))as claimed.
+Next suppose x < ~C=2. Then (x;P(~C)x)and(x;Q(x))both lie between the line through the origin with
+slopeP(~C), and the line between (~C;Q(~C))and(~C=2;Q(~C=2)). Their difference is therefore at most twice the
+difference between those two lines at x-coordinate ~C=2, which is (~C=2)(P(~C) P(~C=2)).
+We are now ready to bound the contribution of (1C). The intuition is as follows. By Lemma D.2, the contribution
+from (1C) is at most (a constant times) the gap between the line y=P(C)xand the curve Q(x)at point
+x=C=2. But recall that Pr[d(V)C] =q, and Lemma D.1 implies that, on average, the expected marginal
+value of licenses allocated subject to this event is at least P(C). Therefore, if we set a license cap of C=2, then
+with probability at least qallC=2licenses will be sold at an average expected marginal value of at least P(C).
+The welfare generated in this case covers the “gap” at C=2, and hence covers the loss due to excluding licenses
+with marginal values at most P(C).
+Claim D.2. W(M(C=2))1
+2q(1C).
+9For convenience we will assume Cis even for the remainder of this section. When Cis odd, the result holds for at least
+one of the ﬂoor or the ceiling of C=2. Details appear in the full version.
+11Proof. Writed0andx0for the demand and allocation under mechanism M(C=2), respectively. Choose any V
+such thatd(V)C. For any such V,d0(V)d(V), and is formed by removing items with marginal value at
+mostP(C=2). In particular, since x0(V)d0(V), we haveV(x0(V))V(C) (C x0(V))P(C=2). Noting
+thatQ(jx0(V)j)jx0(V)jP(C)sincex0(V)x(V), we have
+V(x0(V)) Q(jx0(V)j)V(x0(V)) jx0(V)jP(C)
+V(C) (C jx0(V)j)P(C=2) jx0(V)jP(C):
+Taking an expectation over all Vsuch thatd(V)C, we note that Lemma D.1 implies E[V(C)]CP(C).
+We therefore have
+E[V(x0(V)) Q(jx0(V)j)]CP(C) (C E[jx0(V)j])P(C=2) E[jx0(V)j]P(C)
+= (C E[jx0(V)j])(P(C) P(C=2))
+(C=2)(P(C) P(C=2))
+where in the last inequality we used that jx0(V)jC=2by deﬁnition. Since Pr[d(V)C] =q, we therefore
+have that
+W(M(C=2))Pr[d(V)C]E[V(x0(V)) Q(jx0(V)j)jd(V)C]q(C=2)(P(C) P(C=2):
+We now claim that (C=2)(P(C) P(C=2)(1C)=2, completing the proof. To see why, note that for any x<C
+and anyV,V<(x) Q(jxj)jxjP(C) Q(jxj). Thus (1C)maxxfjxjP(C) Q(jxj)g. But note that
+for anyx>C= 2, we haveQ(x)>jxjP(C=2), and hencejxjP(C) Q(jxj)jxj(P(C) P(C=2))
+(C)(P(C) P(C=2)). Also, for any x< C= 2,Q(jxj)lies above the line joining (C=2;Q(C=2))and
+(C;Q(C)), and hencejxjP(C) Q(jxj)is at most the distance between jxjP(C)and this line, which is at
+most (C)(P(C) P(C=2)). So in either case we have maxxfjxjP(C) Q(jxj)gC(P(C) P(C=2))
+as required.
+Combining Claim D.1 and Claim D.2 we have that W(M(C)) + (2=q)W(M(C=2))W(M(C;p)), which
+completes the proof of Theorem D.1.
+As a corollary, Theorem D.1 combined with Lemma 3.2 and Lemma 3.1 implies that for any cap and price auction
+M(C;p;p), there exists a safe-price auction M(C0)such that, at any Bayes-Nash equilibrium of M(C0), the
+expected welfare generated is at least1
+3:151
+21
+1+2=qW(M(C;p;p)). In particular, if qis a constant bounded
+away from 0, thenM(C0)obtains a constant fraction of W(M(C;p;p))at any Bayes-Nash equilibrium.
+D.1 The General Case
+We complete the proof of Theorem 4.1 in Appendix D.2. Here we describe at a high level what steps are
+needed to complete the argument. We will focus on the case where Pr[d(V)C]<1 1=e, since if
+Pr[d(V)C]1 1=ethen Theorem 4.1 follows from Theorem D.1.
+Recall that in Claim D.2, we used the assumption that Pr[d(V)C] =qto argue that the welfare gained in
+M(C=2)in the event that d(V)Ccovers the welfare lost from marginals lying below P(C), up to a constant
+factor. If the probability that d(V)Cis small, then this may no longer be true. To handle this, we consider
+a reduced cap Cmed< C set to be the largest integer such that Pr[d(V)Cmed]1 1=e. Our hope is to
+reproduce the argument from Claim D.2, but substituting CmedforC. To this end, we divide the welfare of
+M(C;p)intofour parts: all welfare under the event that d(V)>C; all welfare from individual agents whose
+demand is at least Cmed; the contribution of marginal values greater than P(Cmed)(but with individual ﬁrms
+demanding at most Cmed) whend(V)< C , and the contribution of marginal values less than P(Cmed)when
+d(V)<C. See Figure D(b) for an illustration.
+As in the proof of Theorem D.1, the contribution due to events where d(V)>C can be covered by the welfare of
+M(C;P(C)).
+The contribution from agents who individually demand at least Cmedlicenses is a new case that we didn’t have to
+handle in Theorem D.1. It is here that we use M(1), allocating to any single agent. Because the total demand is
+at most than Cmedwith probability at least 1=e, independence implies that the expected number of agents who
+demand more than Cmedlicenses is at most 1, given that the probability that none have demand more Cmedmust
+be at least 1=e. So the total contribution to welfare of all such events is at most W(M(1)).
+Ifd(V)Cmed, then the contribution from marginal values that are at least P(Cmed)can be covered by the
+welfare ofM(Cmed;P(Cmed)), precisely as in Claim D.1. We must also handle the case that d(V)2[Cmed;C],
+12and consider the welfare contribution of agents that do not (individually) demand more than Cmedlicenses. Here
+we use independence: the total quantity demanded by such “small” agents is likely to concentrate, so it is unlikely
+that the total demand will be larger than 2Cmed. Thus, by imposing a cap of Cmed, we lose at most a constant
+factor of the welfare from marginal values greater than P(Cmed).
+The ﬁnal step is to show that W(M(Cmed=2))obtains at least a constant fraction of the welfare generated by
+marginal values less than P(Cmed), similarly to Claim D.2. When proving Claim D.2, we used Lemma D.1
+to argue about the welfare generated by events where d(V)>C. Unfortunately, Lemma D.1 does not extend
+toCmed: it could be that the expected welfare generated by M(Cmed;P(Cmed)), conditional on selling Cmed
+licenses, is negative. However, we canprove an upper bound on how negative this expected welfare can be. After
+all, if the expected welfare is sufﬁciently negative sufﬁciently often, it would be welfare-improving to increase the
+price ﬂoor of M(C;p)fromptoP(Cmed), contradicting the supposed optimality of M(C;p). This turns out to
+be enough to prove a bound similar to Claim D.2.
+Combining these bounds, we can conclude that each of the four parts of the welfare of M(C;p)can be covered by
+either a safe-price auction or by M(1), which completes the proof of the theorem.
+D.2 Remaining Details
+Recall the statement of Theorem 4.1: for any cap Cand price ﬂoor p, there exists C0and a constant csuch that
+cW(M(C0)) +W(M(1))W(M(C;p)).
+As in the proof of Theorem D.1, the welfare generated by M(C;p)can be broken down as follows:
+W(M(C;p)) = PrVF[d(V)C]E[W(x(V);V)jd(V)C]
++ PrVF[d(V)<C]E[W(x(V);V)jd(V)<C]
+We will break down the second term into three sub-terms. Recall that we can assume Pr[d(V)C]1 1=e.
+ChooseCmed<C so that Pr[d(V)C] = 1 1=e. We will write xi=x
+i+x>
+i+x<
+i. IfxiCmedthen we
+setx
+i=xiandx>
+i=x<
+i= 0, otherwise we set x
+i= 0. In this latter case, we set x>
+iandx<
+isimilarly as in
+case1, except that we consider marginal values above and below P(Cmed)rather thanP(C). That is, if iis
+the largestj1such thatvi(j)P(Cmed)(ori= 0ifvi(1)<P(Cmed)), we havex>
+i= minfxi;igand
+x<
+i=xi x>
+i. And as before, we will deﬁne V<
+iasV<
+i(x) =V<
+i(xji), the valuation of icounting only those
+marginal values less than P(Cmed).
+Using convexity of Qas in case 1, we then have
+W(M(C;p))PrVF[d(V)C]E[W(x(V);V)jd(V)C] (2A)
++Z
+V:d(V)<C(X
+iVi(x
+i(V)) Q(x(V)))dFV (2B)
++Z
+V:d(V)<C(X
+iVi(x>
+i(V)) Q(x>(V)))dFV (2C)
++Z
+V:d(V)<C(X
+iV<
+i(x<
+i(V)) Q(x<(V)))dFV (2D)
+so thatW(M(C;p))(2A) + (2B) + (2C) + (2D).
+As in Theorem D.1, we have that W(M(C))(2A). For (2B), note that the probability that every bidder ihas
+xi<C medis at least 1=e, from the deﬁnition of Cmed. If we write pifor the probability that xi<C med, then
+we haveQ
+ipi1=e. Subject to this condition, the value ofP
+i(1 pi)is maximized by setting all piequal, in
+which case we haveP
+i(1 pi)n(1 e 1=n)1. But this means that the expected number of agents with
+xiCmedis at most 1. Thus, (2B)is at most the value of allocating to just a single bidder with xi> C med,
+which is at most the maximum possible welfare attainable from allocating to any one bidder. We therefore have
+thatW(M(1))(2B).
+13We next claim that W(M(Cmed))(2C)=4. To see why, note that
+Z
+V:d(V)<C(X
+iVi(x>
+i(V)) Q(x>(V)))dFV
+2Z
+V:d(V)<C1[x(V)<2Cmed](X
+i
+Vi(x>
+i(V)) x>
+iQ(x>(V))
+x>(V)
+dFV
+4Z
+V:d(V)<C1[x(V)<2Cmed]0
+@X
+i0
+@X
+jx>
+ivi(j)=21
+A x>
+iQ(minfCmed;x>(V)g)
+minfCmed;x>(V)g1
+AdFV
+4W(M(Cmed))
+where the last inequality follows because, when imposing a cap of Cmedon an allocation of total size at most
+2Cmed, the value obtained is at least the top half of all marginal values, which is more than half of all marginal
+values.
+Finally, we claim that W(M(Cmed=2))(2D)=21. Deﬁne 	 := (Cmed=2)(P(Cmed) P(Cmed=2)). Then
+Lemma D.2, combined with the fact that the total demand is at most Cmedwith probability 1=e, implies that
+(2D)(2=e)	.
+We claim that for = 8=3(e 1)1:55, we must have Pr[V(Cmed)<Q(Cmed) 	jd(V)>C med]1=4.
+That is, conditional on having total demand at least Cmed, the probability that the welfare generated at Cmedis
+more negative than  	is at most 1=4. Suppose not: then consider the difference in welfare between M(C;p)
+andM(C;P(Cmed)). The difference is that (2D) would be removed, as would any (negative) contribution with
+V(Cmed)< Q(Cmed)andd(V)> C med. As we noted above, the total contribution of (2D) to the welfare
+is at most 2	=e. But the contribution due to the event V(Cmed)< Q(Cmed) 	andd(V)> C medis at
+most (	)(1 1=e)(3=4). So as long as (8=3(e 1))1:55, we would have W(M(C;P(Cmed)))>
+W(M(C;p)). This contradicts the optimality of M(C;p).
+We can therefore assume Pr[V(Cmed)Q(Cmed) 	jd(V)> C med]1=4. By concavity of Vand
+convexity of Q, this means Pr[V(Cmed=2)Q(Cmed=2) + (2 )	=2jd(V)> C med]1=4. Since
+d(V)> C medwith probability at least 1 1=e, the total welfare generated by M(Cmed=2)from the events
+d(V)> C medis at least (2 )(1 1=e)	=8, and hence W(M(Cmed=2))(2 )(1 1=e)	=8. Since
+(2 )(1 1=e)e=161=21, the result follows.
+We conclude that W(M(C))+W(M(1))+4W(M(Cmed))+21W(M(Cmed=2))W(M(C;p)). This implies
+Theorem 4.1, with c= 26 .
+E Cap-and-Price Auction Outcomes are not Fully Efﬁcient
+We note that cap-and-price auctions cannot always implement the fully optimal allocation rule for every distribution
+F. For an allocation rule to be implementable by some M(C;p;p), it must be that on every input V, either the
+total allocation is C, or the total allocation is at most Cand each agent wins precisely their marginal bids above
+p, or the total allocation is at least Cand each agent wins precisely their marginal bids above p. When there is
+uncertainty about V, such a restricted allocation rule might return suboptimal allocations on some realizations.
+In fact, we note that there are cases where, even under truthful reporting, no cap-and-price auction can achieve a
+non-vanishing approximation of the unrestricted welfare-optimal allocation.
+Example E.1. We present an example for which the expected welfare of any cap-and-price auction M(C;p)is at
+most anO(1=n)-approximation to the unrestricted allocation that can optimize individually for each realization of
+the valuation curves, the welfare of which we call the “ﬁrst-best welfare” in line with economics terminology.
+LetQ(x) =x2. There is a single ﬁrm participating in the auction. That ﬁrm’s valuation curve is drawn
+according to a distribution Foverndifferent valuation curves, which we’ll denote V(1);:::;V(n). For alli,
+valuationV(i)is deﬁned by V(i)(x) = 2i+1x. These curves are depicted in Figure E. The probability that
+V(i)()is drawn from Fis proportional to1
+22i. That is, the ﬁrm has valuation V(i)with probability1
+22i, where
+=Pn
+i=12 2i=1
+3(1 2 2n)is the normalization constant.
+Then in expectation over the realizations of V(), the ﬁrst-best welfare is
+nX
+i=122i1
+22i=1
+n:
+14Figure 2: A depiction of Example E.1, with the welfare achieve by the vertical cap and dashed price ﬂoor denoted
+by the checks and x’s.
+Consider a cap-and-price auction M(C;p). For any cap C, the optimal price ﬂoor is to set p= 2C. This eliminates
+all possible negative welfare contributions at C. As a sanity check, any smaller price ﬂoor allows negative
+contributions, yet any larger price ﬂoor excludes positive contributions. For C02(2k;2k+1], , if the ﬁrm has
+valuationV(i)withik, then all marginal values are strictly below p, so no licenses are allocated and the welfare
+generate is 0. On the other hand, if the ﬁrm has valuation V(i)for anyik+ 1, then since at most C < 2k+1
+licenses can be purchased, the auction generates welfare at most 2i+1(2k+1) (2k+1)2= 22k+2(2i k 1). This
+yields expected welfare
+nX
+i=k+122k+2(2i k 1)1
+22i=1
+nX
+i=k+12 2(i k 1)(2i k 1)
+=1
+n kX
+j=12 2(j 1)(2j 1)
+1
+n kX
+j=12 (j 1)
+=1
+(2 2 (n k 1))
+2
+=o(n):
+In comparison to OPT, any cap-and-price policy is off by an order of n, so noo(1=n)-approximation to the
+ﬁrst-best welfare is possible. This concludes the example.
+15

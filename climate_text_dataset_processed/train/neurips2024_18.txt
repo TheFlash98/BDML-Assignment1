@@ -1,0 +1,563 @@
+End-to-End Conformal Calibration for Robust
+Grid-Scale Battery Storage Optimization
+Christopher Yeh∗, Nicolas Christianson∗, Adam Wierman, Yisong Yue
+Department of Computing and Mathematical Sciences
+California Institute of Technology
+Pasadena, CA 91125
+{cyeh,nchristi,adamw,yyue}@caltech.edu
+Abstract
+The rapid proliferation of intermittent renewable electricity generation demands
+a corresponding growth in grid-scale energy storage systems to enable grid de-
+carbonization. To encourage investment in energy storage infrastructure, storage
+operators rely on forecasts of electricity prices along with uncertainty estimates
+to maximize profit while managing risk. However, well-calibrated uncertainty
+estimates can be difficult to obtain in high-capacity prediction models such as deep
+neural networks. Moreover, in high-dimensional settings, there may be many valid
+uncertainty estimates with varied performance profiles— i.e., not all uncertainty is
+equally valuable for downstream decision-making. To address this challenge, this
+paper develops an end-to-end framework for conditional robust optimization, with
+robustness and calibration guarantees provided by conformal prediction. We repre-
+sent arbitrary convex uncertainty sets with sublevel sets of partially input-convex
+neural networks, which are learned as part of our framework. We demonstrate the
+value of our approach for robust decision-making on a battery storage arbitrage
+application.
+1 Introduction
+Renewable wind and solar electricity generation have seen tremendous growth in the past decade
+[5], but due to their intermittency, a corresponding growth in grid-scale energy storage is needed
+to truly achieve grid decarbonization. To achieve profitability and encourage investment in energy
+storage infrastructure, storage operators use forecasts of electricity prices to schedule battery charg-
+ing/discharging to maximize profit, and they rely on uncertainty estimates to minimize financial
+and operational risk. A common method used by battery storage operators to make decisions under
+uncertainty is robust optimization [ 21,14]. The usual approach known as “estimate then optimize”,
+separates the decision-making problem into two distinct stages. In the “estimate” stage, a predictive
+model is trained to forecast electricity prices, yielding an uncertainty set around future prices. Then,
+in the “optimize” stage, the forecast uncertainty set is used as a parameter in a robust optimization
+problem to output the battery charge/discharge schedule. Notably, any cost or loss associated with
+this downstream decision is usually not provided as feedback to the predictive model.
+While a recent line of work [ 7,16,20,8] has made steps toward bridging the gap between uncertainty
+quantification and robust optimization-driven decision-making, existing approaches are suboptimal
+for several reasons: (1) The predictive model is not trained with feedback from the downstream
+objective , which limits the model’s performance on the decision-making task loss; (2) For the robust
+optimization to be tractable, the forecast uncertainty sets have restricted parametric forms.
+Common parametric forms include box and ellipsoidal uncertainty sets, limiting the expressivity of
+∗denotes equal contribution
+Tackling Climate Change with Machine Learning: workshop at NeurIPS 2024.ML
+model nonconformity
+score functioncalibrated
+(1-)-confidence setconformal
+calibration
+steprobust
+decisionrobust optimization
+Input
+gradient  task lossFigure 1: Our proposed framework for end-to-end conformal calibration for optimization under
+uncertainty updates the machine learning model using gradients from the task loss.
+uncertainty estimates; and (3) Because neural network models are often poor at estimating their
+own uncertainty, the forecasts may not be well-calibrated. Recent approaches such as isotonic
+regression [ 13] and conformal prediction [ 17] have made progress in providing calibrated uncertainty
+estimates from deep learning models, but such methods are typically applied post-hoc to pre-trained
+models and are therefore difficult to incorporate into an end-to-end training procedure.
+In this work, we make three specific contributions addressing each issue identified above. First, we
+develop a methodology for training prediction models end-to-end with downstream decision-
+making objectives and conformally calibrated uncertainty estimates for the conditional robust
+optimization problem. Following our initial method proposal [ 22], we include differentiable con-
+formal calibration layers in our model during training. This closes the feedback loop, ensuring that
+the uncertainty’s impact on the downstream objective is accounted for during training, since not all
+model errors nor uncertainty estimates will result in the same downstream cost. Second, we use
+partially input-convex neural networks (PICNNs) [ 3] to tractably approximate arbitrary convex
+uncertainty sets for the conditional robust optimization problem. Due to the universal convex
+function approximation property of ICNNs [ 6], this approach enables training far more general
+representations of uncertainty than prior works have considered, which in turn yields improvements
+on downstream decision-making performance. Finally, we propose an exact and computationally
+efficient method for differentiating through the conformal prediction procedure during training.
+In contrast to prior work [ 18], our method gives exact gradients, without relying on approximate
+ranking and sorting methods.
+We empirically evaluate our approach on an energy storage arbitrage task and demonstrate conclu-
+sively that the combination of end-to-end training with the flexibility of the PICNN-based uncertainty
+sets achieves substantial improvement over baseline methods. Our code is available on GitHub.2
+2 Problem Statement and Background
+Our problem setting is defined formally as follows: suppose that data (x, y)∈Rm×Rnis sampled
+i.i.d. from an unknown joint distribution P. Upon observing the input x(but not the label y), an
+agent makes a decision z∈Rp. After the decision is made, the true label yis revealed, and the agent
+incurs a task loss f(x, y, z ), for some known task loss function f:Rm×Rn×Rp→R. In addition,
+the agent’s decision must satisfy a set of joint constraints g(x, z)≤0.
+Concretely, we consider the energy storage problem posed by [ 10], where a grid-scale battery operator
+predicts electricity prices y∈RTover a T-step horizon and uses the prediction to decide on a battery
+charge/discharge schedule z= (zin, zout, zstate)for price arbitrage. The vector zin∈RTis the
+amount to charge, zout∈RTis the amount to discharge, and zstate∈RTis the battery’s state of
+charge. The input features xinclude the past day’s prices and temperature, the next day’s energy load
+forecast and temperature forecast, binary indicators of weekends or holidays, and yearly sinusoidal
+features. The battery has capacity B, charging efficiency γ, and maximum charge/discharge rates cin
+andcout. The task loss function frepresents the multiple objectives of maximizing profit, flexibility
+to participate in the ancillary services market by keeping the battery near half its capacity (with
+weight λ), and battery health by discouraging rapid charging/discharging (with weight ϵ):
+f(y, z) =TX
+t=1yt(zin−zout)t+λzstate−B
+212
++ϵzin2+ϵzout2. (1)
+2https://github.com/chrisyeh96/e2e-conformal
+2The constraints are given by
+zstate
+0=B/2, zstate
+t=zstate
+t−1−zout
+t+γzin
+t ∀t= 1, . . . , T
+0≤zin≤cin, 0≤zout≤cout, 0≤zstate≤B.(2)
+Because the agent does not observe the label yprior to making its decision, ensuring good performance
+and constraint satisfaction requires that the agent makes decisions zthat are robust to the various
+outcomes of y. A common objective is to choose zto robustly minimize the task loss and satisfy
+the constraints over all realizations of ywithin a (1−α)-confidence region Ω(x)⊂Rnof the true
+conditional distribution P(y|x), where α∈(0,1)is a fixed risk level chosen based on operational
+requirements. In this case, the agent’s robust decision can be expressed as the optimal solution to the
+following conditional robust optimization (CRO) problem [7, 8]:
+z⋆(x) := arg min
+z∈Rpmax
+ˆy∈Ω(x)f(x,ˆy, z)s.t.g(x, z)≤0. (3)
+After the agent decides z⋆(x), the true label yis revealed, and the agent incurs the task loss
+f(x, y, z⋆(x)). Thus, the agent seeks to minimize the expected task loss E(x,y)∼P[f(x, y, z⋆(x))].
+While the joint distribution Pis unknown, we assume that we have access to a dataset D=
+{(xi, yi)}N
+i=1of samples from P. Then, our objective is to train a machine learning model to learn
+an approximate (1−α)-confidence set Ω(x)of possible yvalues for each input x. Formally, our
+learned Ω(x)should satisfy the marginal coverage guarantee: P(x,y)∼P(y∈Ω(x))≥1−α.
+3 Methodology: Uncertainty Calibration, Representation, and Training
+Here, we describe our method for end-to-end task-aware training of predictive models with con-
+formally calibrated uncertainty for the CRO problem (3). Figure 1 illustrates our framework, and
+Algorithm 1 (in Appendix B) shows pseudocode for training and inference. Our overarching goal
+is to learn uncertainty sets Ω(x)which provide (1−α)coverage for any choice of α∈(0,1), and
+which offer the lowest possible task loss. There are three primary questions that we must consider to
+this end; we briefly address each of these questions in turn, with details delegated to Appendix C due
+to space constraints.
+1. How can we guarantee that the uncertainty set Ω(x)provides coverage at level 1−α?
+2. How should the uncertainty set Ω(x)be parametrized?
+3. How can the uncertainty set Ω(x)be learned to minimize the agent’s expected task loss?
+Conformal uncertainty set calibration Suppose that the uncertainty set is represented in the form
+Ω(x) ={ˆy∈Rn|s(x,ˆy)≤q}, where s:Rm×Rn→Ris an arbitrary nonconformity score
+function andq∈Ris a scalar. We use the split conformal prediction procedure [ 4] at inference for
+choosing qto ensure that Ω(x)provides marginal coverage at any confidence level 1−α. (During
+training, we apply a separate differentiable conformal prediction procedure, as discussed below.)
+Representations of the uncertainty set In general, the uncertainty set Ω(x)must be convex for
+the robust optimization problem (3)to be tractable. To allow Ω(x)to approximate any arbitrary
+convex uncertainty set, we parametrize Ωθ(x)via a sublevel set of a general partially-convex function
+sθ:Rm×Rn→R, which is convex only in the second input vector. Then, fixing x, any
+Ωθ(x) ={ˆy∈Rn|sθ(x,ˆy)≤q}is aq-sublevel set of sθ(x,·)and is therefore convex. In essence,
+we propose directly learning the nonconformity score function for conformal calibration using a
+PICNN [ 3]. Assuming that the task loss fis convex in zand bilinear in (y, z)(this assumption is
+satisfied by (1)), we can take the dual of the inner maximization problem to transform the robust
+optimization problem (3) into an equivalent tractable convex non-robust problem.
+End-to-end training and calibration Our end-to-end training uses minibatch gradient descent
+to minimize the empirical task loss ℓ(θ) =1
+Nℓi(θ)where ℓi(θ) =f(xi, yi, z⋆
+θ(xi)). This requires
+differentiating through both the robust optimization problem as well as the conformal prediction
+step. The gradient isdℓi
+dθ=∂f
+∂z|(xi,yi,z⋆
+θ(xi))∂z⋆
+θ
+∂θ|xi, where∂z⋆
+θ
+∂θ|xican be computed by differentiating
+through the Karush–Kuhn–Tucker (KKT) conditions of the optimization problem [ 2]. To include
+calibration during training, we take inspiration from the conformal training approach [ 18] in which
+a separate qis chosen in each minibatch, as shown in Algorithm 1. The chosen qdepends on θ
+(through sθ), and z⋆
+θ(xi)depends on the chosen q. Therefore∂z⋆
+θ
+∂θinvolves calculating∂z⋆
+θ
+∂q∂q
+∂θ, where
+30.01 0.05 0.1 0.2
+uncertainty level 
+40
+30
+20
+10
+0task loss
+no distribution shift
+0.01 0.05 0.1 0.2
+uncertainty level 
+30
+20
+10
+0
+with distribution shift
+ETO-SLL (box)
+ETO-SLL (ellipse)
+ETO-JC (ellipse)
+E2E (picnn)
+optimalFigure 2: Average test set task loss (mean ±1 stddev across 10 runs) at different uncertainty levels
+α. The box and ellipsoidal uncertainty set methods from [ 19] are denoted “ETO-SLL”, whereas
+the ellipsoidal uncertainty set method from [ 11] is denoted “ETO-JC.” The dashed-line “optimal”
+represents the best task loss achievable with perfect foresight of future electricity prices. Lower
+values are better. Our method E2E (picnn) outperforms all baseline methods and approaches the
+optimal.
+∂q
+∂θrequires differentiating through the empirical quantile function. Whereas [ 18] uses a smoothed
+approximate quantile function for calculating q, we find the smoothing unnecessary, as the gradient
+of the empirical quantile function is unique and well-defined almost everywhere.
+4 Results and Conclusion
+Experiments We compare our end-to-end method with PICNN-based uncertainty sets on the battery
+storage problem described in Section 2 against two-stage estimate-then-optimize (ETO) baseline
+methods [ 11,19] that use more restrictive box and ellipsoidal uncertainty sets. Following [ 10], we
+setT= 24 hours, B= 1,γ= 0.9,cin= 0.5,cout= 0.2,λ= 0.1, and ϵ= 0.05, and we use actual
+2011-16 electricity price data and load forecasts from the PJM day-ahead market. We test our method
+both without distribution shift (where our training and test sets were sampled uniformly at random,
+thus ensuring exchangeability and guaranteeing marginal coverage) and on the more realistic setting
+with distribution shift by splitting our data temporally (where the training set is the first 80% of days
+and the test set is the last 20% of days). As shown in Figure 2, which plots average test set task
+loss at different levels of uncertainty α, our proposed method conclusively outperforms the previous
+baseline approaches at all uncertainty levels, with and without distribution shift.
+Limitations We recognize that our energy storage problem ( (1)and(2), originally posed in [ 10])
+is a significantly simplified version of actual battery operations, which often involve participation
+in multiple energy markets and significantly more constraints. Moreover, our framework requires
+various assumptions on the functions fandgin the conditional robust optimization problem (3)
+in order to ensure tractability, such as convexity and bilinearity in (y, z). Lastly, while the PICNN
+uncertainty representation can represent general convex uncertainties, it cannot handle more general
+nonconvex uncertainty regions. Overcoming these assumptions would be an interesting direction for
+future work.
+Pathway to Climate Impact As mentioned in the Introduction, improving energy storage oper-
+ations is paramount for decarbonizing the electricity grid to accommodate increasing intermittent
+renewable generation. Due to the strong performance of our approach, we have already engaged
+in discussions with multiple companies that use AI in energy operations to identify opportunities
+to deploy our general end-to-end framework in real energy systems. With some modifications, we
+believe that our method may also be adapted for other related smart grid and grid decarbonization
+applications, such as carbon-aware EV charging and demand response.
+Acknowledgments and Disclosure of Funding
+We thank Priya Donti for helpful discussions. The authors acknowledge support from an NSF
+Graduate Research Fellowship (DGE-2139433); NSF Grants CNS-2146814, CPS-2136197, CNS-
+2106403, and NGSDI-2105648; Amazon AWS; and the Caltech Resnick Sustainability Institute.
+4References
+[1]A. Agrawal, B. Amos, S. Barratt, S. Boyd, S. Diamond, and J. Z. Kolter. Differentiable Convex
+Optimization Layers. In Advances in Neural Information Processing Systems , volume 32.
+Curran Associates, Inc., 2019.
+[2]B. Amos and J. Z. Kolter. OptNet: Differentiable Optimization as a Layer in Neural Networks.
+InProceedings of the 34th International Conference on Machine Learning , pages 136–145.
+PMLR, July 2017. ISSN: 2640-3498.
+[3]B. Amos, L. Xu, and J. Z. Kolter. Input Convex Neural Networks, June 2017. arXiv:1609.07152
+[cs, math].
+[4]A. N. Angelopoulos and S. Bates. Conformal Prediction: A Gentle Introduction. Foundations
+and Trends® in Machine Learning , 16(4):494–591, 2023.
+[5]K. Antonio. Renewable generation surpassed coal and nuclear in the U.S. electric power sector
+in 2022, Mar. 2023.
+[6]Y . Chen, Y . Shi, and B. Zhang. Optimal Control Via Neural Networks: A Convex Approach. In
+International Conference on Learning Representations , 2019.
+[7]A. R. Chenreddy, N. Bandi, and E. Delage. Data-Driven Conditional Robust Optimization. In
+Advances in Neural Information Processing Systems , volume 35, pages 9525–9537, Dec. 2022.
+[8]A. R. Chenreddy and E. Delage. End-to-end Conditional Robust Optimization. In Proceedings
+of the Fortieth Conference on Uncertainty in Artificial Intelligence , pages 736–748. PMLR,
+Sept. 2024. ISSN: 2640-3498.
+[9]S. Diamond and S. Boyd. CVXPY: A Python-Embedded Modeling Language for Convex
+Optimization. Journal of Machine Learning Research , 17(83):1–5, 2016.
+[10] P. L. Donti, B. Amos, and J. Z. Kolter. Task-based End-to-end Model Learning in Stochastic
+Optimization. In Advances in Neural Information Processing Systems , volume 30, Long Beach,
+CA, USA, Dec. 2017. Curran Associates, Inc. arXiv:1703.04529 [cs].
+[11] C. Johnstone and B. Cox. Conformal uncertainty sets for robust optimization. In Proceedings
+of the Tenth Symposium on Conformal and Probabilistic Prediction and Applications , pages
+72–90. PMLR, Sept. 2021. ISSN: 2640-3498.
+[12] D. P. Kingma and J. Ba. Adam: A Method for Stochastic Optimization. In International
+Conference on Learning Representations , San Diego, CA, USA, May 2015.
+[13] V . Kuleshov, N. Fenner, and S. Ermon. Accurate Uncertainties for Deep Learning Using
+Calibrated Regression. In Proceedings of the 35th International Conference on Machine
+Learning , pages 2796–2804. PMLR, July 2018. ISSN: 2640-3498.
+[14] S. S. Parvar and H. Nazaripouya. Optimal Operation of Battery Energy Storage Under Un-
+certainty Using Data-Driven Distributionally Robust Optimization. Electric Power Systems
+Research , 211:108180, Oct. 2022.
+[15] A. Paszke, S. Gross, F. Massa, A. Lerer, J. Bradbury, G. Chanan, T. Killeen, Z. Lin,
+N. Gimelshein, L. Antiga, A. Desmaison, A. Köpf, E. Yang, Z. DeVito, M. Raison, A. Tejani,
+S. Chilamkurthy, B. Steiner, L. Fang, J. Bai, and S. Chintala. PyTorch: an imperative style,
+high-performance deep learning library. In Proceedings of the 33rd International Conference
+on Neural Information Processing Systems , number 721, pages 8026–8037. Curran Associates
+Inc., Red Hook, NY , USA, Dec. 2019.
+[16] Y . P. Patel, S. Rayan, and A. Tewari. Conformal Contextual Robust Optimization. In Proceedings
+of The 27th International Conference on Artificial Intelligence and Statistics , pages 2485–2493.
+PMLR, Apr. 2024. ISSN: 2640-3498.
+[17] G. Shafer and V . V ovk. A Tutorial on Conformal Prediction. Journal of Machine Learning
+Research , 9(12):371–421, 2008.
+[18] D. Stutz, Krishnamurthy, Dvijotham, A. T. Cemgil, and A. Doucet. Learning Optimal Conformal
+Classifiers, May 2022. arXiv:2110.09192 [cs, stat].
+[19] C. Sun, L. Liu, and X. Li. Predict-then-Calibrate: A New Perspective of Robust Contextual LP.
+Nov. 2023.
+5[20] I. Wang, C. Becker, B. Van Parys, and B. Stellato. Learning Decision-Focused Uncertainty Sets
+in Robust Optimization, July 2024. arXiv:2305.19225 [math].
+[21] X. Yan, C. Gu, X. Zhang, and F. Li. Robust Optimization-Based Energy Storage Operation for
+System Congestion Management. IEEE Systems Journal , 14(2):2694–2702, June 2020.
+[22] C. Yeh, N. Christianson, S. Low, A. Wierman, and Y . Yue. Decision-aware uncertainty-calibrated
+deep learning for robust energy system operation. In ICLR 2023 Workshop on Tackling Climate
+Change with Machine Learning . Climate Change AI, May 2023.
+6A Additional experimental results
+0.01 0.05 0.1 0.2
+uncertainty level 
+0.70.80.91.0coverage
+no distribution shift
+0.01 0.05 0.1 0.2
+uncertainty level 
+0.60.81.0
+with distribution shift
+ETO-SLL (box)
+ETO-SLL (ellipse)
+ETO-JC (ellipse)
+E2E (picnn)
+optimal
+Figure A1: Average test set coverage (mean ±1 stddev across 10 runs) at different uncertainty levels
+α. The box and ellipsoidal uncertainty set methods from [ 19] are denoted “ETO-SLL”, whereas
+the ellipsoidal uncertainty set method from [ 11] is denoted “ETO-JC.” The dashed-line “optimal”
+represents the desired marginal coverage corresponding to each uncertainty level α. Our method E2E
+(picnn) has coverage that is close to the target level.
+The test set coverage obtained by the learned uncertainty sets is plotted in Figure A1. Most models (in-
+cluding our E2E approach) obtain coverage close to the target level, confirming that the improvements
+in task loss performance from our E2E approach do not come at the cost of worse coverage.
+B Algorithm pseudocode
+Algorithm 1 End-to-end conformal calibration for robust decisions under uncertainty
+function TRAIN (training data D={(xi, yi)}N
+i=1, uncertainty level α, initial model parameters θ)
+formini-batch B⊂ {1, . . . , N }do
+Randomly split batch: B= (Bcal, Bpred)
+Compute q=QUANTILE ({sθ(xi, yi)}i∈Bcal,1−α)
+fori∈Bpreddo
+Solve for robust decision z⋆
+θ(xi)using (6)
+Compute gradient of task loss: dθi=∂f(xi, yi, z⋆
+θ(xi))/∂θ
+Update θusing gradientsP
+i∈Bpreddθi
+function INFERENCE (model parameters θ, calibration data Dcal={(xi, yi)}M
+i=1, uncertainty level
+α, input x)
+Compute q=QUANTILE ({sθ(˜x,˜y)}(˜x,˜y)∈Dcal,1−α)
+return robust decision z⋆
+θ(x)using (6)
+function QUANTILE (scores S={si}M
+i=1, level β)
+s(1), . . . , s (M+1)=SORTASCENDING (S∪ {+∞}) ▷does not need to be differentiable
+return s(⌈(M+1)β⌉)
+C PICNN uncertainty set representation and calibration
+This section gives more details for the discussion from Section 3. First, we formally define the
+marginal coverage guarantee that we would like to satisfy.
+Definition 1 (marginal coverage) .An uncertainty set Ω(x)for the distribution Pprovides marginal
+coverage at level (1−α)ifP(x,y)∼P(y∈Ω(x))≥1−α.
+Next, we make the following assumptions on the functions fandgto ensure tractability of the
+resulting optimization problem.
+Assumptions. We assume that g(x, y, z ) =g(x, z)does not depend on y, and that the task loss
+has the form f(x, y, z ) =y⊤Fz+˜f(x, z)for some matrix F∈Rn×pand auxiliary function
+7˜f:Rm×Rp→R—that is, the task loss decomposes into a function ˜f(x, z)independent of yand a
+bilinear term y⊤Fz. We further assume that g(x, z)and˜f(x, z)are convex in z.
+C.1 Conformal uncertainty set calibration
+Suppose that the uncertainty set is represented in the form
+Ω(x) ={ˆy∈Rn|s(x,ˆy)≤q}, (4)
+where s:Rm×Rn→Ris an arbitrary nonconformity score function andq∈R. We use the split
+conformal prediction procedure [ 4] at inference for choosing qto ensure that Ω(x)provides marginal
+coverage at any confidence level 1−α. (During training, we apply a separate differentiable conformal
+prediction procedure, as discussed in Appendix C.3.)
+Lemma 1 (from [ 4], Appendix D) .LetDcal={(xi, yi)}M
+i=1be a calibration dataset drawn ex-
+changeably ( e.g., i.i.d.) from P, and let si=sθ(xi, yi). Ifq=QUANTILE ({si}M
+i=1,1−α)(see
+Algorithm 1) is the empirical (1−α)-quantile of the set {si}M
+i=1and(x, y)is drawn exchangeably
+withDcal, then Ωθ(x)has the coverage guarantee
+1−α≤Px,y,D cal(y∈Ωθ(x))≤1−α+1
+M+ 1.
+We use split conformal prediction, rather than full conformal prediction, both for computational
+tractability and to avoid the problem of nonconvex uncertainty sets that can arise from the full
+conformal approach, as noted in [ 11]. For the rest of this paper, we assume α∈[1
+M+1,1)so that
+q=QUANTILE ({si}M
+i=1,1−α)<∞is finite. Thus, for appropriate choices of the nonconformity
+score function sθ, the uncertainty set Ωθ(x)is not unbounded.
+C.2 Representations of the uncertainty set
+In general, the uncertainty set Ω(x)must be convex in order for the robust optimization problem (3)
+to be tractable. Therefore, we aim to let Ω(x)approximate any arbitrary convex uncertainty set by
+representing Ω(x)via a sublevel set of a partially-convex function sθ:Rm×Rn→R, which is
+convex only in the second input vector. Then, fixing x, any Ωθ(x) ={ˆy∈Rn|sθ(x,ˆy)≤q}is a
+q-sublevel set of sθ(x,·)and is therefore a convex set. In essence, we propose directly learning the
+nonconformity score function for conformal calibration.
+A natural model for learning the function sθis a partially input-convex neural network (PICNN)
+[3], which can approximate any partially-convex function [ 6]. We consider a PICNN defined as
+sθ(x, y) =WLσL+VLy+bL, where
+σ0=0, u 0=x W l=¯Wldiag([ ˆWlul+wl]+) (5a)
+ul+1= ReLU ( Rlul+rl) Vl=¯Vldiag( ˆVlul+vl) (5b)
+σl+1= ReLU ( Wlσl+Vly+bl) bl=¯Blul+¯bl. (5c)
+The weights of the neural network are θ= (Rl, rl,¯Wl,ˆWl, wl,¯Vl,ˆVl, vl,¯Bl,¯bl)L
+l=0, and the matrices
+¯Wlare constrained to be entrywise nonnegative to ensure convexity of sθwith respect to y. For ease
+of notation, we assume all hidden layers σ1, . . . , σ Lhave the same dimension d.
+LetΩθ(x) ={ˆy∈Rn|sθ(x,ˆy)≤q}where q∈Ris chosen by the split conformal procedure
+detailed in Appendix C.1. Then, by taking the dual of the inner maximization problem (see Ap-
+pendix D.1), we can transform the robust optimization problem (3)into an equivalent non-robust
+problem
+z⋆
+θ(x) = arg min
+z∈Rpmin
+ν∈R2Ld+1b(θ, q)⊤ν+˜f(x, z)
+s.t. A(θ)⊤ν=
+Fz
+0
+, ν≥0, g(x, z)≤0(6)
+where A(θ)∈R(2Ld+1)×(n+Ld)andb(θ, q)∈R2Ld+1are constructed from the weights θof the
+PICNN, and balso depends on q. Finally, observe that if ˜f(x, z)andg(x, z)are convex in z, then the
+optimization problem (6) is convex.
+8In some cases during training, the inner maximization problem of (3)with PICNN-parametrized
+uncertainty set may be infeasible (if too small a qwas chosen by the split conformal procedure and
+Ωθ(x)is empty). This will lead, respectively, to an infeasible or unbounded equivalent problem (6).
+We can avoid this concern by solving the following convex optimization problem
+qmin= min
+ˆy∈Rnsθ(x,ˆy)
+to calculate the minimum value of the PICNN. In the case that the qchosen by the split conformal
+procedure is smaller than qmin, we simply replace qwithqmin; since in this case we are replacing q
+with a larger value, this modification preserves the marginal coverage guarantee for the uncertainty
+setΩθ(x).
+C.3 End-to-end training and calibration
+Our end-to-end training uses minibatch gradient descent to minimize the empirical task loss
+ℓ(θ) =1
+Nℓi(θ)where ℓi(θ) = f(xi, yi, z⋆
+θ(xi)). This requires differentiating through both
+the robust optimization problem as well as the conformal prediction step. The gradient is
+dℓi
+dθ=∂f
+∂z|(xi,yi,z⋆
+θ(xi))∂z⋆
+θ
+∂θ|xi, where∂z⋆
+θ
+∂θ|xican be computed by differentiating through the
+Karush–Kuhn–Tucker (KKT) conditions of the convex optimization problem following the approach
+of [2], under mild assumptions on the differentiability of fandg.
+To include calibration during training, we take inspiration from the conformal training approach
+[18] in which a separate qis chosen in each minibatch, as shown in Algorithm 1. The chosen q
+depends on θ(through sθ), and z⋆
+θ(xi)depends on the chosen q. Therefore∂z⋆
+θ
+∂θinvolves calculating
+∂z⋆
+θ
+∂q∂q
+∂θ, where∂q
+∂θrequires differentiating through the empirical quantile function. Whereas [ 18] uses
+a smoothed approximate quantile function for calculating q, we find the smoothing unnecessary, as
+the gradient of the empirical quantile function is unique and well-defined almost everywhere.
+After training has concluded and we have performed the final conformal calibration step, the resulting
+model enjoys the following theoretical guarantee on performance ( cf.[19, Proposition 1]).
+Proposition 1. After following our training and calibration procedure, we achieve with probability
+1−α(with respect to x, y, and the calibration set Dcal) the following upper bound on task loss:
+f(x, y, z⋆(x))≤min
+z∈Rpmax
+ˆy∈Ωθ(x)f(x,ˆy, z) s.t. g(x,ˆy, z)≤0.
+This result is an immediate consequence of the split conformal coverage guarantee from Lemma 1,
+which ensures that for the true (x, y)∼ P,Px,y,D cal(y∈Ω(x))≥1−α. The realized task loss will,
+with probability 1−α, therefore improve upon the optimal value of the robust problem (3). Moreover,
+this guarantee holds despite the fact that the distribution P(y|x)is unknown, and the dependence of
+the learned uncertainty set Ωθ(x)onxallows for taking advantage of heteroskedasticity that, together
+with our end-to-end training framework, yield substantial improvements in average-case performance
+in conjunction with our the robust guarantee offered by Proposition 1.
+D Maximizing over a PICNN uncertainty set
+We consider robust optimization problems of the form
+min
+z∈Rpmax
+ˆy∈Rnˆy⊤Fz+˜f(x, z) s.t. ˆy∈Ω(x), g(x, z)≤0.
+For fixed z, the inner maximization problem is
+max
+ˆy∈Rnˆy⊤Fz s.t. ˆy∈Ω(x),
+which we analyze in the more abstract form
+max
+y∈Rnc⊤y s.t. y∈Ω
+for arbitrary c∈Rn\{0}. The subsections of this appendix derive the dual form of this maximization
+problem for specific representations of the uncertainty set Ω.
+9Suppose yis standardized or whitened by an affine transformation with µ∈Rnand invertible matrix
+W∈Rn×n
+ytransformed =W−1(y−µ)
+so that Ωis an uncertainty set on the transformed ytransformed . Then, the original primal objective can
+be recovered as
+c⊤y=c⊤(Wy transformed +µ) = (Wc)⊤ytransformed +c⊤µ.
+In our experiments, we use element-wise standardization of yby setting W= diag( ystd), where
+ystd∈Rnis the element-wise standard-deviation of y.
+D.1 Maximizing over sublevel set of PICNN
+Letsθ:Rm×Rn→Rbe a partially input-convex neural network (PICNN) with ReLU activations
+as described in (5), so that sθ(x, y)is convex in y. Suppose that all the hidden layers have the same
+dimension d(i.e.,∀l= 0, . . . , L −1:Wl∈Rd×d,Vl∈Rd×n,bl∈Rd), and the final layer Lhas
+WL∈R1×d,VL∈R1×n,bL∈R. Letc∈Rnbe any vector. Then, the optimization problem
+max
+y∈Rnc⊤y s.t. sθ(x, y)≤q (7)
+can be equivalently written as
+max
+y∈Rn, σ1,...,σ L∈Rdc⊤y (8a)
+s.t.σl≥0d ∀l= 1, . . . , L (8b)
+σl+1≥Wlσl+Vly+bl ∀l= 0, . . . , L −1 (8c)
+WLσL+VLy+bL≤q, (8d)
+To see that this is the case, first note that (8)is a relaxed form of (7), obtained by replacing the
+equalities σl+1= ReLU ( Wlσl+Vly+bl)in the definition of the PICNN (5)with the two separate
+inequalities σl+1≥0dandσl+1≥Wlσl+Vly+blfor each l= 0, . . . , L −1. As such, the optimal
+value of (8)is no less than that of (7). However, given an optimal solution y, σ1, . . . , σ Lto(8), it is
+possible to obtain another feasible solution y,ˆσ1, . . . , ˆσLwith the same optimal objective value by
+iteratively decreasing each component of σluntil one of the two inequality constraints (8b),(8c)is
+tight, beginning at l= 1and incrementing lonce all entries of σlcannot be decreased further. This
+procedure of decreasing the entries in each σlwill maintain problem feasibility, since the weight
+matrices Wlare all assumed to be entrywise nonnegative in the PICNN construction; in particular,
+this procedure will not increase the left-hand side of (8d). Moreover, since one of the two constraints
+(8b),(8c) will hold for each entry of each ˆσl, this immediately implies that yis feasible for the
+unrelaxed problem (7), and so (7) and (8) must have the same optimal value.
+Having shown that we may replace the convex program (7)with a linear equivalent (8), we can write
+this latter problem in the matrix form
+max
+y∈Rn, σ1,...,σ L∈Rdc⊤y s.t. A
+y
+σ1
+...
+σL
+≤b
+where
+A=
+−Id
+...
+−Id
+V0−Id
+...W1...
+......−Id
+VL WL
+∈R(2Ld+1)×(n+Ld), b =
+0d
+...
+0d
+−b0
+...
+−bL−1
+q−bL
+∈R2Ld+1. (9)
+By strong duality, if this linear program has an optimal solution, its optimal value is equal to the
+optimal value of its dual problem:
+min
+ν∈R2Ld+1b⊤ν s.t. A⊤ν=
+c
+0Ld
+, ν≥0. (10)
+10We can incorporate this dual problem (10) into the outer minimization of (3)to yield the non-robust
+form (6). For a more interpretable form of this dual problem, let ν(i)denote the portion of the dual
+vector νcorresponding to the i-th block-row of matrix A, indexed from 0. That is, ν(i)=νid+1:(i+1)d
+fori= 0, . . . , 2L−1. Furthermore, let µ=ν2Ld+1be the last entry of ν. Written out, the dual
+problem (10) becomes
+min
+ν(0),...,ν(2L−1)∈Rd, µ∈Rµ(q−bL)−LX
+l=0b⊤
+lν(L+l)
+s.t.
+V⊤
+0··· V⊤
+L
+νLd+1:=c
+W⊤
+l+1ν(L+l+1)−ν(L+l)−ν(l)=0d ∀l= 0, . . . , L −1
+ν≥0.
+E Experiment details
+Our experiments were conducted on a machine with two AMD EPYC 7513 32-Core processors, 1TiB
+RAM, and 4 NVIDIA A100 GPUs. However, we note that most of our experiments (including all of
+the end-to-end training) only used CPUs without any GPU acceleration.
+We reserved 20% of the data for the test set. Of the remaining 80%, we further used a 80/20 split to
+create the training and validation sets.
+Our PICNN has 2 hidden layers of 64 units each with ReLU activations. We used a batch size of
+256 to train our models. We trained our models for a maximum of 100, with early stopping based
+on validation task loss. We used the Adam optimizer [ 12] with learning rate tuned over [1e-5, 1e-4,
+1e-3] and L2 weight decay tuned over [0, 1e-4, 1e-3, 1e-2].
+Our models were implemented using the PyTorch [ 15] and cvxpylayers [ 1] packages in Python. The
+optimization problem was implemented in cvxpy [9].
+11

@@ -1,0 +1,1012 @@
+RAIN: Reinforcement Algorithms for Improving
+Numerical Weather and Climate Models
+Pritthijit Nath1Henry Moss1Emily Shuckburgh2Mark Webb3
+1Department of Applied Math and Theoretical Physics, University of Cambridge
+2Department of Computer Science and Technology, University of Cambridge
+3Met Office Hadley Centre
+{pn341,hm493,efs20}@cam.ac.uk ;mark.webb@metoffice.gov.uk
+Abstract
+This study explores integrating reinforcement learning (RL) with idealised climate
+models to address key parameterisation challenges in climate science. Current
+climate models rely on complex mathematical parameterisations to represent sub-
+grid scale processes, which can introduce substantial uncertainties. RL offers
+capabilities to enhance these parameterisation schemes, including direct interaction,
+handling sparse or delayed feedback, continuous online learning, and long-term
+optimisation. We evaluate the performance of eight RL algorithms on two idealised
+environments: one for temperature bias correction, another for radiative-convective
+equilibrium (RCE) imitating real-world computational constraints. Results show
+different RL approaches excel in different climate scenarios with exploration
+algorithms performing better in bias correction, while exploitation algorithms
+proving more effective for RCE. These findings support the potential of RL-based
+parameterisation schemes to be integrated into global climate models, improving
+accuracy and efficiency in capturing complex climate dynamics. Overall, this
+work represents an important first step towards leveraging RL to enhance climate
+model accuracy, critical for improving climate understanding and predictions. Code
+accessible at https://github.com/p3jitnath/climate-rl .
+1 Introduction
+Weather and climate modelling are crucial for understanding and mitigating the socio-economic
+impacts of meteorological phenomena. The UK has experienced an increase in extreme weather
+events, with the 10 warmest years on record occurring since 2003 [ 1]. These events have caused
+significant disruptions, exemplified by the 2019-20 UK floods [ 2] resulting in economic losses of
+at least £333 million [ 3]. Accurate forecasting and climate projections are essential for various
+sectors, underscoring their importance in national resilience and economic stability. Traditionally,
+Numerical Weather Prediction (NWP) methods have been utilised in weather and climate models,
+solving equations governing atmospheric dynamics to generate forecasts. Notable examples include
+the Met Office’s Unified Model [4] and the ECMWF’s Integrated Forecast System [5]. While NWP
+models have improved forecast accuracy since their introduction in 1952 [ 6], they still face limitations
+in representing sub-grid scale processes and resolving intricate atmospheric phenomena [7].
+Although recent advancements in machine learning (ML) techniques have demonstrated strong
+potential in outperforming NWP models in short to medium-range weather forecasting [ 8–20],
+purely data-driven artificial intelligence (AI) approaches face inherent limitations in abiding by
+fundamental laws of physics and thermodynamic principles [ 21,22], and in generalising to out-of-
+distribution scenarios [ 23,24]. ML models also can produce outputs that violate key constraints like
+conservation laws of mass and energy [ 25,26], often requiring additional constraints to circumvent
+Published as a workshop paper at "Tackling Climate Change with Machine Learning", NeurIPS 2024arXiv:2408.16118v2  [cs.LG]  10 Oct 2024such violations [ 27–29]. In long range climate projections, these violations can trigger instabilities
+and escalating errors, leading to rapid degradation of forecast skill beyond shorter lead times [30].
+To address these issues, our research explores the implementation of a reinforcement learning (RL)
+assisted climate modelling framework. RL algorithms learn by interacting with an environment,
+iteratively adjusting their behaviour to maximise a cumulative future reward signal. By formulating
+the climate model parameterisation problem as a control task, RL agents can learn to dynamically
+adjust the parameters of low resolution NWP models as a function of the atmospheric state, respecting
+the physics by leaving the structure of the physical parametrisations intact. For this research, we adopt
+a step-wise approach, first using RL for climate bias correction in a simple heating environment, then
+extending our methods to a climlab [ 31] based setup of radiative-convective equilibrium (RCE). In
+particular, this research advances the field of AI-based atmospheric modelling through the following
+key contributions:
+1.Novel application of RL in climate modelling : We explore the use of continuous action
+model-free RL algorithms (REINFORCE [ 32], DDPG [ 33], DPG [ 34], TD3 [ 35], PPO [ 36],
+TRPO [ 37], SAC [ 38], TQC [ 39]) to dynamically adjust parameters in climate models,
+offering a new approach to the long-standing challenge of parameterisation in NWP systems.
+2.Integration of physical constraints : Our framework demonstrates how RL can be em-
+ployed to optimise model performance while adhering to fundamental physical constraints,
+addressing a critical limitation of purely data-driven approaches.
+2 Methodology
+2.1 Background
+2.1.1 Advantages over traditional ML models
+RL offers three key advantages that are beneficial for improving model parameterisations in the
+climate context:
+1.Continuous incremental learning : RL algorithms can continuously adapt and update their
+policies through direct interaction with the climate model environment, unlike traditional
+static ML techniques that rely on fixed training datasets. This allows the RL agent to
+continuously refine the parameterisation scheme incrementally as the climate model evolves
+without the need for full retraining of the entire model, making the the process more
+computationally efficient and responsive to changes.
+2.Learning sparse rewards : RL excels at learning from sparse or delayed rewards, which is
+particularly relevant for climate modelling, where reanlaysis data such as ERA5 [ 40] and
+satellite observations are available at six-hourly intervals.
+3.Long-term optimisation : RL focuses on maximising long-term rewards, which aligns well
+with the broader goal of climate modelling to understand and predict long-term climate
+patterns and trends. RL algorithms can effectively balance exploration (attempting new
+strategies) and exploitation (prioritising strategies with established outcomes) to find optimal
+parameterisation schemes.
+By leveraging these three main capabilities, RL can help climate researchers develop more dynamic
+and responsive parameterisations with the ability to continuously improve the accuracy and reliability
+of climate models in a computationally efficient manner over time.
+2.1.2 Radiative-Convective Equilibrium
+Radiative-convective equilibrium (RCE) [ 41–43] is an idealised climate model balancing radiative
+(absorption and emission of radiation) and convective fluxes (vertical transport of energy) in a state of
+equilibrium. It solves for a single vertical temperature profile Tas a function of height z, representing
+the global average, assuming hydrostatic balance where the vertical pressure gradient ∂p/∂z is
+balanced by the gravitational force gacting on the air density ρ.
+2The model comprises two main components:
+1.Radiative transfer ( R): This calculates net shortwave and longwave fluxes based on
+incident solar radiation, surface albedo, and vertical profiles of temperature and radiatively
+active constituents.
+2.Convective adjustment ( D): This process maintains the lapse rate −∂T/∂z below a critical
+value, empirically determined to be 6.5 K/km, by redistributing energy vertically while
+conserving mean temperature.
+2.2 RL Environments
+2.2.1 SimpleClimateBiasCorrectionEnv
+This environment (Fig. A.1) models temperature evolution, aiming to learn an optimal heating
+increment uto minimise a bias correction term which relaxed the temperature to an observed value.
+Temperature dynamics (over 200 timesteps) are governed by:
+Tnew=Tcurrent +u+Tphysics−Tcurrent
+Tphysics−Tobserved
+×0.2 +Tobserved −Tnew
+Tphysics−Tobserved
+×0.1 (1)
+The environment state is the current temperature, and the action space represents the bounded heating
+rate ( -1 - +1 ). The reward signal in v0is:
+REWARD =−1×Tobserved −Tnew
+Tphysics−Tobserved
+×0.12
+(2)
+The environment supports graphical rendering using Pygame [ 44]. Versions v1andv2increase
+difficulty progressively. v1calculates reward as a mean squared error between Tobserved andTcurrent .
+v2introduces sparse rewards with a 5-timestep lag.
+2.2.2 RadiativeConvectiveModelEnv
+This environment (Fig. A.2) explores an idealised RCE model (implemented using climlab [ 31])
+integrating over 500 timesteps. The action space comprises two parameters: emissivity ( 0 - 1 )
+and adjusted lapse rate ( 5.5 - 9.8 ), while the state represents the air temperature profile across 17
+pressure levels (1000 hPa - 10 hPa). The model incorporates functions climlab.radiation.RRTMG
+andclimlab.convection.ConvectiveAdjustment for the radiative transfer and convective ad-
+justment processes respectively. After initialisation at isothermal equilibrium (constant temperature
+across all pressure levels), at each step, the environment updates parameters based on the RL agent’s
+action, steps forward in time, and calculates cost (-ve reward) as the mean squared difference between
+simulated and observed temperature profiles (eg., NCEP/NCAR reanalysis [45, 46]).
+3 Results
+Table 1: Frequency of RL algorithms within Top-3
+(a)SimpleClimateBiasCorrectionEnv
+Rank Algorithm Frequency
+1 DDPG 11
+2 TD3 10
+2 TQC 10
+4 DPG 3
+5 SAC 2(b)RadiativeConvectiveModelEnv
+Rank Algorithm Frequency
+1 DPG 4
+2 PPO 3
+3 TRPO 2
+3 TQC 2
+5 DDPG 1
+In all versions of SimpleClimateBiasCorrectionEnv , off-policy actor-critic methods consistently
+performed best, as shown in Table 1a. The success of these algorithms, particularly DDPG, TD3,
+3and TQC, can be attributed to their use of experience replay, which enhances sample efficiency and
+learning from diverse scenarios. Additionally, their actor-critic architecture, along with enhancements
+like target networks and delayed policy updates, also contributed to training stability. TQC’s success,
+leveraging quantile regression, indicates the importance of risk-sensitive learning in environments
+with uncertainties common in climate simulations. Use of the quantile Huber loss function also
+improved robustness against outliers and training stability.
+For the RadiativeConvectiveModelEnv , on-policy methods dominated (Table 1b). TRPO and
+PPO’s success suggests that the RCE environment benefits from synchronised update strategies
+and gradual policy refinement. Their trust region approach, which restricts policy updates to minor
+adjustments, proved effective in an environment with sensitive dynamics or reward structures. This
+aligns with the RCE environment’s design, featuring three distinct optima (Radiative-Convective,
+Radiative, and isothermal equilibrium), which favours strategies emphasising steady, incremental
+improvements over large, uncertain explorations.
+The RL-assisted RCE Model demonstrates significant improvements in temperature difference at
+[100 hPa, 200 hPa ], achieving [ 70.87%, 90.19% ] improvement over 500 timesteps (Fig. 1).
+This showcases superior tracking of the observation profile compared to the conventional RCE model,
+despite potential shortcomings at 1000 hPa.
+(a) Tephigram
+ (b) Temperature differences
+Figure 1: Snapshot of the temperature profile and the differences at 100 hPa and 200 hPa in the last
+episodic timestep of an RL-assisted RCE integration run using DPG in rce-v0-optim-L-10k .
+The success of different RL algorithms in SimpleClimateBiasCorrectionEnv and
+RadiativeConvectiveModelEnv (Table 1a and 1b) highlights the importance of environment
+dynamics in algorithm selection. Off-policy algorithms like DDPG excel in scenarios with a diverse
+loss landscape ( SimpleClimateBiasCorrectionEnv ) where more exploration is required, while
+on-policy trust-region based algorithms like PPO perform better in environments with limited minima,
+where convergence can be initialisation sensitive ( RadiativeConvectiveModelEnv ). This insight
+is crucial for efficient algorithm selection in compute-constrained climate model simulations while
+using RL to enhance parameter adjustments and model performance in complex climate scenarios.
+4 Conclusion
+This study demonstrates RL’s potential to enhance parameterisations in idealised climate models, rep-
+resenting one of the first efforts in computational climate science. Through extensive experimentation
+with continuous action model-free RL algorithms across two distinct idealised climate environments,
+we show that RL agents exhibit great promise in the dynamic setting of parameters (as a function
+of the atmospheric state) whilst maintaining the structure of the physical parametrisations intact.
+Off-policy algorithms (DDPG, TD3, TQC) excel in SimpleClimateBiasCorrectionEnv , while
+4on-policy algorithms (DPG, PPO, TRPO) perform better in RadiativeConvectiveModelEnv . Our
+high-performance parallel computing setup (Section A.3) enables scalable RL experiments while
+meeting real-life climate model compute demands. This research also sets the stage for exploring RL
+in more complex scenarios, potentially integrating with the Met Office’s weather and climate models.
+Though currently limited in scope, our work presents an initial step towards AI-assisted modelling
+that integrates RL with climate models, aiming to generate substantial research interest within the
+scientific ML community.
+Acknowledgements and Disclosure of Funding
+P. Nath was supported by the UKRI Centre for Doctoral Training in Application of Artificial
+Intelligence to the study of Environmental Risks [EP/S022961/1]. Mark Webb was supported
+by the Met Office Hadley Centre Climate Programme funded by DSIT.
+References
+[1]Met Office. 2023 was second warmest year on record for UK;
+2024. Available from: https://www.metoffice.gov.uk/about-us/
+news-and-media/media-centre/weather-and-climate-news/2023/
+2023-was-second-warmest-year-on-record-for-uk .
+[2]Sefton C, Muchan K, Parry S, Matthews B, Barker LJ, Turner S, et al. The 2019/2020
+floods in the UK: a hydrological appraisal. Weather. 2021;76(12):378-84. Available from:
+https://onlinelibrary.wiley.com/doi/abs/10.1002/wea.3993 .
+[3]UK Government Environment Agency. National flood and coastal ero-
+sion risk management strategy for England: executive summary; 2022.
+Available from: https://www.gov.uk/government/publications/
+national-flood-and-coastal-erosion-risk-management-strategy-for-england--2 .
+[4]Met Office. Unified Model; 1990. Available from: https://www.metoffice.gov.uk/
+research/approach/modelling-systems/unified-model .
+[5]ECMWF. Integrated Forecasting System; 2023. Available from: https://www.ecmwf.int/
+en/forecasts/documentation-and-support/changes-ecmwf-model .
+[6]Met Office. History of numerical weather prediction; 2017. Available from: https:
+//www.metoffice.gov.uk/weather/learn-about/how-forecasts-are-made/
+computer-models/history-of-numerical-weather-prediction .
+[7]Lupo A, Kininmonth W, Armstrong JS, Green K. Global climate models and their limitations.
+Climate change reconsidered II: Physical science. 2013;9:148. Publisher: The Heartland Insti-
+tute Chicago, IL. Available from: https://citeseerx.ist.psu.edu/document?repid=
+rep1&type=pdf&doi=977f17fe906e9ed9e45361f0ea33c534f0e8669e .
+[8]Lang S, Alexe M, Chantry M, Dramsch J, Pinault F, Raoult B, et al.. AIFS - ECMWF’s data-
+driven forecasting system; 2024. Available from: https://arxiv.org/abs/2406.01465v1 .
+[9]Vaughan A, Markou S, Tebbutt W, Requeima J, Bruinsma WP, Andersson TR, et al.. Aardvark
+Weather: end-to-end data-driven weather forecasting; 2024. Available from: https://arxiv.
+org/abs/2404.00411v1 .
+[10] Stock J, Pathak J, Cohen Y , Pritchard M, Garg P, Durran D, et al.. DiffObs: Generative
+Diffusion for Global Forecasting of Satellite Observations; 2024. Available from: https:
+//arxiv.org/abs/2404.06517v1 .
+[11] Nguyen T, Brandstetter J, Kapoor A, Gupta JK, Grover A. ClimaX: A foundation model for
+weather and climate; 2023. Available from: https://arxiv.org/abs/2301.10343v5 .
+[12] Lessig C, Luise I, Gong B, Langguth M, Stadtler S, Schultz M. AtmoRep: A stochastic model
+of atmosphere dynamics using large scale representation learning; 2023. Available from:
+https://arxiv.org/abs/2308.13280v2 .
+5[13] Ben-Bouallegue Z, Clare MCA, Magnusson L, Gascon E, Maier-Gerber M, Janousek M, et al..
+The rise of data-driven weather forecasting. arXiv; 2023. ArXiv:2307.10128 [physics]. Available
+from: http://arxiv.org/abs/2307.10128 .
+[14] Lam R, Sanchez-Gonzalez A, Willson M, Wirnsberger P, Fortunato M, Alet F, et al. Learning
+skillful medium-range global weather forecasting. Science. 2023 Dec;382(6677):1416-21.
+Publisher: American Association for the Advancement of Science. Available from: https:
+//www.science.org/doi/10.1126/science.adi2336 .
+[15] Price I, Sanchez-Gonzalez A, Alet F, Andersson TR, El-Kadi A, Masters D, et al.. GenCast:
+Diffusion-based ensemble forecasting for medium-range weather; 2023. Available from:
+https://arxiv.org/abs/2312.15796v2 .
+[16] Bi K, Xie L, Zhang H, Chen X, Gu X, Tian Q. Accurate medium-range global weather forecast-
+ing with 3D neural networks. Nature. 2023 Jul;619(7970):533-8. Publisher: Nature Publishing
+Group. Available from: https://www.nature.com/articles/s41586-023-06185-3 .
+[17] Chen K, Han T, Gong J, Bai L, Ling F, Luo JJ, et al.. FengWu: Pushing the Skillful Global
+Medium-range Weather Forecast beyond 10 Days Lead; 2023. Available from: https://
+arxiv.org/abs/2304.02948v1 .
+[18] Nath P, Shukla P, Wang S, Quilodrán-Casas C. Forecasting Tropical Cyclones with Cascaded
+Diffusion Models; 2023. Available from: https://arxiv.org/abs/2310.01690 .
+[19] Pathak J, Subramanian S, Harrington P, Raja S, Chattopadhyay A, Mardani M, et al.. Four-
+CastNet: A Global Data-driven High-resolution Weather Model using Adaptive Fourier Neural
+Operators; 2022. Available from: https://arxiv.org/abs/2202.11214v1 .
+[20] Keisler R. Forecasting Global Weather with Graph Neural Networks. arXiv; 2022.
+ArXiv:2202.07575 [physics]. Available from: http://arxiv.org/abs/2202.07575 .
+[21] Willard J, Jia X, Xu S, Steinbach M, Kumar V . Integrating Scientific Knowledge with Ma-
+chine Learning for Engineering and Environmental Systems. ACM Computing Surveys. 2022
+Nov;55(4):66:1-66:37. Available from: https://dl.acm.org/doi/10.1145/3514228 .
+[22] Karpatne A, Atluri G, Faghmous JH, Steinbach M, Banerjee A, Ganguly A, et al. Theory-
+Guided Data Science: A New Paradigm for Scientific Discovery from Data. IEEE Transactions
+on Knowledge and Data Engineering. 2017 Oct;29(10):2318-31. Available from: https:
+//ieeexplore.ieee.org/document/7959606 .
+[23] Lazer D, Kennedy R, King G, Vespignani A. The Parable of Google Flu: Traps in Big
+Data Analysis. Science. 2014 Mar;343(6176):1203-5. Publisher: American Association for
+the Advancement of Science. Available from: https://www.science.org/doi/full/10.
+1126/science.1248506 .
+[24] Caldwell PM, Bretherton CS, Zelinka MD, Klein SA, Santer BD, Sanderson BM. Statistical
+significance of climate sensitivity predictors obtained by data mining. Geophysical Research
+Letters. 2014;41(5):1803-8. Available from: https://onlinelibrary.wiley.com/doi/
+abs/10.1002/2014GL059205 .
+[25] Hansen D, Maddix DC, Alizadeh S, Gupta G, Mahoney MW. Learning Physical Models that
+Can Respect Conservation Laws. Physica D: Nonlinear Phenomena. 2024 Jan;457:133952.
+ArXiv:2302.11002 [cs, math]. Available from: http://arxiv.org/abs/2302.11002 .
+[26] Readshaw T, Jones WP, Rigopoulos S. On the incorporation of conservation laws in ma-
+chine learning tabulation of kinetics for reacting flow simulation. Physics of Fluids. 2023
+Apr;35(4):047103. Available from: https://doi.org/10.1063/5.0143894 .
+[27] Karniadakis GE, Kevrekidis IG, Lu L, Perdikaris P, Wang S, Yang L. Physics-informed machine
+learning. Nature Reviews Physics. 2021 Jun;3(6):422-40. Publisher: Nature Publishing Group.
+Available from: https://www.nature.com/articles/s42254-021-00314-5 .
+6[28] Beucler T, Pritchard M, Rasp S, Ott J, Baldi P, Gentine P. Enforcing Analytic Constraints in Neu-
+ral Networks Emulating Physical Systems. Physical Review Letters. 2021 Mar;126(9):098302.
+Publisher: American Physical Society. Available from: https://link.aps.org/doi/10.
+1103/PhysRevLett.126.098302 .
+[29] Bolton T, Zanna L. Applications of Deep Learning to Ocean Data Inference and Subgrid Pa-
+rameterization. Journal of Advances in Modeling Earth Systems. 2019;11(1):376-99. Available
+from: https://onlinelibrary.wiley.com/doi/abs/10.1029/2018MS001472 .
+[30] de Burgh-Day CO, Leeuwenburg T. Machine learning for numerical weather and climate
+modelling: a review. Geoscientific Model Development. 2023 Nov;16(22):6433-77. Publisher:
+Copernicus GmbH. Available from: https://gmd.copernicus.org/articles/16/6433/
+2023/ .
+[31] Rose BE. CLIMLAB: a Python toolkit for interactive, process-oriented climate modeling. J Open
+Source Softw. 2018;3(24):659. Available from: https://www.theoj.org/joss-papers/
+joss.00659/10.21105.joss.00659.pdf .
+[32] Williams RJ. Simple statistical gradient-following algorithms for connectionist reinforcement
+learning. Machine Learning. 1992 May;8(3):229-56. Available from: https://doi.org/10.
+1007/BF00992696 .
+[33] Lillicrap TP, Hunt JJ, Pritzel A, Heess N, Erez T, Tassa Y , et al.. Continuous control with
+deep reinforcement learning. arXiv; 2019. ArXiv:1509.02971 [cs, stat]. Available from:
+http://arxiv.org/abs/1509.02971 .
+[34] Silver D, Lever G, Heess N, Degris T, Wierstra D, Riedmiller M. Deterministic policy gradient
+algorithms. In: International conference on machine learning. Pmlr; 2014. p. 387-95. Available
+from: http://proceedings.mlr.press/v32/silver14.html .
+[35] Fujimoto S, van Hoof H, Meger D. Addressing Function Approximation Error in Actor-Critic
+Methods. arXiv; 2018. ArXiv:1802.09477 [cs, stat] version: 3. Available from: http://arxiv.
+org/abs/1802.09477 .
+[36] Schulman J, Wolski F, Dhariwal P, Radford A, Klimov O. Proximal Policy Optimization
+Algorithms. arXiv; 2017. ArXiv:1707.06347 [cs]. Available from: http://arxiv.org/abs/
+1707.06347 .
+[37] Schulman J, Levine S, Moritz P, Jordan MI, Abbeel P. Trust Region Policy Optimization. arXiv;
+2017. ArXiv:1502.05477 [cs]. Available from: http://arxiv.org/abs/1502.05477 .
+[38] Haarnoja T, Zhou A, Abbeel P, Levine S. Soft Actor-Critic: Off-Policy Maximum Entropy Deep
+Reinforcement Learning with a Stochastic Actor. arXiv; 2018. ArXiv:1801.01290 [cs, stat].
+Available from: http://arxiv.org/abs/1801.01290 .
+[39] Kuznetsov A, Shvechikov P, Grishin A, Vetrov D. Controlling Overestimation Bias with Trun-
+cated Mixture of Continuous Distributional Quantile Critics. arXiv; 2020. ArXiv:2005.04269
+[cs, stat]. Available from: http://arxiv.org/abs/2005.04269 .
+[40] Hersbach H, Bell B, Berrisford P, Hirahara S, Horányi A, Muñoz-Sabater J, et al. The ERA5
+global reanalysis. Quarterly Journal of the Royal Meteorological Society. 2020;146(730):1999-
+2049. Available from: https://onlinelibrary.wiley.com/doi/abs/10.1002/qj.
+3803 .
+[41] Rose BE. 12. Radiative-Convective Equilibrium — The Climate Laboratory; 2022. Avail-
+able from: https://brian-rose.github.io/ClimateLaboratoryBook/courseware/
+rce.html .
+[42] Hartmann DL. Chapter 3 - Atmospheric Radiative Transfer and Climate. In: Hart-
+mann DL, editor. Global Physical Climatology (Second Edition). Boston: Elsevier; 2016.
+p. 49-94. Available from: https://www.sciencedirect.com/science/article/pii/
+B9780123285317000037 .
+7[43] Held I. 19. Radiative-convective equilibrium – Geophysical Fluid Dynamics Lab-
+oratory; 2011. Available from: https://www.gfdl.noaa.gov/blog_held/
+19-radiative-convective-equilibrium/ .
+[44] Introducing Pygame. In: McGugan W, editor. Beginning Game Development with Python and
+Pygame: From Novice to Professional. Berkeley, CA: Apress; 2007. p. 41-66. Available from:
+https://doi.org/10.1007/978-1-4302-0325-4_3 .
+[45] NOAA Physical Sciences Laboratory. Monthly long term mean air temperatures from the NCEP
+Reanalysis (1981-2010); 2011. Available from: https://psl.noaa.gov/repository/
+entry/show?entryid=synth%3Ae570c8f9-ec09-4e89-93b4-babd5651e7a9%
+3AL25jZXAucmVhbmFseXNpcy5kZXJpdmVkL3ByZXNzdXJlL2Fpci5tb24ubHRtLjE5ODEtMjAxMC5uYw%
+3D%3D .
+[46] Kalnay E, Kanamitsu M, Kistler R, Collins W, Deaven D, Gandin L, et al. The NCEP/NCAR 40-
+Year Reanalysis Project. Bulletin of the American Meteorological Society. 1996 Mar;77(3):437-
+72. Publisher: American Meteorological Society Section: Bulletin of the American Meteorolog-
+ical Society. Available from: https://journals.ametsoc.org/view/journals/bams/
+77/3/1520-0477_1996_077_0437_tnyrp_2_0_co_2.xml .
+[47] Sutton RS, Barto AG. Reinforcement learning: An introduction, 2nd ed. Reinforcement
+learning: An introduction, 2nd ed. Cambridge, MA, US: The MIT Press; 2018. Pages: xxii,
+526.
+[48] Shewchuk JR. An introduction to the conjugate gradient method without the ago-
+nizing pain. 1994. Publisher: Carnegie-Mellon University. Department of Computer
+Science Pittsburgh. Available from: ftp://ftp.unicauca.edu.co/Facultades/
+.FIET_serepiteencuentasyocupaespacio/DEIC/docs/Materias/computacion%
+20inteligente/parte%20II/semana12/gradient/painless-conjugate-gradient.
+pdf.
+[49] Moritz P, Nishihara R, Wang S, Tumanov A, Liaw R, Liang E, et al. Ray: A distributed
+framework for emerging {AI} applications. In: 13th USENIX symposium on operating
+systems design and implementation (OSDI 18); 2018. p. 561-77. Available from: https:
+//www.usenix.org/conference/osdi18/presentation/moritz .
+[50] Yoo AB, Jette MA, Grondona M. SLURM: Simple Linux Utility for Resource Management. In:
+Goos G, Hartmanis J, Van Leeuwen J, Feitelson D, Rudolph L, Schwiegelshohn U, editors. Job
+Scheduling Strategies for Parallel Processing. vol. 2862. Berlin, Heidelberg: Springer Berlin
+Heidelberg; 2003. p. 44-60. Series Title: Lecture Notes in Computer Science. Available from:
+http://link.springer.com/10.1007/10968987_3 .
+[51] Akiba T, Sano S, Yanase T, Ohta T, Koyama M. Optuna: A Next-generation Hyperparameter
+Optimization Framework. In: Proceedings of the 25th ACM SIGKDD International Conference
+on Knowledge Discovery & Data Mining. Anchorage AK USA: ACM; 2019. p. 2623-31.
+Available from: https://dl.acm.org/doi/10.1145/3292500.3330701 .
+[52] Lawrence BN, Bennett V , Churchill J, Juckes M, Kershaw P, Oliver P, et al.. The JASMIN
+super-data-cluster. arXiv; 2012. ArXiv:1204.3553 [physics]. Available from: http://arxiv.
+org/abs/1204.3553 .
+[53] Palmer TN. Stochastic weather and climate models. Nature Reviews Physics. 2019;1(7):463-71.
+Publisher: Nature Publishing Group UK London. Available from: https://www.nature.
+com/articles/s42254-019-0062-2 .
+8Appendix A Additional Background
+A.1 RL Algorithm Summaries
+Table A.1: Four point summaries of key RL algorithms used
+Algorithm Properties
+REINFORCE [32] 1. Off-policy (requires a full trajectory) and non actor-critic.
+2. Uses a stochastic policy to generate actions.
+3. Uses policy-gradient for actor updates.
+4. Samples trajectories and computes the discounted cumulative rewards (returns).
+Deterministic Policy 1. On-policy and actor-critic.
+Gradient (DPG) [34] 2. Uses deterministic policies (non ϵ-greedy stochastic).
+3. Uses temporal difference (TD) learning [ 47] for critic and policy gradients [ 47] for
+actor updates.
+4. No target networks for actor or critics.
+Deep Deterministic 1. Off-policy and actor-critic.
+Policy Gradient (DDPG) 2. Uses deterministic policies (non ϵ-greedy stochastic).
+[33] 3. Uses an experience replay buffer to store past experiences.
+4. Uses target networks for both the actor and the critic to stabilise training.
+Twin Delayed DDPG 1. Off-policy and actor-critic.
+(TD3) [35] 2. Uses two critic networks to reduce the overestimation bias in value estimation.
+3. Updates the policy less frequently than the value function aiding stabilisation.
+4. Adds gaussian noise to the target action to facilitate exploration.
+Trust Region Policy 1. On-policy and actor-critic.
+Optimisation (TRPO) [37] 2. Uses a stochastic policy and learns from sampled trajectories.
+3. Constrains the policy update to a KL-divergence based trust region to ensure stable
+learning.
+4. Uses conjugate gradient descent [48] to solve the constrained optimisation problem.
+Proximal Policy 1. On-policy and actor-critic.
+Optimisation (PPO) [36] 2. Uses a stochastic policy and learns from sampled trajectories.
+3. Constrains the policy update using a clipped surrogate objective function.
+4. Less computationally expensive than TRPO.
+Soft-Actor Critic (SAC) 1. Off-policy and actor-critic.
+[38] 2. Uses a stochastic policy and learns from an experience replay buffer.
+3. Optimises an entropy based objective function, balancing reward and entropy.
+4. Updates the policy, two Q-value networks, and an entropy parameter.
+Truncated Quantile 1. Off-policy and actor-critic.
+Critics (TQC) [39] 2. Uses quantile regression to estimate the distribution of returns instead of the mean.
+3. Truncates quantiles in the critic’s loss function to reduce impact of overestimations.
+4. Employs a quantile Huber loss function to learn the quantile values.
+9A.2 RL Environments
+(a) Thermometer
+0 25 50 75 100 125 150 175 200
+Steps280300320340360380T emperature (in K)State (t) w/ RL
+State (t) w/ Biased Physics
+Tobs=321.75 K
+T0=273.15 K
+Tphysics=380 K (b) Temperature evolution
+Figure A.1: (a) Thermometer (with 25 K marking intervals) visualising current temperature (indicated
+by red). Black line in the middle indicates the desired observed temperature of 321.75 K. (b) Line
+plot describing the state (temperature) evolution of both the RL agent and the biased physics model
+over 200 steps in one episode.
+Emissivity Adj Lapse Rate0246810Value
+0.978.29Parameters
+=0.0
+=30.0
+=60.0
+=90.0
+  T=100.0
+  T=75.0
+  T=50.0
+  T=25.0
+=120.0
+=150.0
+=180.0
+=210.0
+=240.0
+800
+1000200
+400
+60010050
+32
+436
+840
+1244
+28
+1648
+2052
+245660
+0.1
+1.0
+7.0
+20.0
+52.00.4
+3.0
+36.00.01
+12.0
+80.0RCE Model w/ RL
+RCE Model
+Observations
+T_diff @ 100hPa T_diff @ 200 hPa0246810Difference [°C]T emperature Differences
+RCE Model w/ RL
+RCE Model
+(a) Isothermal equilibrium at step=0
+Emissivity Adj Lapse Rate0246810Value
+0.519.57Parameters
+=0.0
+=30.0
+=60.0
+=90.0
+  T=100.0
+  T=75.0
+  T=50.0
+  T=25.0
+=120.0
+=150.0
+=180.0
+=210.0
+=240.0
+800
+1000200
+400
+60010050
+32
+436
+840
+1244
+28
+1648
+2052
+245660
+0.1
+1.0
+7.0
+20.0
+52.00.4
+3.0
+36.00.01
+12.0
+80.0RCE Model w/ RL
+RCE Model
+Observations
+T_diff @ 100hPa T_diff @ 200 hPa0246810Difference [°C]
+3.123.895.116.71T emperature Differences
+RCE Model w/ RL
+RCE Model (b) Intermediate state at step=200
+Figure A.2: Tephigrams displaying three different temperature profiles: RCE Model with RL (blue),
+RCE Model (orange), and Observations (black).
+Thermodynamic lines included in the Tephigrams (Fig. A.2) are the following:
+1.Isobars : Lines of constant pressure (in hPa). Displayed as dark blue curved left-right lines.
+2.Isotherms : Lines of constant temperature (in◦C). Displayed as grey lines inclined at 45◦
+(anti-clockwise).
+3.Dry adiabats : Lines of constant potential temperature (in◦C). Displayed as grey lines
+inclined at 135◦(anti-clockwise).
+4.Moist adiabats : Lines of constant equivalent potential temperature (in◦C) for water
+saturated air parcels. Displayed as curved light orange lines from bottom to left.
+5.Saturated mixing ratio : Lines of constant saturated mixing ratio (in g/kg). Displayed as
+green lines from bottom to top-right.
+106.Isotherm at T =0◦C: Line of constant temperature T =0◦C. Displayed as a thick dashed
+black line inclined at 45◦(anti-clockwise).
+Table A.2: Tabular representation of different RL hyperparameters
+Algorithm Parameter Names Count
+REINFORCE learning_rate, actor_critic_layer_size 2
+DDPG learning_rate, tau, batch_size, exploration_noise,
+policy_frequency, noise_clip, actor_critic_layer_size7
+DPG learning_rate, exploration_noise, policy_frequency,
+actor_critic_layer_size4
+TD3 learning_rate, tau, batch_size, policy_noise,
+exploration_noise, policy_frequency, noise_clip,
+actor_critic_layer_size8
+PPO learning_rate, num_minibatches, update_epochs, clip_coef,
+max_grad_norm, actor_critic_layer_size6
+TRPO learning_rate, num_minibatches, update_epochs, clip_coef,
+max_grad_norm, actor_critic_layer_size6
+SAC tau, batch_size, policy_lr, q_lr, policy_frequency,
+target_network_frequency, noise_clip, alpha,
+actor_critic_layer_size9
+TQC tau, batch_size, n_quantiles, n_critics, actor_adam_lr,
+critic_adam_lr, alpha_adam_lr, policy_frequency,
+target_network_frequency, actor_critic_layer_size10
+A.3 Hyperparameter Tuning Setup
+For tuning different hyperparameters (Table A.2), we use Ray [ 49], a distributed computing frame-
+work, interfacing with SLURM [ 50] to manage resources across one head node and three worker
+nodes. Each node is equipped with 8x 3.0 GHz AMD Epyc 7302 CPUs and 2x 40 GB Nvidia A100
+GPUs. We partition each GPU into four logical units using Ray’s resource management, enhancing
+parallel computation capabilities. We utilise Optuna [ 51], an automatic hyperparameter optimisation
+framework, for advanced parameter sampling and pruning of underperforming trials. This setup
+(Fig. A.3) allows us to initiate 32 concurrent tuning experiments for each RL algorithm, maximising
+the use of JASMIN’s [ 52] allocated resources per user. Such a high-performance parallel computing
+configuration made of Ray, SLURM, and Optuna on JASMIN’s infrastructure enables rapid experi-
+mentation and scaling, crucial for swift testing and analysis within a constrained timeframe of six
+hours combined over all eight RL algorithms for each experiment.
+A.4 Evaluation
+We evaluate RL environments using two parameter configurations: optim-L (optimised actor-
+critic layer size) and homo-64L (constant actor-critic layer size of 64). Each configuration has
+two runs: an ideal compute scenario (60k steps for SimpleClimateBiasCorrectionEnv , 10k for
+RadiativeConvectiveModelEnv ) and a realistic compute scenario [ 53], outlining 16 experiments
+in total (Table A.3). Our evaluation strategy focuses on three key aspects: a) Nto_threshold : Steps to
+reach a specific episodic return threshold (Table A.4). b) σ2
+after_threshold : Variance in episodic returns
+after reaching the threshold. c) ∆from_60k/10k : Difference between threshold episodic return and final
+return in the ideal scenario. This approach is key in identifying RL algorithms combining sample
+efficiency (a, c) and stability (b) alongside addressing the lack of a standard train/test procedure,
+present in traditional ML.
+111x 
+3.0 GHz
+AMD Epyc
+70328x 
+3.0 GHz 
+AMD Epyc 73021x 
+Nvidia A100 40
+GB1x 
+Nvidia A100
+10 GB1x 
+Nvidia A100
+10 GB1x 
+Nvidia A100
+10 GB1x 
+Nvidia A100
+10 GB
+1x 
+Nvidia A100 40
+GB1x 
+Nvidia A100
+10 GB1x 
+Nvidia A100
+10 GB1x 
+Nvidia A100
+10 GB1x 
+Nvidia A100
+10 GB
+1x 
+3.0 GHz
+AMD Epyc
+7032 1x 
+3.0 GHz
+AMD Epyc
+73021x 
+3.0 GHz
+AMD Epyc
+73021x 
+Nvidia A100
+10 GB
+Optuna
+RunRay
+Logical
+Partition
+Ray
+Logical
+Partition
+...1/81/41/4GPU
+CPU
+Ray
+Logical
+PartitionPROCESS
+x8RAY NODE
+zRAY
+HEAD NODEWORKER MGMT .
++
+x8 PROCESS RUN
+RAY
+WORKER  NODE
+x8 PROCESS RUNRAY
+WORKER  NODE
+x8 PROCESS RUNRAY
+WORKER  NODE
+x8 PROCESS RUN
+(a)(b)Figure A.3: Flow diagrams describing (a) the resource allocation in a Ray node and (b) the arrange-
+ment of Ray nodes in JASMIN
+Table A.3: Experiment codes for each RL environment
+Environment Experiment ID
+SimpleClimateBiasCorrection-v0v0-optim-L
+v0-optim-L-60k
+v0-homo-64L
+v0-homo-64L-60k
+SimpleClimateBiasCorrection-v1v1-optim-L
+v1-optim-L-60k
+v1-homo-64L
+v1-homo-64L-60k
+SimpleClimateBiasCorrection-v2v2-optim-L
+v2-optim-L-60k
+v2-homo-64L
+v2-homo-64L-60k
+RadiativeConvectiveModel-v0rce-v0-optim-L
+rce-v0-optim-L-10k
+rce-v0-homo-64L
+rce-v0-homo-64L-10k
+Table A.4: Empirically determined episodic return thresholds from the learning curves for each RL
+environment
+Environment Threshold Error (in K) per Episodic Step1
+SimpleClimateBiasCorrection-v0 -0.25 ±0.035
+SimpleClimateBiasCorrection-v1 -2.718 ±0.116
+SimpleClimateBiasCorrection-v2 -1 * (1602+ 2.718) ±0.116
+RadiativeConvectiveModel-v0 -43900 ±9.37 (0.553)
+12Appendix B Additional Results
+B.1 Result Generation Process
+Our process to generate results (Fig.B.4), begins with determining optimal hyperparameters using
+the Ray-powered parallel computing strategy (SectionA.3). After identifying these parameters with
+seed 1, we conduct 10 runs using random seeds (1-10) to capture variance in episodic returns,
+accounting for stochasticity in neural network weights at initialisation. We then calculate scores
+for three components (Section A.4) across these 10 runs for each RL algorithm (Table A.1). Based
+on the scores obtained, we report the top-3 and top-1 algorithms. This comprehensive approach
+ensures robust evaluation of RL algorithm performance across multiple experiments, considering
+both optimal parameters and performance variability.
+Figure B.4: Flow diagram describing the end-to-end result generation process for each experiment
+13B.2 Top-3 Algorithms
+Table B.5: Top-3 algorithms in SimpleClimateBiasCorrectionEnv
+Environment Experiment ID #1 #2 #3
+SimpleClimateBiasCorrection-v0v0-optim-L TD3 TQC DPG
+v0-optim-L-60k DDPG TD3 TQC
+v0-homo-64L DPG DDPG TQC
+v0-homo-64L-60k TQC DDPG DPG
+SimpleClimateBiasCorrection-v1v1-optim-L TQC DDPG TD3
+v1-optim-L-60k TD3 DDPG TQC
+v1-homo-64L DDPG TD3 TQC
+v1-homo-64L-60k DDPG TD3 TQC
+SimpleClimateBiasCorrection-v2v2-optim-L TD3 DDPG DDPG
+v2-optim-L-60k TD3 SAC DDPG
+v2-homo-64L TD3 DDPG TQC
+v2-homo-64L-60k TD3 SAC DDPG
+Table B.6: Top-3 algorithms in RadiativeConvectiveModelEnv
+Environment Experiment ID #1 #2 #3
+RadiativeConvectiveModel-v0v0-optim-L DPG DDPG TQC
+v0-optim-L-10k DPG PPO TQC
+v0-homo-64L TRPO PPO DPG
+v0-homo-64L-10k TRPO PPO DPG
+Table B.7: Frequency of RL algorithms within Top-1
+(a)SimpleClimateBiasCorrectionEnv
+Rank Algorithm Frequency
+1 TD3 6
+2 DDPG 3
+3 TQC 2
+4 DPG 1(b)RadiativeConvectiveModelEnv
+Rank Algorithm Frequency
+1 DPG 2
+1 TRPO 2
+14B.3 Training Curves w/ Error Bounds
+Figure B.5: Top-3 RL algorithms with 95% confidence intervals around the mean line for each
+homo-64L-60k experiment over 60k steps in SimpleClimateBiasCorrectionEnv (1 episode =
+200 steps).
+Figure B.6: Top-3 RL algorithms with 95% confidence intervals around the mean line for each
+RadiativeConvectiveModelEnv experiment over 10k steps (1 episode = 500 steps).
+15Figure B.7: Top-3 RL algorithms with 95% confidence intervals around the mean line for
+each SimpleClimateBiasCorrectionEnv experiment (except homo-64L-60k ) over 60k steps
+(1 episode = 200 steps).
+B.4 Policy Analysis
+Analysis of policy decisions in the SimpleClimateBiasCorrectionEnv reveals a clear inverse
+correlation between the current state at timestep tand the subsequent action at timestep t+ 1. This
+pattern aligns with the intuitive expectation that when temperature exceeds the normalised observed
+temperature threshold, the heating rate should be adjusted negatively (increased cooling) to reduce
+temperature, and vice-versa when temperature falls below the threshold. The consistency of this
+behaviour across all three versions of the environment over the experiments performed, suggests that
+the RL agents managed to learn a robust and physically meaningful policy for temperature regulation.
+These findings further support the potential of RL in addressing climate model bias correction and
+also generate interpretable policy decisions in climate-related applications.
+0 5 10 15 20 25
+Steps0.4
+0.2
+0.00.20.40.6Value
+Next Action [u] (t+1)
+State (t)
+Tobs=321.75 K
+(a)v0-optim-L-60k
+DDPG
+0 5 10 15 20 25
+Steps0.2
+0.00.20.40.6Value
+Next Action [u] (t+1)
+State (t)
+Tobs=321.75 K(b)v1-optim-L-60k
+TD3
+0 5 10 15 20 25
+Steps0.2
+0.00.20.40.6Value
+Next Action [u] (t+1)
+State (t)
+Tobs=321.75 K(c)v2-optim-L-60k
+TD3
+Figure B.8: Last 25 states (at time t) and their resulting RL agent actions (at time t+ 1) for
+SimpleClimateBiasCorrection-v0/1/2
+16Appendix C Algorithm Pseudocode
+C.1 REINFORCE
+Algorithm 1 REINFORCE
+1:Input: Gym environment, Number of episodes M, Steps per episode N, Learning rate α,
+Discount factor γ
+2:Initialise: Policy network parameters θ, Actor network πθ, Learning rate α
+3:Pre-Setup: Configure seed and environment variables, prepare environment and logging
+4:
+5:forepisode = 1toMdo
+6: Initialise episode buffer B← ∅
+7: Observe initial state s0
+8: fort= 0toN−1do
+9: Select action at∼πθ(st)
+10: Execute action atand observe reward rtand new state st+1
+11: Store transition (st, at, rt)inB
+12: st←st+1
+13: end for
+14: G←0,L(θ)←0
+15: fortinBreversed do
+16: G←rt+γG
+17: L(θ)← L(θ)− ∇ θGlogπθ(at|st)
+18: end for
+19: Update policy parameters θusing accumulated gradients:
+20:
+θ←θ+η1
+|B|L(θ)
+21:end for
+17C.2 Deterministic Policy Gradient (DPG)
+Algorithm 2 Deterministic Policy Gradient (DPG)
+1:Input: Gym environment, Total timesteps T, Discount factor γ, Learning rate for policy ηπ,
+Learning rate for Q-network ηQ, Batch size B, Exploration noise σ
+2:Initialise: Policy network parameters θ, Q-function network parameters ϕ
+3:Pre-Setup: Configure seed and environment variables, prepare environment and logging
+4:
+5:fort= 1toTdo
+6: Observe state sand select action a=πθ(s) +ϵ, where ϵ∼ N(0, σ)
+7: Execute action aand observe next state s′, reward r, and termination signal d
+8: Calculate Q-values:
+9:
+y(r, s′, d) =r+γ(1−d)Qϕ(s′, πθ(s′))
+10: Update Q-function by minimising the loss:
+11:
+ϕ←ϕ−ηQ∇ϕ(Qϕ(s, a)−y(r, s′, d))2
+12: Update policy by one step of gradient ascent:
+13:
+θ←θ+ηπ∇θQϕ(s, πθ(s))
+14:end for
+18C.3 Deep Deterministic Policy Gradient (DDPG)
+Algorithm 3 Deep Deterministic Policy Gradient (DDPG)
+1:Input: Gym environment, Total timesteps T, Replay buffer size N, Discount factor γ, Target
+smoothing coefficient τ, Batch size B, Learning rate η, Exploration noise σ
+2:Initialise: Policy network parameters θ, Q-function network parameters ϕ, target network
+parameters θtarg,ϕtarg, empty replay buffer D
+3:Pre-Setup: Configure seed and environment variables, prepare environment and logging
+4:
+5:fort= 1toTdo
+6: Observe state sand select action a=πθ(s)
+7: Add exploration noise a←a+ϵ, where ϵ∼ N(0, σ)if required
+8: Execute action aand observe next state s′, reward r, and termination signal d
+9: Store transition (s, a, r, s′, d)inD
+10: ift≥learning_starts then
+11: Sample a minibatch of Btransitions (s, a, r, s′, d)fromD
+12: Compute target for Q-function update:
+13:
+y(r, s′, d) =r+γ(1−d)Qϕtarg(s′, πθtarg(s′))
+14: Update Q-function by minimising the loss:
+15:
+ϕ←ϕ−η∇ϕ1
+|B|X
+(s,a,r,s′,d)∈B(Qϕ(s, a)−y(r, s′, d))2
+16: Update policy by one step of gradient ascent:
+17:
+θ←θ+η∇θ1
+|B|X
+s∈BQϕ(s, πθ(s))
+18: Soft-update target networks:
+19:
+θtarg←τθ+ (1−τ)θtarg, ϕ targ←τϕ+ (1−τ)ϕtarg
+20: end if
+21:end for
+19C.4 Twin Delayed DDPG (TD3)
+Algorithm 4 Twin Delayed DDPG (TD3)
+1:Input: Gym environment, Total timesteps T, Learning rate η, Replay buffer size N, Discount fac-
+torγ, Target smoothing coefficient τ, Batch size B, Policy noise σπ, Noise clip σclip, Exploration
+noise σexploration , Policy update frequency fπ
+2:Initialise: Actor network θ, Critic networks ϕ1,ϕ2, Target networks θtarg,ϕtarg, 1,ϕtarg, 2,
+Empty replay buffer D
+3:Pre-Setup: Configure seed and environment variables, prepare environment and logging
+4:
+5:fort= 1toTdo
+6: Observe state sand select action a=πθ(s)
+7: Add exploration noise a←a+ϵ, where ϵ∼ N(0, σexploration )if required
+8: Execute action aand observe next state s′, reward r, and done signal d
+9: Store transition (s, a, r, s′, d)inD
+10: ift≥learning_starts then
+11: Sample a minibatch of Btransitions (s, a, r, s′, d)fromD
+12: Compute target actions:
+13:
+a′←πθtarg(s′) +clip(N(0, σπ),−σclip, σclip)
+14: Compute target Q-values:
+15:
+y(r, s′, d)←r+γ(1−d) min
+i=1,2Qϕtarg,i(s′, a′)
+16: Update critic networks by minimising the loss:
+17:
+ϕi←ϕi−η∇ϕi1
+|B|X
+(s,a,r,s′,d)∈B(Qϕi(s, a)−y(r, s′, d))2,fori= 1,2
+18: iftmod fπ= 0then
+19: Update actor network by policy gradient:
+20:
+θ←θ+η∇θ1
+|B|X
+s∈BQϕ1(s, πθ(s))
+21: Soft update target networks:
+22:
+θtarg←τθ+ (1−τ)θtarg, ϕ targ,i←τϕi+ (1−τ)ϕtarg,i fori= 1,2
+23: end if
+24: end if
+25:end for
+20C.5 Trust Region Policy Optimization (TRPO)
+Algorithm 5 Trust Region Policy Optimization (TRPO)
+1:Input: Gym environment, Total timesteps T, Mini-batch size M, Number of steps per episode
+N, Discount factor γ, GAE lambda λ, KL divergence limit δ, Trust region update size β
+2:Initialise: Policy parameters θ, Value function parameters ϕ
+3:Pre-Setup: Configure seed and environment variables, prepare environment and logging
+4:
+5:foriteration = 1,2, . . . ,T
+Ndo
+6: Collect set of trajectories D={τi}by running policy πθin the environment
+7: Compute returns {Ri}and advantage estimates {ˆAi}using GAE
+8: forepoch = 1,2, . . . , K do
+9: Shuffle Dto create Mmini-batches
+10: foreach mini-batch tdo
+11: Update value function by minimising the MSE loss:
+12:
+L(ϕ) =1
+2MX
+t
+Vϕ(st)−ˆRt2
+13: Compute the surrogate objective (policy loss):
+Lπ(θ) =1
+MX
+tπθ(at|st)
+πθold(at|st)ˆAt
+14: Compute policy gradient ∇θLπ(θ)
+15: Apply conjugate gradient to estimate the natural policy gradient ˆg
+ˆg≈(∇2
+θKL(πθold∥πθ))−1∇θLπ(θ)
+16: Compute step size αusing line search:
+α=s
+2δ
+ˆgTHˆg,where His the Hessian of KL(πθold∥πθ)
+17: Update policy θ←θ+αˆgusing an exponential increment strategy
+18: end for
+19: break ifKL(πθold∥πθ)> δ
+20: end for
+21:end for
+21C.6 Proximal Policy Optimization (PPO)
+Algorithm 6 Proximal Policy Optimization (PPO)
+1:Input: Gym environment, Total timesteps T, Number of steps per episode N, Mini-batch size
+M, Update epochs K, Learning rate α, Discount factor γ, GAE lambda λ, Clipping parameter ϵ,
+VF coefficient c1, Entropy coefficient c2, KL divergence limit δ
+2:Initialise: Policy parameters θ, Value function parameters ϕ
+3:Pre-Setup: Configure seed and environment variables, prepare environment and logging
+4:
+5:foriteration = 1,2, . . . ,T
+Ndo
+6: Collect set of trajectories D={τi}by running policy πθin the environment
+7: Compute returns {Ri}and advantage estimates {ˆAi}using GAE
+8: forepoch = 1,2, . . . , K do
+9: Shuffle Dto create Mmini-batches
+10: foreach mini-batch tdo
+11: Compute ratio rt(θ) =πθ(at|st)
+πθold(at|st)
+12: Compute clipped surrogate objective (policy loss):
+LCLIP(θ) =ˆEth
+min(rt(θ)ˆAt,clip(rt(θ),1−ϵ,1 +ϵ)ˆAt)i
+13: Compute value function loss:
+LV F(ϕ) =
+Vϕ(st)−ˆRt2
+14: Compute entropy: S[πθ](st)
+15: Compute total loss:
+L(θ, ϕ) =−LCLIP(θ) +c1LV F(ϕ)−c2S[πθ](st)
+16: Update θandϕusing stochastic gradient descent
+17: end for
+18: break ifKL(πθold∥πθ)> δ
+19: end for
+20:end for
+22C.7 Soft Actor-Critic (SAC)
+Algorithm 7 Soft Actor-Critic (SAC)
+1:Input: Gym environment, Total timesteps T, Replay buffer size N, Discount factor γ, Target
+smoothing coefficient τ, Batch size B, Learning rate for policy ηπ, Learning rate for Q-network
+ηQ
+2:Initialise: Policy network parameters θ, Critic network parameters ϕ1,ϕ2, Target critic pa-
+rameters ϕtarg,1,ϕtarg,2, Empty replay buffer D, actor πθ, Entropy coefficient α, Target entropy
+coefficient αtarg
+3:Pre-Setup: Configure seed and environment variables, prepare environment and logging
+4:
+5:fort= 1toTdo
+6: Observe state sand select action a∼πθ(s)with exploration strategy if required
+7: Execute action aand observe next state s′, reward r, and termination signal d
+8: Store transition (s, a, r, s′, d)inD
+9: ift≥learning_starts then
+10: Sample a minibatch of Btransitions (s, a, r, s′, d)fromD
+11: Compute targets for critic updates:
+12:
+y(r, s′, d) =r+γ(1−d)
+min
+i=1,2Qϕtarg,i(s′,˜a′)−αlogπθ(˜a′|s′)
+13: where ˜a′∼πθ(s′)
+14: Update Q-functions by one step of gradient descent:
+15:
+ϕi←ϕi−ηQ∇ϕi1
+|B|X
+(s,a,r,s′,d)∈B(Qϕi(s, a)−y(r, s′, d))2fori= 1,2
+16: Update policy by one step of gradient ascent:
+17:
+θ←θ+ηπ∇θ1
+|B|X
+s∈B
+min
+i=1,2Qϕi(s, πθ(s))−αlogπθ(a|s)
+18: Soft-update target networks:
+19:
+ϕtarg,i←τϕi+ (1−τ)ϕtarg,ifori= 1,2
+20: Optionally adjust αbased on entropy targets:
+21:
+α←α+ηQ∇αα
+|B|X
+s∈B(logπθ(a|s) +αtarg)
+22: end if
+23:end for
+23C.8 Truncated Quantile Critics (TQC)
+Algorithm 8 Truncated Quantile Critics (TQC)
+1:Input: Gym environment, Total timesteps T, Replay buffer size N, Discount factor γ, Smoothing
+coefficient τ, Batch size B, Learning rate η, Number of quantiles Nq, Number of critics Nc,
+Drop quantiles Ndrop, Entropy coefficient α, Target entropy coefficient αtarg
+2:Initialise: Actor network θ, Critic network parameters ϕ1, . . . , ϕ Nc, Target critic network
+parameters ϕtarg,1, . . . , ϕ targ,Nc, Replay buffer D
+3:Pre-Setup: Configure seed and environment variables, prepare environment and logging
+4:
+5:fort= 1toTdo
+6: Select action a∼πθ(s)based on current policy and exploration strategy
+7: Execute action aand observe next state s′, reward r, and done signal d
+8: Store transition tuple (s, a, r, s′, d)inD
+9: ift≥learning_starts then
+10: fori= 1toNcdo
+11: Sample a minibatch of Btransitions (s, a, r, s′, d)fromD
+12: Compute target quantile values for critic ϕtarget,i :
+13:
+y(r, s′, d) =r+γ(1−d) 
+Qϕtarg,i(s′,˜a′, Ndrop)−αlogπθ(˜a′|s′)
+14: where ˜a′∼πθ(s′)
+15: Update critic ϕiby minimising the quantile Huber loss:
+Lϕi=1
+NqNqX
+k=1HuberLoss (Qϕi(sj, aj, τk)−yj)
+16: where τkare the quantile fractions
+17: end for
+18: Update policy by one step of gradient ascent:
+19:
+θ←θ+η∇θ1
+|B|X
+s∈B 
+−αlogπθ(a|s) +1
+NcNcX
+i=1Qϕi(s, πθ(s))!
+20: Soft-update target networks:
+21:
+ϕtarg,i←τϕi+ (1−τ)ϕtarg,ifori= 1,2, ..., N c
+22: Optionally adjust αbased on entropy targets:
+23:
+α←α+η∇αα
+|B|X
+s∈B(logπθ(a|s) +αtarg)
+24: end if
+25:end for
+24

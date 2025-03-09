@@ -1,0 +1,421 @@
+Robustifying machine-learned algorithms for
+efficient grid operation
+Nicolas Christianson
+California Institute of Technology
+Pasadena, CA, USA
+nchristi@caltech.eduChristopher Yeh
+California Institute of Technology
+Pasadena, CA USA
+cyeh@caltech.edu
+Tongxin Li
+The Chinese University of Hong Kong (Shenzhen)
+Shenzhen, Guangdong, China
+litongxin@cuhk.edu.cnMahdi Torabi Rad
+Beyond Limits
+Glendale, CA, USA
+mtorabi@beyond.ai
+Azarang Golmohammadi
+Beyond Limits
+Glendale, CA, USA
+agolmohammadi@beyond.aiAdam Wierman
+California Institute of Technology
+Pasadena, CA USA
+adamw@caltech.edu
+Abstract
+We propose a learning-augmented algorithm, ROBUST ML, for operation of dis-
+patchable generation that exploits the good performance of a machine-learned algo-
+rithm while providing worst-case guarantees on cost. We evaluate the algorithm on
+a realistic two-generator system, where it exhibits robustness to distribution shift
+while enabling improved efficiency as renewable penetration increases.
+1 Introduction
+The need to reduce greenhouse gas emissions to mitigate the impacts of anthropogenic climate change
+is driving an energy transition characterized by large amounts of renewable generation resources
+being added to the grid. During this transition, the variability of solar and wind energy will require the
+operation of dispatchable generation to balance out the fluctuations in renewable energy production
+and maintain reliable grid operation. However, conventional fossil fuel generators incur significant
+added costs from the frequent cycling and ramping they must perform under high penetration of
+renewables, due both to decreased fuel efficiency and increased operations/maintenance required
+from operating in this regime [29]. Moreover, most dispatchable resources are limited in their ramp
+rate, and thus under high penetration of renewables they must be operated in a manner that anticipates
+system ramp needs, taking into account the high costs of frequent ramping while still meeting demand.
+Operating generation optimally requires minimizing fuel costs while taking account of intertemporal
+coupling of decisions, including both ramp costs and ramp limits. A natural approach for this problem
+is model predictive control (MPC), an algorithm that utilizes near-term forecasts of demand and
+other conditions to choose decisions that minimize aggregate cost over a fixed lookahead horizon
+[20]. In addition to theoretical work confirming its good performance [ 16], MPC works well in
+practice and has been studied in a number of energy and sustainability-related domains, including
+control of wind turbines and solar photovoltaics [ 17,28], smart buildings [ 11,3], and energy storage
+[19,21]. Moreover, several regional power system operators in the US use MPC to settle the real-
+time electricity market [ 7], and it is widely understood that such lookahead algorithms will play an
+Tackling Climate Change with Machine Learning: workshop at NeurIPS 2022.increasingly important role in enabling power systems to reliably absorb renewable energy volatility
+[9, 31].
+However, MPC suffers computational complexity exponential in the lookahead horizon if the system
+model/costs are nonconvex, necessitating the use in practice of heuristic solvers that operate on a
+faster timescale but generally produce suboptimal decisions [ 10,6,2]. One promising avenue for
+overcoming the computational complexity of nonconvex MPC to enable improved performance in
+practice is the development of machine learning (ML) models that imitate its behavior, bypassing
+the need to solve an independent nonconvex optimization problem to generate each decision. This
+approach of “learning to control/optimize” has seen wide recent interest in the ML, control, and
+power systems communities [ 13,24,27,8,23,22]. However, these learning-based approaches come
+with no a priori guarantees on their incurred cost under distribution shift or on out-of-sample problem
+instances, jeopardizing their performance at deployment time. To counter this potential for poor
+performance and enable confident deployment of ML proxies for MPC in real-world settings, this
+work proposes an algorithm to robustify the behavior of such an ML proxy. We follow the paradigm
+of the emerging learning-augmented algorithms literature (e.g., [ 18,25,14]), specifically building
+upon the line of work [ 1,26,5,15] designing algorithms for online optimization with switching costs
+(a generalization of the dispatch problem) that can exploit the performance of an MLalgorithm while
+providing worst-case guarantees on cost.
+Our contributions are twofold: first, we propose a learning-augmented algorithm ROBUST MLfor
+online optimization with switching costs that achieves the best deterministic performance bound in
+the setting of general nonconvex cost functions. Specifically, when provided with an ML algorithm
+for the problem as well as a heuristic baseline algorithm, for any desired ϵ, δ > 0, our algorithm
+achieves cost at most (1 +ϵ+δ)times the cost incurred by the ML algorithm, while maintaining a
+worst-case cost bond of O(C
+δ+D
+ϵ), where Cis the cost of the heuristic baseline and Dis the diameter
+of the decision space. This is the best known tradeoff for deterministic algorithms, as all prior
+deterministic learning-augmented algorithms paid at least 3 times the cost of the ML algorithm [ 5,1].
+Second , we empirically evaluate the performance of ROBUST MLon a realistic two-generator system
+under increasing penetration of renewable energy. We find that using a learning-based approach
+can improve computation time over MPC by 5 orders of magnitude, and our algorithm ROBUST ML
+ensures robustness to distribution shift while improving cost by ~3% over the heuristic baseline under
+no distribution shift, with this difference widening under increasing renewable penetration.
+Our work has potential for both direct and downstream impact on the problem of climate change.
+Our results indicate that using ROBUST MLfor real-world grid operation could yield modest but
+tangible efficiency improvements, leading to reduced emissions. Moreover, ROBUST ML’s robustness
+guarantees and lookahead use could enable greater penetration of renewables while maintaining
+grid reliability. More generally, we see great promise in using learning-augmented algorithms like
+ROBUST MLto achieve efficiency improvements without sacrificing robustness in other energy and
+sustainability-related domains where MPC is widely used [17, 28, 11, 3, 19, 21].
+2 Model and Preliminaries
+We consider the problem of dispatching generation to meet both electricity and steam demand in
+the presence of variable renewable generation (see Figure 1a for a diagram illustrating the problem).
+Specifically, we consider an array of several heterogeneous thermal generators, and at each time
+t∈ {1, . . . , T }, the system operator must choose how much steam and electricity each generator will
+produce, subject to the constraint that aggregate generation must meet demand in every time interval.
+Each generator incurs a cost due to fuel consumption, which depends on its production level and
+environmental factors (temperature, pressure, humidity, etc.), as well as costs due to ramping.
+We formulate this problem as an instance of online optimization with switching costs [ 4]. In an
+abstract setting, online optimization with switching costs can be considered as a game in which at
+each time t∈ {1, . . . , T }, a decision-maker receives a vector θt∈Rnparametrizing a cost function
+f(·;θt)and then must choose some decision xt∈Rd, paying the hitting costf(xt;θt)as well as
+theswitching cost∥xt−xt−1∥incurred by that decision, where ∥ · ∥ is some norm. We assume that
+the decision xtdoes not impact future parameters θτforτ > t . In the context of our application
+to generation dispatch, θtis a vector containing all ambient factors such as temperature, pressure,
+humidity, and power/steam demand at time t,xtcollects the system operator’s dispatch decisions
+2at time t, and fmaps ambient conditions and generator dispatches to a fuel cost while penalizing
+violation of any constraints on the decision. The switching term ∥xt−xt−1∥acts as the ramp
+cost. The problem is online , so when making a decision xtat time t, the decision-maker only has
+access to the parameters θ1, . . . ,θtthat have been revealed so far. However, the decision-maker may
+have access to (possibly inaccurate) forecasts ˆθt+1|t, . . . , ˆθt+w|tof parameters within a lookahead
+window of length w∈N. Such forecasts could be obtained using standard ML methods for predicting
+near-term weather or energy demand.
+We consider two standard algorithms for the problem of online optimization with switching costs.
+The first, GREEDY , is a myopic algorithm that simply chooses the decision xtthat minimizes f(·;θt)
+at each time t. This algorithm has worst-case cost guarantees under mild assumptions on the structure
+of the cost function f[30], and resembles the single-stage dispatch algorithm used widely by power
+system operators. Its behavior is characterized formally as follows:
+GREEDY :θt7→arg min
+x∈Rdf(x;θt) =:xt.
+That is, GREEDY can be viewed as a function that, when provided with parameter vector θt∈Rn,
+returns the minimizer of f(·;θt)as a dispatch decision. The second algorithm we consider is model
+predictive control ( MPC ). It solves a lookahead optimization problem using near-term predictions
+of parameters to choose a decision. Formally, at time t, given a (fixed) prior dispatch xt−1, perfect
+knowledge of the parameter vector θt, and forecasts ˆθt+1|t, . . . , ˆθt+w|tof parameters over the next
+wtimesteps, MPC chooses its decision as follows:
+MPC :Θ7→arg min
+x∈Rd
+y1,...,yw∈Rdf(x;θt) +∥x−xt−1∥+wX
+τ=1f(yτ;ˆθt+τ|t) +∥yτ−yτ−1∥=:xt
+where y0:=xand we have stacked the vectors (θt,ˆθt+1|t, . . . , ˆθt+w|t)into a single entity Θ∈
+(Rn)w+1for brevity. Note that only the minimizer xcorresponding to the decision made for time tis
+binding, i.e., the chosen decision xtis just the optimal xin the above optimization; all of the other
+variables y1, . . . ,yware ignored after the solution is obtained.
+As discussed in the introduction, MPC can be computationally prohibitive if f(·;θ)is nonconvex.
+Thus, in our work, we train a machine learning model to approximate the input-output behavior of
+MPC . That is, given some dataset D={(Θi,xi)}N
+i=1of parameter-decision pairs generated by
+MPC (i.e.,xi=MPC (Θi)), we train a neural network ML: (Rn)w+1→Rdto minimize the errorPN
+i=1∥ML(Θi)−xi∥2
+2. We seek for MLto approximate MPC well, so that ∥ML(Θ)−MPC (Θ)∥2
+is small in general. However, while we may obtain low empirical error on the training set, this does
+not guarantee that MLwill be a good proxy for MPC on out-of-sample instances or under distribution
+shift. This motivates the development in the next section of an approach to robustify ML.
+Finally, we introduce some notation. For an algorithm ALGproducing decisions x1, . . . ,xT, define
+ALGt:=xtasALG’s decision at time t, and define CALG(s, t):=Pt
+τ=sf(xτ;θτ) +∥xτ−xτ−1∥
+as A LG’s cost from time sthrough t. For brevity, we write the total cost as CALG:= C ALG(1, T).
+3 Algorithm
+We propose in Algorithm 1 (Appendix A) a novel algorithm, ROBUST ML, that robustifies the
+algorithm ML. It behaves as follows: it starts by following ML’s decisions, but if GREEDY is
+performing well relative to MLandMLsurpasses a cost threshold, then ROBUST MLwill switch to
+following GREEDY ’s decisions (line 8). However, if GREEDY then starts performing worse relative to
+ML,ROBUST MLwill switch back to following ML(line 15). The specific thresholds for switching
+are determined by the parameters ϵ, δ > 0, and it is assumed that the decision space has diameter
+D, so that ∥MLt−GREEDY t∥ ≤Dfor all t. Our main analytic result is the following performance
+bound.
+Theorem 1. The algorithm ROBUST ML(Algorithm 1) achieves cost
+CROBUST ML≤min
+(1 +ϵ+δ)CML,
+1 +1 +ϵ
+δ
+CGREEDY +
+1 +2
+ϵ
+D
+.
+3Figure 1: (a)A simplified depiction of the power plant setup. In our example, there is an air-cooled
+unit and a water-cooled unit. At each time t, ambient conditions (temperature, demand, etc.) are
+aggregated in the vector θt, and dispatches are aggregated in the vector xt.(b)Number of seconds
+(mean and std. dev.) for each algorithm to produce a day’s worth of dispatch decisions. (c)Cost
+(mean ±std. dev.) of each algorithm on the test set under distribution shift, normalized by GREEDY ’s
+cost. (d)Mean cost of each algorithm (normalized by GREEDY ’s cost) on the test set under increasing
+wind penetration and two distribution shift scenarios (solid line is σ= 0, dotted is σ= 1).
+We prove the theorem in Appendix B. In particular, Theorem 1 tells us that by selecting ϵ, δarbitrarily
+small, ROBUST MLcan achieve performance arbitrarily close to ML, at the cost of possibly worse
+performance relative to GREEDY . However, by selecting moderate ϵ, δ, it is possible to trade off
+exploitation of ML with robustness in cost performance relative to G REEDY .
+4 Experimental Results and Discussion
+We deploy ROBUST MLwith parameters ϵ=δ= 1on a small but realistic system with two thermal
+generators and varying levels of wind generation. The generator models are proprietary and their costs
+are modeled in a black-box fashion via neural networks. Wind generation data was obtained from the
+WIND Toolkit [ 12]. We use a proprietary dataset of 269 days of ambient conditions (temperature,
+pressure, humidity) and municipal demands for energy and steam on a 15 minute basis. After splitting
+into training days (200 days) and test days (69 days), we generate a dataset of MPC decisions on the
+training days with lookahead w= 12 using differential evolution, and train a 3-layer neural network
+as the algorithm ML to imitate the behavior of MPC on this training set.
+We begin by examining the performance of MLin comparison to MPC . We find that MLapproxi-
+mates the decisions of MPC well, achieving cost only 0.55% worse on the test set. Moreover, MLis
+five orders of magnitude faster, producing a day’s worth of dispatch decisions in less than a second,
+while MPC takes upwards of 8 hours, both on 4 virtual CPU cores (Figure 1b).
+We next examine the performance of ML,GREEDY , and ROBUST MLon the baseline system (no
+renewables) when there is distribution shift on the lookahead predictions. That is, we compare
+the setting of perfect predictions ( ˆθt+1|t=θt+1, . . . , ˆθt+w|t=θt+w) to settings with increasing
+magnitudes of noise σon the predictions. We show the results in Figure 1c. In particular, we observe
+that while MLperforms better than GREEDY when predictions are good ( σ≈0), its performance
+degrades as the noise grows ( σ→2). Nonetheless, ROBUST MLgracefully transitions between the
+good performance of MLfor small σto matching the performance of GREEDY in the large σregime.
+Thus, even though the quality of predictions is unknown a priori ,ROBUST MLpreserves robustness.
+4We further examine the performance of the algorithms under increasing penetration of wind energy
+and two distribution shift scenarios ( σ= 0and1), displaying the results in Figure 1d. We find that
+the efficiency improvement of MLover GREEDY widens as wind penetration increases, highlighting
+the value of using lookahead to increase efficiency under high renewable generation. Moreover,
+ROBUST ML parallels this improvement while achieving better performance than ML when σ= 1.
+Acknowledgments and Disclosure of Funding
+The authors acknowledge support from NSF grants CNS-2146814, CPS-2136197, CNS-2106403,
+and NGSDI-2105648, Beyond Limits, and Amazon AWS. Nicolas Christianson was supported by
+an NSF Graduate Research Fellowship (DGE-1745301). Tongxin Li was supported by the start-up
+funding UDF01002773 of CUHK-Shenzhen.
+References
+[1]ANTONIADIS , A., C OESTER , C., E LIAS , M., P OLAK , A., AND SIMON , B. Online metric
+algorithms with untrusted predictions. In Proceedings of the 37th International Conference on
+Machine Learning (Nov. 2020), PMLR, pp. 345–355. ISSN: 2640-3498.
+[2]CAO, G., L AI, E. M.-K., AND ALAM , F. Gaussian process model predictive control of
+unknown non-linear systems. IET Control Theory & Applications 11 , 5 (2017), 703–713.
+_eprint: https://onlinelibrary.wiley.com/doi/pdf/10.1049/iet-cta.2016.1061.
+[3]CARLI , R., C AVONE , G., B ENOTHMAN , S., AND DOTOLI , M. IoT Based Architecture for
+Model Predictive Control of HV AC Systems in Smart Buildings. Sensors 20 , 3 (Jan. 2020), 781.
+Number: 3 Publisher: Multidisciplinary Digital Publishing Institute.
+[4]CHEN, N., C OMDEN , J., L IU, Z., G ANDHI , A., AND WIERMAN , A. Using Predictions in
+Online Optimization: Looking Forward with an Eye on the Past. In Proceedings of the 2016
+ACM SIGMETRICS International Conference on Measurement and Modeling of Computer
+Science (Antibes Juan-les-Pins France, June 2016), ACM, pp. 193–206.
+[5]CHRISTIANSON , N., H ANDINA , T., AND WIERMAN , A. Chasing Convex Bodies and Func-
+tions with Black-Box Advice. In Proceedings of Thirty Fifth Conference on Learning Theory
+(June 2022), PMLR, pp. 867–908. ISSN: 2640-3498.
+[6]DENG, K., S UN, Y., L I, S., L U, Y., B ROUWER , J., M EHTA , P. G., Z HOU , M., AND
+CHAKRABORTY , A. Model Predictive Control of Central Chiller Plant With Thermal Energy
+Storage Via Dynamic Programming and Mixed-Integer Linear Programming. IEEE Transactions
+on Automation Science and Engineering 12 , 2 (Apr. 2015), 565–579. Conference Name: IEEE
+Transactions on Automation Science and Engineering.
+[7]ELA, E., AND O’M ALLEY , M. Scheduling and Pricing for Expected Ramp Capability in
+Real-Time Power Markets. IEEE Transactions on Power Systems 31 , 3 (May 2016), 1681–1691.
+Conference Name: IEEE Transactions on Power Systems.
+[8]FIORETTO , F., M AK, T. W., AND VANHENTENRYCK , P. Predicting AC Optimal Power
+Flows: Combining Deep Learning and Lagrangian Dual Methods. Proceedings of the AAAI
+Conference on Artificial Intelligence 34 , 01 (Apr. 2020), 630–637.
+[9]HUA, B., S CHIRO , D. A., Z HENG , T., B ALDICK , R., AND LITVINOV , E.Pricing in Multi-
+Interval Real-Time Markets. IEEE Transactions on Power Systems 34 , 4 (July 2019), 2696–2705.
+[10] KELMAN , A., M A, Y., AND BORRELLI , F. Analysis of local optima in predictive control
+for energy efficient buildings. Journal of Building Performance Simulation 6 , 3 (May 2013),
+236–255.
+[11] KILLIAN , M., AND KOZEK , M. Ten questions concerning model predictive control for energy
+efficient buildings. Building and Environment 105 (Aug. 2016), 403–412.
+[12] KING, J., C LIFTON , A., AND HODGE , B. Validation of Power Output for the WIND Toolkit.
+Tech. Rep. NREL/TP-5D00-61714, 1159354, Sept. 2014.
+[13] KOTARY , J., F IORETTO , F., AND VANHENTENRYCK , P. Learning Hard Optimization
+Problems: A Data Generation Perspective. In Advances in Neural Information Processing
+Systems (2021), vol. 34, Curran Associates, Inc., pp. 24981–24992.
+5[14] LEE, R., M AGHAKIAN , J., H AJIESMAILI , M., L I, J., S ITARAMAN , R., AND LIU, Z.Online
+Peak-Aware Energy Scheduling with Untrusted Advice. In Proceedings of the Twelfth ACM
+International Conference on Future Energy Systems (Virtual Event Italy, June 2021), ACM,
+pp. 107–123.
+[15] LI, P., Y ANG , J., AND REN, S. Expert-Calibrated Learning for Online Optimization with
+Switching Costs. In Abstract Proceedings of the 2022 ACM SIGMETRICS/IFIP PERFOR-
+MANCE Joint International Conference on Measurement and Modeling of Computer Systems
+(Mumbai India, June 2022), ACM, pp. 85–86.
+[16] LIN, Y., H U, Y., S HI, G., S UN, H., Q U, G., AND WIERMAN , A. Perturbation-based
+Regret Analysis of Predictive Control in Linear Time Varying Systems. In Advances in Neural
+Information Processing Systems (2021), vol. 34, Curran Associates, Inc., pp. 5174–5185.
+[17] LIO, W. H., R OSSITER , J., AND JONES , B. L. A review on applications of model predictive
+control to wind turbines. In 2014 UKACC International Conference on Control (CONTROL)
+(July 2014), pp. 673–678.
+[18] LYKOURIS , T., AND VASSILVTISKII , S.Competitive Caching with Machine Learned Advice.
+InProceedings of the 35th International Conference on Machine Learning (July 2018), PMLR,
+pp. 3296–3305. ISSN: 2640-3498.
+[19] MENG, K., D ONG , Z. Y., X U, Z., AND WELLER , S. R. Cooperation-Driven Distributed
+Model Predictive Control for Energy Storage Systems. IEEE Transactions on Smart Grid 6 , 6
+(Nov. 2015), 2583–2585. Conference Name: IEEE Transactions on Smart Grid.
+[20] MORARI , M., AND LEE, J. H. Model predictive control: past, present and future. Computers
+and Chemical Engineering (1999), 16.
+[21] MORSTYN , T., H REDZAK , B., A GUILERA , R. P., AND AGELIDIS , V. G. Model Predictive
+Control for Distributed Microgrid Battery Energy Storage Systems. IEEE Transactions on Con-
+trol Systems Technology 26 , 3 (May 2018), 1107–1114. Conference Name: IEEE Transactions
+on Control Systems Technology.
+[22] NELLIKKATH , R., AND CHATZIVASILEIADIS , S.Physics-Informed Neural Networks for AC
+Optimal Power Flow. Electric Power Systems Research 212 (Nov. 2022), 108412.
+[23] PAN, X., C HEN, M., Z HAO, T., AND LOW, S. H. DeepOPF: A Feasibility-Optimized Deep
+Neural Network Approach for AC Optimal Power Flow Problems, July 2022. arXiv:2007.01002
+[cs, eess].
+[24] PONKUMAR , S. S., T ULSYAN , A., G OPALUNI , B., AND LOEWEN , P. A Deep Learning
+Architecture for Predictive Control. IFAC-PapersOnLine 51 , 18 (Jan. 2018), 512–517.
+[25] PUROHIT , M., S VITKINA , Z., AND KUMAR , R. Improving Online Algorithms via ML
+Predictions. In Advances in Neural Information Processing Systems (2018), vol. 31, Curran
+Associates, Inc.
+[26] RUTTEN , D., C HRISTIANSON , N., M UKHERJEE , D., AND WIERMAN , A.Online Optimization
+with Untrusted Predictions. arXiv:2202.03519 [cs] (Feb. 2022). arXiv: 2202.03519.
+[27] SPIELBERG , S., G OPALUNI , R., AND LOEWEN , P.Deep reinforcement learning approaches
+for process control. In 2017 6th International Symposium on Advanced Control of Industrial
+Processes (AdCONIP) (May 2017), pp. 201–206.
+[28] SULTANA , W. R., S AHOO , S. K., S UKCHAI , S., Y AMUNA , S., AND VENKATESH , D. A
+review on state of art development of model predictive control for renewable energy applications.
+Renewable and Sustainable Energy Reviews 76 (Sept. 2017), 391–406.
+[29] TROY, N., D ENNY , E., AND O’M ALLEY , M. Base-Load Cycling on a System With Significant
+Wind Penetration. IEEE Transactions on Power Systems 25 , 2 (May 2010), 1088–1097.
+Conference Name: IEEE Transactions on Power Systems.
+[30] ZHANG , L., J IANG , W., L U, S., AND YANG , T.Revisiting Smoothed Online Learning. In
+Advances in Neural Information Processing Systems (2021), vol. 34, Curran Associates, Inc.,
+pp. 13599–13612.
+[31] ZHAO, J., Z HENG , T., AND LITVINOV , E.A Multi-Period Market Design for Markets With
+Intertemporal Constraints. IEEE Transactions on Power Systems 35 , 4 (July 2020), 3015–3025.
+6A The R OBUST ML algorithm
+We specify the algorithm ROBUST MLbelow in Algorithm 1. Note we assume that all algorithms
+begin in the same initial state x0, soa0=r0=x0(where a0=ML 0andr0=GREEDY 0).
+Algorithm 1: ROBUST ML(ϵ, δ)
+Input: Algorithms ML ,GREEDY ; hyperparameters ϵ, δ > 0, space diameter D
+Output: Decisions x1, . . . ,xTchosen online
+1s←1
+2x1←a1:=ML 1
+3fort= 2,3, . . . , T do
+4 Observe ft,at:=MLt, andrt:=GREEDY t
+5 ifxt−1=at−1then // Case where the algorithm coincides with MLt−1
+6 ifCML(s, t)≥2D
+ϵandCGREEDY(1, t)< δ·CML(1, t)then
+7 s←t+ 1
+8 xt←rt
+9 else
+10 xt←at
+11 else // Case where the algorithm coincides with Greedy t−1
+12 ifCGREEDY(1, t)< δ·CML(1, t)then
+13 xt←rt
+14 else
+15 xt←at
+16end
+B Proof of Theorem 1
+We begin by showing CROBUST ML≤(1 +ϵ+δ)CML. Note that the algorithm consists of phases
+in which ROBUST ML first coincides with ML, and then switches to following GREEDY , before
+switching back to ML, and so on. We will assume that ROBUST MLends the instance coinciding
+with ML, soxT=aT; the case in which ROBUST ML ends at rTis similar. Let tidenote the
+timestep in which ROBUST MLswitches from GREEDY back to MLfor the ith time, with t0:= 1
+since ROBUST MLalways begins by following ML. Similarly, let midenote the timestep in which
+ROBUST MLswitches from MLtoGREEDY for the ith time. Clearly we have 1 =t0< m 1< t1<
+···< m k< tk≤T, for some k∈N. Even though ROBUST MLends at ML, define mk+1:=T+ 1
+for notational simplicity. Then the cost of R OBUST ML may be written as
+7CROBUST ML=m1−1X
+τ=1fτ(aτ) +∥aτ−aτ−1∥
++kX
+i=1 
+fmi(rmi) +∥rmi−ami−1∥+ti−1X
+τ=mi+1fτ(rτ) +∥rτ−rτ−1∥
++fti(ati) +∥ati−rti−1∥+mi+1−1X
+τ=ti+1fτ(aτ) +∥aτ−aτ−1∥!
+≤CML(1, m1−1) +kX
+i=1
+CGREEDY(mi, ti−1) +∥rmi−1−ami−1∥
++ C ML(ti, mi+1−1) +∥ati−1−rti−1∥
+(1)
+≤CML(1, m1−1) + 2 kD+kX
+i=1CGREEDY(mi, ti−1) + C ML(ti, mi+1−1) (2)
+≤(1 +ϵ)CML+kX
+i=1CGREEDY(mi, ti−1) (3)
+≤(1 +ϵ+δ)CML (4)
+where (1)follows from the triangle equality on ∥rmi−ami−1∥and∥ati−rti−1∥, and (2)follows
+by the diameter bound. The inequality (3)follows by line 6 of the algorithm, which states that the
+algorithm will switch from following MLto following GREEDY at time tonly if CML(s, t)≥2D
+ϵ.
+Noting that at the start of any timestep t,sis exactly
+s= max
+i:mi+1≤tmi+ 1
+(with m0:= 0for notational convenience), it follows that for each i∈[k],CML(mi−1+1, mi)≥2D
+ϵ.
+Thus
+2kD≤ϵkX
+i=1CML(mi−1+ 1, mi) =ϵ·CML(1, mk)≤ϵ·CML.
+Finally, (4) follows from
+kX
+i=1CGREEDY(mi, ti−1)≤CGREEDY(1, tk−1)< δ·CML(1, tk−1)≤δ·CML,
+since by definition, xtk−1=rtk−1, which by line 12 of the algorithm means that CGREEDY(1, tk−1)<
+δ·CML(1, tk−1). Thus we have proved the desired bound CROBUST ML≤(1 +ϵ+δ)CML.
+We now turn to showing CROBUST ML≤ 
+1 +1+ϵ
+δ
+CGREEDY + 
+1 +2
+ϵ
+D. First suppose ROBUST ML
+finishes the instance coinciding with ML, soxT=aT. Letτ∈ {0, . . . , T −1}denote the last time
+at which R OBUST ML coincided with G REEDY , or that xτ=rτ. Thus the cost can be bounded as
+CROBUST ML= C ROBUST ML(1, τ+ 1) + C ROBUST ML(τ+ 2, T)
+≤(1 +ϵ+δ)CML(1, τ+ 1) + C ML(τ+ 2, T) (5)
+≤max
+1 +1 +ϵ
+δ
+CGREEDY(1, τ+ 1) +2D
+ϵ,
+1 +1 +ϵ
+δ
+CGREEDY
+(6)
+≤
+1 +1 +ϵ
+δ
+CGREEDY +2D
+ϵ(7)
+where (5)follows via the previously proved inequality CROBUST ML≤(1 +ϵ+δ)CML, and (6)follows
+by the fact (according to line 14 of the algorithm) that ROBUST MLswitching from GREEDY toML
+at time τ+ 1means that CGREEDY≥δ·CML(1, τ+ 1) , as well as from the following observation:
+8since ROBUST MLcoincides with MLbetween times τ+ 1andT, line 6 of the algorithm tells us
+that either CML(τ+ 2, T)<2D
+ϵorCGREEDY≥δ·CML.
+Finally, suppose ROBUST ML finishes the instance coinciding with GREEDY , soxT=rT. Let
+σ∈ {0, . . . , T −1}denote the last time at which ROBUST MLcoincided with ML, or that xσ=aσ.
+By the previous case’s inequality (7), we have
+CROBUST ML= C ROBUST ML(1, σ) + C ROBUST ML(σ+ 1, T)
+≤
+1 +1 +ϵ
+δ
+CGREEDY(1, σ) +2D
+ϵ+fσ+1(rσ+1) +∥rσ+1−aσ∥+ C GREEDY(σ+ 2, T)
+≤
+1 +1 +ϵ
+δ
+CGREEDY(1, σ) +2D
+ϵ+D+ C GREEDY(σ+ 1, T)
+≤
+1 +1 +ϵ
+δ
+CGREEDY +
+1 +2
+ϵ
+D.
+9

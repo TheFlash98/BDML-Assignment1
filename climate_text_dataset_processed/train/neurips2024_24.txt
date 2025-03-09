@@ -1,0 +1,215 @@
+Continuous latent representations for modeling
+precipitation with deep learning
+Gokul Radhakrishnan
+Verisk Analytics
+Hyderabad, IND 500081
+gokul.r@verisk.comRahul Sundar
+Verisk Analytics
+Hyderabad, IND 500081
+rahulsundar@verisk.comNishant Parashar
+Verisk Analytics
+Hyderabad, IND 500081
+nparashar@verisk.com
+Antoine Blanchard
+Verisk Analytics
+Boston, MA 02115
+ablanchard@verisk.comDaiwei Wang
+Verisk Analytics
+Boston, MA 02115
+dwang@verisk.comBoyko Dodov
+Verisk Analytics
+Boston, MA 02115
+bdodov@verisk.com
+Abstract
+The sparse and spatio-temporally discontinuous nature of precipitation data presents
+significant challenges for simulation and statistical processing for bias correction
+and downscaling. These include incorrect representation of intermittency and
+extreme values (critical for hydrology applications), Gibbs phenomenon upon
+regridding, and lack of fine scales details. To address these challenges, a common
+approach is to transform the precipitation variable nonlinearly into one that is more
+malleable. In this work, we explore how deep learning can be used to generate a
+smooth, spatio-temporally continuous variable as a proxy for simulation of precip-
+itation data. We develop a normally distributed field called pseudo-precipitation
+(PP) as an alternative for simulating precipitation. The practical applicability of
+this variable is investigated by applying it for downscaling precipitation from 1◦
+(∼100 km) to 0.25◦(∼25 km).
+1 Introduction
+Precipitation is a key driver of the Earth’s hydrological cycle, making its accurate modeling crucial
+for studying atmospheric processes. Accurate estimation of precipitation is vital for various human
+activities, such as transportation and agriculture. Unlike smoother meteorological variables such
+as temperature, water vapor, and wind speed, precipitation data is sparse and exhibits significant
+spatial variability. Despite major advancements in numerical weather prediction (NWP) and global
+circulation models (GCMs), these models still face challenges in accurately predicting extreme
+precipitation events, like heavy rainfall, due to limitations in resolution and parameterization. These
+models are further constrained by high computational demands of simulating global climate.
+Precipitation data presents several inherent complexities that make its post processing particularly
+challenging. Precipitation has high spatio-temporal variability, resulting in vast regions with zero
+values interspersed with sporadic positive values that can increase exponentially in magnitude [ 21].
+The low frequency of extreme precipitation events adds to the complexity [ 18,17]. Moreover, both
+precipitation and the various multi-scale factors contributing to its formation display non-normal and
+nonlinear behaviors.
+These challenges are particularly evident in downstream applications such as statistical post-
+processing [ 25], downscaling [ 11,8,16], nowcasting [ 18], and forecasting [ 10,15]. Various research
+groups have utilized statistical methods to address the complexities of precipitation data, especially
+Tackling Climate Change with Machine Learning: workshop at NeurIPS 2024.in bias correction [ 23,9,22]. The statistical post-processing of simulated precipitation from NWP
+models lack proper consideration of a number of moisture-related properties of non-precipitating
+members of the ensemble that likely have discriminating information on the calibration forecasts.
+This issue is more pronounced when the ensemble forecast is dry-biased, making the statistical
+adjustment process more complicated. To address this issue, Yuan et al. [24] proposed a statistically
+continuous variable called pseudo-precipitation obtained after blending precipitation and integrated
+vapour deficit (IVD) together.
+To achieve a consistent representation for precipitation while preserving its key characteristics, we
+propose using machine learning for generating a pseudo-precipitation field. For transforming total
+precipitation (TP) into a spatiotemporally continuous field, we use vertically integrated moisture
+divergence (VIMD) [ 2]. VIMD contains relevant information pertaining to decrease (divergence) or
+increase (convergence) of moisture within a vertical column of air. Unlike IVD, VIMD can take both
+negative and postive values and its spatial correlation structure is similar to TP. This can potentially
+enable more effective blending, specifically at point of discontinuity through deep learning techniques,
+as detailed in Section 2. Further, we perform the blending of our pseudo-precipitation field targeted
+towards a symmetric Gaussian distribution. The smoother Gaussian blending makes precipitation
+data more manageable for analysis, enhancing the coherence and accuracy of post-processing models.
+Additionally, it offers improved physical consistency by representing the processes driving precipita-
+tion patterns and facilitate the integration of precipitation with other climate variables. To assess the
+practical applicability of pseudo-precipitation, we evaluate its efficacy for the downscaling task using
+generative deep learning [14, 6].
+2 Methods
+Pseudo-precipitation (PP) We define PP as a smooth, Gaussian field generated by blending TP
+and VIMD, inspired by the work of Yuan et al. In [24], IVD was used to generate the PP field. IVD
+represents the difference between actual and saturation specific humidity, integrated throughout the
+troposphere. IVD measures dryness of the atmospheric column and hence is always negative. The
+authors defined PP as being equal to precipitation when precipitation is positive while the non-positive
+values are replaced by IVD after suitable transformation to ensure continuity of the blended field.
+In this work, we use VIMD as a replacement for IVD. VIMD is defined as the vertical integral of the
+moisture flux for a column of air extending from the surface of the Earth to the top of the atmosphere.
+Its horizontal divergence is the rate of moisture spreading outward from a point, per square metre.
+Positive values indicate moisture divergence (dry conditions) and negative values indicate moisture
+convergence (potential condensation). VIMD’s spatial correlation structure closely resembles that of
+TP, making it a suitable candidate for blending with TP. To ensure seamless integration of VIMD and
+TP, we blend them into a Gaussian distribution as symmetric distributions are preferred for statistical
+processing. Additionally VIMD is a native ERA5 variable along with TP facilitating ease in analysis.1
+Figure 1: Schematic of the mapping model for PP
+1https://codes.ecmwf.int/grib/param-db/213
+21
+Figure 2: Low and high resolution pairs of TP (left) and PP (right).
+Our approach utilizes a fully connected encoder-decoder framework (figure 1), trained on point-wise
+global ERA5 reanalysis data [ 5]. The encoder blends TP and VIMD into a Gaussian-distributed
+field, pseudo-precipitation (PP). A quantile loss is used to align the distribution of PP with that of a
+standard normal distribution. The decoder then reconstructs TP from PP. Compared to Yuan et al.
+[24], this neural network framework offers a more flexible and expressive way to parameterize the
+blended field, while also enabling the decoding of precipitation from the blended field.
+Limitations of TP for downscaling The overarching limitations of TP are outlined in Section
+1. For training a supervised model for downscaling, we generate samples at coarse resolution. A
+common method for this is spectral truncation (based on spherical harmonics or spherical wavelets)
+[1,13] as it is a robust framework for scale separation. Applying spectral truncation on TP leads to
+non-physical artifacts, particularly oscillations or "ringing" near sharp edges or discontinuities [ 7]
+due to Gibbs phenomena, as illustrated in figure 2a for spherical wavelet transforms. In contrast, the
+proposed pseudo-precipitation field does not suffer from this issue (figure 2b).
+Overview of the downscaling framework To demonstrate the benefits of PP, we evaluate its
+efficacy in the context of downscaling. First, we generate paired low-resolution and high-resolution
+PP data from ERA5 reanalysis. The high-resolution data is at ERA5’s native 0.25◦(∼25km)
+resolution. The low-resolution data is generated by spherical wavelet transforms of the high-resolution
+data, producing band-limited fields at a resolution of 1.4◦(∼70km), as shown in figure 2. Our
+downscaling framework is described in Sundar et al. [19]; which integrates a spatio-temporal model,
+SimVP [ 4,20], with a diffusion model [ 3,6,12]. Once the downscaling model is trained on PP, we
+decode TP at the target resolution using the decoder in figure 1. Downscaled, decoded TP is used for
+investigating the overall performance of our model.
+Figure 3: Visual assessment of downscaling for a snapshot. Downscaled PP is decoded to TP using
+the PP model decoder from figure 1.
+3 Results
+Experimental protocol The TP and VIMD variables in this study are accumulated over three-hour
+intervals. The downscaling model is trained on 30 years of ERA5 reanalysis data (1990-2020), with
+an additional 10 years used for testing and validation. The PP model is trained on one year of ERA5
+data (2010). All experiments were conducted on T4 GPUs hosted on AWS.
+3Validation We evaluate the performance of our downscaling model over Europe by comparing the
+results in terms of visual agreement, power spectra at fixed locations, and local estimates of extreme
+precipitation. Figure 3 provides a qualitative assessment of the predictions from our downscaling
+model, showing that the model successfully captures the fine-scale features (stochastic in nature),
+while preserving the large-scale structures. Figure 4a presents the temporal power spectrum and
+figure 4b displays quantile plots for major European cities. Additionally, figure 5 illustrates the local
+estimates of the number of days of extreme precipitation (TP > 20 mm). Our results exhibit a strong
+agreement with the ERA5 dataset.
+Figure 4: a) Power spectral density (PSD) and b) Q-Q plots.
+Figure 5: Number of days of extreme precipitation (TP > 20 mm).
+4 Discussion
+In this study we propose a machine learning-based approach for generating pseudo-precipitation which
+is a spatio-temporally smooth and continuous field derived from TP and VIMD. We demonstrate the
+advantages of using the pseudo-precipitation field as a robust alternative to precipitation, particularly
+in downscaling applications. The proposed methodology accurately estimates extreme precipitation
+and produces predictions that are consistent across the frequency spectrum when compared to ERA5.
+While this work primarily focuses on downscaling, the proposed pseudo-precipitation blending
+approach can also be applied to other statistical tasks, such as downscaling, debiasing and forecasting.
+References
+[1]J.-P. Antoine, L. Demanet, L. Jacques, and P. Vandergheynst. Wavelets on the sphere: Implementation and
+approximations. Applied and Computational Harmonic Analysis , 13(3):177–200, 2002.
+4[2]P. C. Banacos and D. M. Schultz. The use of moisture flux convergence in forecasting convective initiation:
+Historical and operational perspectives. Weather and Forecasting , 20(3):351–366, 2005.
+[3]P. Dhariwal and A. Nichol. Diffusion models beat GANs on image synthesis. Advances in Neural
+Information Processing Systems , 34:8780–8794, 2021.
+[4]Z. Gao, C. Tan, L. Wu, and S. Z. Li. Simvp: Simpler yet better video prediction. In Proceedings of the
+IEEE/CVF Conference on Computer Vision and Pattern Recognition , pages 3170–3180, 2022.
+[5]H. Hersbach, B. Bell, P. Berrisford, S. Hirahara, A. Horányi, J. Muñoz-Sabater, J. Nicolas, C. Peubey,
+R. Radu, D. Schepers, et al. The ERA5 global reanalysis. Quarterly Journal of the Royal Meteorological
+Society , 146(730):1999–2049, 2020.
+[6]T. Karras, M. Aittala, T. Aila, and S. Laine. Elucidating the design space of diffusion-based generative
+models. Advances in Neural Information Processing Systems , 35:26565–26577, 2022.
+[7]S. E. Kelly. Gibbs phenomenon for wavelets. Applied and Computational Harmonic Analysis , 3(1):72–81,
+1996.
+[8]B. Kumar, K. Atey, B. B. Singh, R. Chattopadhyay, N. Acharya, M. Singh, R. S. Nanjundiah, and S. A.
+Rao. On the modern deep learning approaches for precipitation downscaling. Earth Science Informatics ,
+16(2):1459–1472, 2023.
+[9]X.-H. Le, G. Lee, K. Jung, H.-u. An, S. Lee, and Y . Jung. Application of convolutional neural network for
+spatiotemporal bias correction of daily satellite-based precipitation. Remote Sensing , 12(17):2731, 2020.
+[10] W. Li, X. Gao, Z. Hao, and R. Sun. Using deep learning for precipitation forecasting based on spatio-
+temporal information: a case study. Climate Dynamics , 58(1):443–457, 2022.
+[11] D. Maraun, F. Wetterhall, A. Ireson, R. Chandler, E. Kendon, M. Widmann, S. Brienen, H. Rust, T. Sauter,
+M. Themeßl, et al. Precipitation downscaling under climate change: Recent developments to bridge the
+gap between dynamical models and the end user. Reviews of Geophysics , 48(3), 2010.
+[12] M. Mardani, N. Brenowitz, Y . Cohen, J. Pathak, C.-Y . Chen, C.-C. Liu, A. Vahdat, K. Kashinath, J. Kautz,
+and M. Pritchard. Residual diffusion modeling for km-scale atmospheric downscaling. 2024.
+[13] J. D. McEwen, C. Durastanti, and Y . Wiaux. Localisation of directional scale-discretised wavelets on the
+sphere. Applied and Computational Harmonic Analysis , 44(1):59–88, 2018.
+[14] N. Rampal, P. B. Gibson, S. Sherwood, G. Abramowitz, and S. Hobeichi. A robust generative adversarial
+network approach for climate downscaling and weather generation. Authorea Preprints , 2024.
+[15] W. M. Ridwan, M. Sapitang, A. Aziz, K. F. Kushiar, A. N. Ahmed, and A. El-Shafie. Rainfall forecasting
+model using machine learning methods: Case study Terengganu, Malaysia. Ain Shams Engineering
+Journal , 12(2):1651–1663, 2021.
+[16] D. Sachindra, K. Ahmed, M. M. Rashid, S. Shahid, and B. Perera. Statistical downscaling of precipitation
+using machine learning techniques. Atmospheric Research , 212:240–258, 2018.
+[17] M. Scheuerer and T. M. Hamill. Statistical postprocessing of ensemble precipitation forecasts by fitting
+censored, shifted gamma distributions. Monthly Weather Review , 143(11):4578–4596, 2015.
+[18] X. Shi, Z. Gao, L. Lausen, H. Wang, D. Yeung, W. Wong, and W. Woo. Deep learning for precipitation
+nowcasting: A benchmark and a new model. Advances in Neural Information Processing Systems , 30,
+2017.
+[19] R. Sundar, N. Parashar, A. Blanchard, and B. Dodov. TAUDiff: Improving statistical downscaling for
+extreme weather events using generative diffusion models. In NeurIPS 2024 Workshop on Tackling Climate
+Change with Machine Learning , 2024.
+[20] C. Tan, Z. Gao, L. Wu, Y . Xu, J. Xia, S. Li, and S. Z. Li. Temporal attention unit: Towards efficient
+spatiotemporal predictive learning. In Proceedings of the IEEE/CVF Conference on Computer Vision and
+Pattern Recognition , pages 18770–18782, 2023.
+[21] F. J. Tapiador, R. Roca, A. D. G, B. Dewitte, W. Petersen, and F. Zhang. Is precipitation a good metric for
+model performance? Bulletin of the American Meteorological Society , 100(2):223–233, 2019.
+[22] F. Wang and D. Tian. On deep learning-based bias correction and downscaling of multiple climate models
+simulations. Climate Dynamics , 59(11):3451–3468, 2022.
+5[23] F. Wang, D. Tian, and M. Carroll. Customized deep learning for precipitation bias correction and
+downscaling. Geoscientific Model Development , 16(2):535–556, 2023.
+[24] H. Yuan, P. Schultz, E. I. Tollerud, D. Hou, Y . Zhu, M. Pena, M. Charles, and Z. Toth". "pseudo-
+precipitation: A continuous precipitation variable". "2019".
+[25] T. Zhang, Z. Liang, W. Li, J. Wang, Y . Hu, and B. Li. Statistical post-processing of precipitation forecasts
+using circulation classifications and spatiotemporal deep neural networks. Hydrology and Earth System
+Sciences Discussions , 2023:1–26, 2023.
+A Appendix
+A.0.1 Training strategy
+The pseudo-precipitation (PP) model uses an encoder-decoder architecture based on fully connected
+layers to process point-wise ERA5-resolution data, blending them into PP. A parametric study opti-
+mized the encoder and decoder depth and neurons per layer. To approximate a Gaussian distribution
+in PP, we apply a quantile loss that matches the quantiles of PP with those of a standard Gaussian. It
+is defined as:
+Lquant =MSE (q(ypred),q(ynormal )) (1)
+where qis a vector that contains the quantiles of the variable y. Quantiles are computed using 4000
+bins that span 10−6to1−10−6. A Mean Square Error (MSE) loss is also used to enforce the
+reconstruction of decoded TP from PP.:
+Ltotal =wquant Lquant +wrecLrec (2)
+where wquant andwrecare scalar weights for quantile and reconstruction loss terms, respectively.
+The combination of wquant = 20 andwrec= 1 achieved optimal PP blending and accurate TP
+reconstruction, producing a mean absolute error (MAE) of approximately 10−6.
+6
