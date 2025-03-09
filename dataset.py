@@ -3,6 +3,7 @@ import glob
 from torch.utils.data import Dataset
 import torch
 import json
+from torch.nn.utils.rnn import pad_sequence
 
 class ClimateDataset(Dataset):
     def __init__(self, data_root_path="climate_text_dataset_processed",split="train"):
@@ -29,4 +30,19 @@ class ClimateDataset(Dataset):
             "labels": labels,
             "attention_mask": attention_mask
         }
+    
+    def collate_fn(self, batch, pad_token_id=0, label_pad_token_id=-100):
+        input_ids = [sample["input_ids"] for sample in batch]
+        labels = [sample["labels"] for sample in batch]
+        attention_masks = [sample["attention_mask"] for sample in batch]
 
+        # Pad the sequences to the maximum length in the batch.
+        input_ids_padded = pad_sequence(input_ids, batch_first=True, padding_value=pad_token_id)
+        labels_padded = pad_sequence(labels, batch_first=True, padding_value=label_pad_token_id)
+        attention_masks_padded = pad_sequence(attention_masks, batch_first=True, padding_value=0)
+
+        return {
+            "input_ids": input_ids_padded,
+            "labels": labels_padded,
+            "attention_mask": attention_masks_padded,
+        }
