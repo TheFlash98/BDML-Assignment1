@@ -1,6 +1,7 @@
 from transformers import AutoModelForCausalLM, AutoTokenizer, Trainer, TrainingArguments, BitsAndBytesConfig
 from peft import get_peft_model, LoraConfig, TaskType
 from dataset import ClimateDataset
+from transformers import DataCollatorForLanguageModeling
 import torch
 import argparse
 from datasets import load_dataset
@@ -24,9 +25,15 @@ def main(args):
     )
     tokenizer = AutoTokenizer.from_pretrained(
         model_name,
-        trust_remote=True,
+        trust_remote_code=True,
         padding_side="right"
     )
+
+    data_collator = DataCollatorForLanguageModeling(
+        tokenizer=tokenizer,
+        mlm=False  # Use CLM (Causal Language Modeling) not MLM
+    )
+
     if tokenizer.pad_token_id is None:
         tokenizer.pad_token = tokenizer.eos_token
         print(f"Set pad_token to eos_token: {tokenizer.pad_token}")
@@ -83,6 +90,7 @@ def main(args):
         args=training_args,
         train_dataset=train_dataset,
         eval_dataset=eval_dataset,
+        data_collator=data_collator
     )
     
     trainer.train()
