@@ -22,7 +22,15 @@ def main(args):
         per_device_train_batch_size=args.per_device_train_batch_size,
         gradient_accumulation_steps=args.gradient_accumulation_steps,
     )
-    
+    tokenizer = AutoTokenizer.from_pretrained(
+        model_name,
+        trust_remote=True,
+        padding_side="right"
+    )
+    if tokenizer.pad_token_id is None:
+        tokenizer.pad_token = tokenizer.eos_token
+        print(f"Set pad_token to eos_token: {tokenizer.pad_token}")
+
     if args.fine_tuning_type == "qlora":
         quantization_config = BitsAndBytesConfig(
             load_in_4bit=True,
@@ -30,7 +38,6 @@ def main(args):
             bnb_4bit_use_double_quant=True,
         )
         base_model = AutoModelForCausalLM.from_pretrained(model_name, quantization_config=quantization_config)
-        tokenizer = AutoTokenizer.from_pretrained(model_name)
         
         if args.gradient_checkpointing:
             model.gradient_checkpointing_enable()
@@ -47,7 +54,6 @@ def main(args):
         model.print_trainable_parameters()
     elif args.fine_tuning_type == "lora":  
         base_model = AutoModelForCausalLM.from_pretrained(model_name)
-        tokenizer = AutoTokenizer.from_pretrained(model_name)
         
         if args.gradient_checkpointing:
             model.gradient_checkpointing_enable()
@@ -64,7 +70,6 @@ def main(args):
         model.print_trainable_parameters()
     else:
         base_model = AutoModelForCausalLM.from_pretrained(model_name)
-        tokenizer = AutoTokenizer.from_pretrained(model_name)
         
         if args.gradient_checkpointing:
             base_model.gradient_checkpointing_enable()
