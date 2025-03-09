@@ -44,6 +44,7 @@ def process_directory(input_dir, output_dir, tokenizer_name, max_length=2048, st
     
     for filename in os.listdir(input_dir)[:10]:
         if filename.endswith('.txt'):
+            print("Tokenizing", filename)
             file_path = os.path.join(input_dir, filename)
             with open(file_path, 'r', encoding='utf-8') as f:
                 text = f.read()
@@ -68,7 +69,7 @@ if __name__ == "__main__":
     output_file = "/scratch/sk12184/climate_text_dataset_tokenized/eval"
     
     # Provide the path or model id for your LLaMA tokenizer
-    tokenizer_name = "path/to/llama-tokenizer"  # e.g., "huggingface/llama-7b" if available
+    tokenizer_name = "/scratch/sk12184/llama3.2-3B-HF/"  # e.g., "huggingface/llama-7b" if available
     
     # Maximum tokens per input (typically 2048 for LLaMA, adjust as needed)
     max_length = 2048
