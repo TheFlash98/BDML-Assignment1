@@ -4,10 +4,17 @@ import math
 from transformers import AutoModelForCausalLM, AutoTokenizer
 from tqdm import tqdm
 import os
+import argparse
 
 # Path to your fine-tuned model
-model_path = "/scratch/sk12184/output/checkpoint-326"
+# Parse command line arguments
+parser = argparse.ArgumentParser(description="Evaluate model perplexity on test set")
+parser.add_argument("--model_path", type=str, required=True, help="Path to the fine-tuned model")
+args = parser.parse_args()
 
+model_path = args.model_path
+print("Evaluating model ", model_path)
+exit()
 # Load model and tokenizer
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 model = AutoModelForCausalLM.from_pretrained(model_path).to(device)

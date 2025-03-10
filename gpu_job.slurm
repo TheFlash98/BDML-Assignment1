@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=b8qlgce1
+#SBATCH --job-name=b8e2
 #SBATCH --account=csci_ga_3033_077-2025sp
 #SBATCH --partition=c12m85-a100-1
 #SBATCH --open-mode=append
@@ -15,5 +15,5 @@ singularity exec --bind /scratch --nv --overlay  /scratch/sk12184/overlay-25GB-5
 source /ext3/env.sh
 conda activate bdml_env
 cd projects/BDML-Assignment1
-python train.py --per_device_train_batch_size 8 --fine_tuning_type "qlora" --use_fp16 --gradient_checkpointing --num_train_epochs 1
+python train.py --per_device_train_batch_size 8 --fine_tuning_type "qlora" --use_fp16 --gradient_checkpointing --num_train_epochs 2
 "
