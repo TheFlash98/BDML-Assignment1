@@ -14,7 +14,7 @@ args = parser.parse_args()
 
 model_path = args.model_path
 print("Evaluating model ", model_path)
-exit()
+
 # Load model and tokenizer
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 model = AutoModelForCausalLM.from_pretrained(model_path).to(device)
