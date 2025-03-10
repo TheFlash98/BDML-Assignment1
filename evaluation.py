@@ -22,6 +22,7 @@ test_files = [os.path.join(test_dir, f) for f in os.listdir(test_dir) if f.endsw
 # Function to compute perplexity
 def compute_perplexity(sample):
     # inputs = tokenizer(text, return_tensors="pt", truncation=True, max_length=2048).to(device)
+    print(len(input_ids))
     input_ids = torch.tensor(sample["input_ids"], dtype=torch.long)
     labels = torch.tensor(sample["labels"], dtype=torch.long)
     # Use provided attention_mask or generate one if not available
