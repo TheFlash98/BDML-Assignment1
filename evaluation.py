@@ -9,7 +9,8 @@ import os
 model_path = "/scratch/sk12184/output/checkpoint-326"
 
 # Load model and tokenizer
-model = AutoModelForCausalLM.from_pretrained(model_path)
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+model = AutoModelForCausalLM.from_pretrained(model_path).to(device)
 tokenizer = AutoTokenizer.from_pretrained(model_path)
 
 # Path to test JSONL files
@@ -21,11 +22,15 @@ test_files = [os.path.join(test_dir, f) for f in os.listdir(test_dir) if f.endsw
 
 # Function to compute perplexity
 def compute_perplexity(text):
-    tokens = tokenizer(text, return_tensors="pt", truncation=True, max_length=2048)
-    with torch.no_grad():
-        outputs = model(**tokens, labels=tokens["input_ids"])
-        loss = outputs.loss.item()
-    return math.exp(loss)  # Perplexity = e^(loss)
+    tokens = tokenizer(text, return_tensors="pt", truncation=True).to(device)
+    ans = 0
+    # Create chunks with overlap
+    for i in range(0, len(tokens), 2048 - 512):
+        chunk = tokens[i: i + 2048]
+        with torch.no_grad():
+            outputs = model(**chunk, labels=chunk["input_ids"])
+            loss = outputs.loss.item()
+            ans += math.exp(loss)  # Perplexity = e^(loss)
 
 # Compute perplexity over all test files
 total_perplexity = 0
