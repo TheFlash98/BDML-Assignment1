@@ -21,10 +21,20 @@ test_dir = "/scratch/sk12184/climate_text_dataset_tokenized/eval/"
 test_files = [os.path.join(test_dir, f) for f in os.listdir(test_dir) if f.endswith(".jsonl")]
 
 # Function to compute perplexity
-def compute_perplexity(json_obj):
+def compute_perplexity(sample):
     # inputs = tokenizer(text, return_tensors="pt", truncation=True, max_length=2048).to(device)
+    input_ids = torch.tensor(sample["input_ids"], dtype=torch.long)
+    labels = torch.tensor(sample["labels"], dtype=torch.long)
+    # Use provided attention_mask or generate one if not available
+    attention_mask = sample.get("attention_mask", [1] * len(sample["input_ids"]))
+    attention_mask = torch.tensor(attention_mask, dtype=torch.long)
+    tokens =  {
+        "input_ids": input_ids,
+        "labels": labels,
+        "attention_mask": attention_mask
+    }
     with torch.no_grad():
-        outputs = model(**json_obj, labels=json_obj["input_ids"])
+        outputs = model(**tokens)
         loss = outputs.loss.item()
     return math.exp(loss)  # Perplexity = e^(loss)
 
