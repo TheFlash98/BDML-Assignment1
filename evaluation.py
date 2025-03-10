@@ -20,6 +20,10 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 model = AutoModelForCausalLM.from_pretrained(model_path).to(device)
 tokenizer = AutoTokenizer.from_pretrained(model_path)
 
+if tokenizer.pad_token_id is None:
+    tokenizer.pad_token = tokenizer.eos_token
+    print(f"Set pad_token to eos_token: {tokenizer.pad_token}")
+
 # Path to test JSONL files
 # Directory containing test JSONL files
 test_dir = "climate_text_dataset_processed/eval"
