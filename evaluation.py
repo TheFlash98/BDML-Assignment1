@@ -40,7 +40,10 @@ for file_path in tqdm(test_files):
     with open(file_path, "r") as f:
         text = f.read()
         if text:
-            total_perplexity += compute_perplexity(text)
+            ppl = compute_perplexity(text)
+            print('file path:', file_path)
+            print('ppl:', ppl)
+            total_perplexity += ppl
             num_samples += 1
 
 # Average Perplexity
