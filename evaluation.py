@@ -9,8 +9,7 @@ import os
 model_path = "/scratch/sk12184/output/checkpoint-326"
 
 # Load model and tokenizer
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-model = AutoModelForCausalLM.from_pretrained(model_path).to(device)
+model = AutoModelForCausalLM.from_pretrained(model_path)
 # tokenizer = AutoTokenizer.from_pretrained(model_path)
 
 # Path to test JSONL files
@@ -44,12 +43,12 @@ num_samples = 0
 
 for file_path in tqdm(test_files):
     with open(file_path, "r") as f:
-        for line in f:
-            json_obj = json.loads(line)  # Each line contains one JSON
-            # text = json_obj.get("text", "")  # Assuming the text is stored under the "text" key
-            if json_obj:
-                total_perplexity += compute_perplexity(json_obj)
-                num_samples += 1
+        text = f.read()
+        json_obj = json.loads(text)  # Each line contains one JSON
+        # text = json_obj.get("text", "")  # Assuming the text is stored under the "text" key
+        if json_obj:
+            total_perplexity += compute_perplexity(json_obj)
+            num_samples += 1
 
 # Average Perplexity
 avg_perplexity = total_perplexity / num_samples if num_samples > 0 else float("inf")
