@@ -52,8 +52,6 @@ for file_path in tqdm(test_files):
             chunk = " ".join(words[i:i + chunk_size])
             if chunk:
                 ppl = compute_perplexity(chunk)
-            print('file path:', file_path)
-            print('ppl:', ppl)
             total_perplexity += ppl
             num_samples += 1
 
