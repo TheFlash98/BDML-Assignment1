@@ -26,7 +26,7 @@ def main():
     args = parser.parse_args()
 
     model_path = args.model_path
-    print(f"Evaluating model {model_path}")
+    print(f"Loading model {model_path}")
 
     # Load the fine-tuned model and tokenizer
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
