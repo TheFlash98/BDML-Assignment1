@@ -72,6 +72,8 @@ def main(rank, world_size, args):
         logging_steps=100,
         save_strategy="epoch",
         save_steps=500,
+        dataloader_drop_last=True,
+        remove_unused_columns=False,
     )
     
     tokenizer = AutoTokenizer.from_pretrained(
@@ -147,10 +149,12 @@ def main(rank, world_size, args):
         model=model,
         tokenizer=tokenizer,
         args=training_args,
-        train_dataset=train_dataset,
-        eval_dataset=eval_dataset,
-        data_collator=data_collator,
+        train_dataset=None,
+        eval_dataset=None,
+        data_collator=None,
         sampler=train_sampler,
+        train_dataloader=train_dataloader,
+        eval_dataloader=eval_dataloader,
     )
     
     trainer.train()
