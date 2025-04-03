@@ -25,6 +25,7 @@ class ClimateDataset(Dataset):
         # Use provided attention_mask or generate one if not available
         attention_mask = sample.get("attention_mask", [1] * len(sample["input_ids"]))
         attention_mask = torch.tensor(attention_mask, dtype=torch.long)
+        print(f"input_ids: {input_ids}, labels: {labels}, attention_mask: {attention_mask}")
         return {
             "input_ids": input_ids,
             "labels": labels,

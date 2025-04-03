@@ -118,6 +118,7 @@ def main(rank, world_size, args):
         
         model = base_model
     
+    model.to(rank)
     model = DDP(model, device_ids=[rank], output_device=rank)
     
     if rank==0:
@@ -130,7 +131,7 @@ def main(rank, world_size, args):
         train_dataset=train_dataset,
         eval_dataset=eval_dataset,
         data_collator=data_collator,
-        device=rank,
+        sampler=train_sampler,
     )
     
     trainer.train()
