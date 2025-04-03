@@ -10,7 +10,7 @@ from datasets import load_dataset
 
 import torch.distributed as dist
 from torch.nn.parallel import DistributedDataParallel as DDP
-from torch.utils.data import DistributedSampler
+from torch.utils.data import DistributedSampler, DataLoader
 
 # Inspiration from - https://pytorch.org/tutorials/beginner/ddp_series_multigpu.html
 
@@ -40,6 +40,25 @@ def main(rank, world_size, args):
         rank=rank,
         shuffle=True,
     )
+
+    train_dataloader = DataLoader(
+        train_dataset,
+        batch_size=args.per_device_train_batch_size,
+        sampler=train_sampler,
+        collate_fn=train_dataset.collate_fn,
+        num_workers=4,
+        pin_memory=True,
+        drop_last=True,
+    )
+
+    eval_dataloader = DataLoader(
+        eval_dataset,
+        batch_size=args.per_device_train_batch_size,
+        collate_fn=eval_dataset.collate_fn,
+        num_workers=4,
+        pin_memory=True,
+    )
+
     training_args = TrainingArguments(
         output_dir=args.output_dir,
         num_train_epochs=args.num_train_epochs,
