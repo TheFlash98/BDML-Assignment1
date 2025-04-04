@@ -87,7 +87,7 @@ def main():
     for name, param in model.named_parameters():
         print(f"{name:80} | Device: {param.device} | Shape: {param.shape}")
     
-    print(list(model.named_parameters()))
+    #print(list(model.named_parameters()))
     
     trainer = Trainer(
         model=model,
