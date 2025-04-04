@@ -32,6 +32,7 @@ def setup_tensor_parallel():
     return rank, world_size
 
 def main():
+    rank, world_size = setup_tensor_parallel()
     tp_mesh = init_device_mesh("cuda", (2,))
     model_name = "/scratch/sk12184/llama3.2-3B-HF"
     
@@ -76,7 +77,15 @@ def main():
         "layers.{X}.attention_norm": SequenceParallel(),
         "layers.{X}.ffn_norm": SequenceParallel(),
     }
+    model = model.to(rank)
+    if dist.get_rank() == 0:
+        print("\nModel structure BEFORE parallelization:")
+        for name, _ in model.named_parameters():
+            print(name)
     model = parallelize_module(model, tp_mesh, parallelize_plan)
+    print(f"\nRank {dist.get_rank()} parameters:")
+    for name, param in model.named_parameters():
+        print(f"{name:80} | Device: {param.device} | Shape: {param.shape}")
     
     print(list(model.named_parameters()))
     

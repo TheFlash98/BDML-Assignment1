@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=eval652
+#SBATCH --job-name=evaldpp2
 #SBATCH --account=csci_ga_3033_077-2025sp
 #SBATCH --partition=c12m85-a100-1
 #SBATCH --open-mode=append
