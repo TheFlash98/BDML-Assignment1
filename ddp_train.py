@@ -77,7 +77,7 @@ def main():
     trainer.train()
     ddp_cleanup()
 
-def get_model(args, model_name, tokenizer):
+def get_model(args, model_name):
 
     tokenizer = AutoTokenizer.from_pretrained(
         model_name,
