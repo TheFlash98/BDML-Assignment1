@@ -25,7 +25,8 @@ def ddp_cleanup():
     dist.destroy_process_group()
 
 
-def main(rank, args):
+def main():
+    rank = int(os.environ["LOCAL_RANK"])
     ddp_setup(rank)
     model_name = "/scratch/sk12184/llama3.2-3B-HF"
     
@@ -40,7 +41,6 @@ def main(rank, args):
         per_device_train_batch_size=args.per_device_train_batch_size,
         gradient_accumulation_steps=args.gradient_accumulation_steps,
         ddp_find_unused_parameters=False,
-        local_rank=rank,
         dataloader_num_workers=4,
         logging_steps=100,
         save_strategy="epoch",
