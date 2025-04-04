@@ -14,50 +14,23 @@ from torch.utils.data import DistributedSampler, DataLoader
 
 # Inspiration from - https://pytorch.org/tutorials/beginner/ddp_series_multigpu.html
 
-def ddp_setup(rank, world_size):
-    os.environ["MASTER_ADDR"] = "localhost"
-    os.environ["MASTER_PORT"] = "12355"
+def ddp_setup(rank):
+    # os.environ["MASTER_ADDR"] = "localhost"
+    # os.environ["MASTER_PORT"] = "12355"
     torch.cuda.set_device(rank)
     # Initialize the process group
-    dist.init_process_group("nccl", rank=rank, world_size=world_size)
+    dist.init_process_group("nccl", rank=rank)
 
 def ddp_cleanup():
     dist.destroy_process_group()
 
 
-def main(rank, world_size, args):
-    ddp_setup(rank, world_size)
+def main(rank, args):
+    ddp_setup(rank)
     model_name = "/scratch/sk12184/llama3.2-3B-HF"
     
     train_dataset = ClimateDataset(data_root_path="/scratch/sk12184/climate_text_dataset_tokenized", split="train")
     eval_dataset = ClimateDataset(data_root_path="/scratch/sk12184/climate_text_dataset_tokenized", split="eval")
-    
-    # train_dataset = load_dataset("imdb", split="train")
-    # eval_dataset = load_dataset("imdb", split="test")
-    train_sampler = DistributedSampler(
-        train_dataset,
-        num_replicas=world_size,
-        rank=rank,
-        shuffle=True,
-    )
-
-    train_dataloader = DataLoader(
-        train_dataset,
-        batch_size=args.per_device_train_batch_size,
-        sampler=train_sampler,
-        collate_fn=train_dataset.collate_fn,
-        num_workers=4,
-        pin_memory=True,
-        drop_last=True,
-    )
-
-    eval_dataloader = DataLoader(
-        eval_dataset,
-        batch_size=args.per_device_train_batch_size,
-        collate_fn=eval_dataset.collate_fn,
-        num_workers=4,
-        pin_memory=True,
-    )
 
     training_args = TrainingArguments(
         output_dir=args.output_dir,
@@ -75,7 +48,37 @@ def main(rank, world_size, args):
         dataloader_drop_last=True,
         remove_unused_columns=False,
     )
+
+    tokenizer, model = get_model(args, model_name)
+
+    data_collator = DataCollatorWithPadding(
+        tokenizer=tokenizer,
+        padding=True,  # Ensure padding is enabled
+    )
     
+    model.to(rank)
+    model = DDP(model, device_ids=[rank], output_device=rank)
+    
+    if rank==0:
+        model.module.print_trainable_parameters()
+    
+    trainer = Trainer(
+        model=model,
+        tokenizer=tokenizer,
+        args=training_args,
+        train_dataset=train_dataset,
+        eval_dataset=eval_dataset,
+        data_collator=data_collator,
+        # sampler=train_sampler,
+        # train_dataloader=train_dataloader,
+        # eval_dataloader=eval_dataloader,
+    )
+    
+    trainer.train()
+    ddp_cleanup()
+
+def get_model(args, model_name, tokenizer):
+
     tokenizer = AutoTokenizer.from_pretrained(
         model_name,
         trust_remote_code=True,
@@ -83,11 +86,6 @@ def main(rank, world_size, args):
         truncation=True,
         padding=True,
         max_length=1730,
-    )
-
-    data_collator = DataCollatorWithPadding(
-        tokenizer=tokenizer,
-        padding=True,  # Ensure padding is enabled
     )
 
     if tokenizer.pad_token_id is None:
@@ -139,26 +137,8 @@ def main(rank, world_size, args):
         
         model = base_model
     
-    model.to(rank)
-    model = DDP(model, device_ids=[rank], output_device=rank)
-    
-    if rank==0:
-        model.module.print_trainable_parameters()
-    
-    trainer = Trainer(
-        model=model,
-        tokenizer=tokenizer,
-        args=training_args,
-        train_dataset=None,
-        eval_dataset=None,
-        data_collator=None,
-        sampler=train_sampler,
-        train_dataloader=train_dataloader,
-        eval_dataloader=eval_dataloader,
-    )
-    
-    trainer.train()
-    ddp_cleanup()
+    return tokenizer, model
+
     
 
 if __name__ == "__main__":
@@ -179,10 +159,5 @@ if __name__ == "__main__":
     
     world_size = torch.cuda.device_count()
     print(f"Number of GPUs: {world_size}")
-    torch.multiprocessing.spawn(
-        main,
-        args=(world_size, args),
-        nprocs=world_size,
-        join=True
-    )
+    main()
 
