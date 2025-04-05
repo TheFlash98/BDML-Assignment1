@@ -15,7 +15,7 @@ from torch.distributed.tensor.parallel import (
 )
 from torch.distributed.device_mesh import init_device_mesh
 from accelerate import Accelerator
-from accelerate.utils import KwargsHandler
+from accelerate.utils import TorchTensorParallelPlugin
 # torchrun --nproc_per_node=2 tp_train.py  --per_device_train_batch_size 8 --fine_tuning_type "qlora" --use_fp16 --gradient_checkpointing --num_train_epochs 2 --output_dir /scratch/sk12184/output/tensor_parallel/
 
 
@@ -150,10 +150,7 @@ def main():
         
         #print(list(model.named_parameters()))
         accelerator = Accelerator(
-            dispatch_batches=False,
-            split_batches=False,
-            even_batches=False,
-            distributed_type="TP",
+            torch_tp_plugin=TorchTensorParallelPlugin(),
         )
         
         trainer = Trainer(
