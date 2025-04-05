@@ -68,11 +68,11 @@ def main():
         tokenizer=tokenizer,
         padding=True,  # Ensure padding is enabled
     )
-    model = model.to("cuda")
-    if dist.get_rank() == 0:
-        print("\nModel structure BEFORE parallelization:")
-        for name, param in model.named_parameters():
-             print(f"{name:80} | Device: {param.device} | Shape: {param.shape}")
+    # model = model.to("cuda")
+    # if dist.get_rank() == 0:
+    #     print("\nModel structure BEFORE parallelization:")
+    #     for name, param in model.named_parameters():
+    #          print(f"{name:80} | Device: {param.device} | Shape: {param.shape}")
     
     
     # with tp_mesh:
