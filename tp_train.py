@@ -55,7 +55,10 @@ def main():
         dataloader_drop_last=True,
         remove_unused_columns=False,
         local_rank=rank,
-        ddp_backend=None
+        ddp_backend=None,
+        accelerator_config={
+            "distributed_type": "TP",
+        }
     )
 
     tokenizer, model = get_model(args, model_name)
