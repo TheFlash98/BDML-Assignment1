@@ -148,6 +148,7 @@ def main():
         train_dataset=train_dataset,
         eval_dataset=eval_dataset,
         data_collator=data_collator,
+        accelerator_config={"distributed_type": "TP"}
     )
     
     trainer.train()
