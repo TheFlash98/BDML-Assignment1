@@ -86,9 +86,10 @@ def main():
                     output_layouts=Replicate(),
                     use_local_output=False,
                 ),
-                "lm_head": RowwiseParallel(
-                    input_layouts=Replicate(),
-                    output_layouts=Shard(1),
+                "lm_head": ColwiseParallel(
+                    input_layouts=Shard(1),
+                    output_layouts=Replicate(),
+                    use_local_output=False,
                 ),
             },
         )
