@@ -78,8 +78,8 @@ def main():
             {
                 "lm_head": ColwiseParallel(
                     input_layouts=Shard(1),
-                    output_layouts=Replicate(),
-                    use_local_output=False,
+                    output_layouts=Shard(-1),
+                    use_local_output=True,
                 ),
                 "outputs": ColwiseParallel(
                     input_layouts=Shard(1),
