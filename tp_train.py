@@ -152,7 +152,8 @@ def main():
         accelerator = Accelerator(
             dispatch_batches=False,
             split_batches=False,
-            kwargs_handlers=[KwargsHandler(use_distributed=False)]
+            even_batches=False,
+            distributed_type="TP",
         )
         
         trainer = Trainer(
