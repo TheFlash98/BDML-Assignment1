@@ -14,6 +14,7 @@ from torch.distributed.tensor.parallel import (
 )
 from torch.distributed.device_mesh import init_device_mesh
 
+# torchrun --nproc_per_node=2 tp_train.py  --per_device_train_batch_size 8 --fine_tuning_type "qlora" --use_fp16 --gradient_checkpointing --num_train_epochs 2 --output_dir /scratch/sk12184/output/tensor_parallel/
 
 
 def setup_tensor_parallel():
@@ -21,13 +22,13 @@ def setup_tensor_parallel():
     rank = int(os.environ.get("RANK", 0))
     world_size = int(os.environ.get("WORLD_SIZE", 1))
     print(f"Rank: {rank}, World Size: {world_size}")
+    torch.cuda.set_device(rank)
     dist.init_process_group(
         backend="nccl",
         init_method="env://",
         rank=rank,
         world_size=world_size
     )
-    torch.cuda.set_device(rank)
     return rank, world_size
 
 def main():
@@ -93,7 +94,9 @@ def main():
         for name, param in model.named_parameters():
              print(f"{name:80} | Device: {param.device} | Shape: {param.shape}")
     
-    model = parallelize_module(model, tp_mesh, parallelize_plan)
+    model = parallelize_module(module=model,
+                               device_mesh=tp_mesh,
+                               parallelize_plan=parallelize_plan)
     
     print(f"\nRank {dist.get_rank()} parameters:")
     for name, param in model.named_parameters():
