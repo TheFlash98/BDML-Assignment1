@@ -76,12 +76,11 @@ def main():
             model,
             tp_mesh,
             {
-                "lm_head": RowwiseParallel(input_layouts=Replicate()),
-                "output": ColwiseParallel(
+                "lm_head": ColwiseParallel(
                     input_layouts=Shard(1),
                     output_layouts=Replicate(),
                     use_local_output=False,
-                ),
+                )
             },
         )
         parallelize_module(
