@@ -129,6 +129,8 @@ def main():
         eval_dataset=eval_dataset,
         data_collator=data_collator,
     )
+    for name, param in model.named_parameters():
+        print(f"{name:60} | Type: {type(param)} | Device: {param.device}")
     
     trainer.train()
 
