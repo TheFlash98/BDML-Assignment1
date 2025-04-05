@@ -43,32 +43,33 @@ def main():
     train_dataset = ClimateDataset(data_root_path="/scratch/sk12184/climate_text_dataset_tokenized", split="train")
     eval_dataset = ClimateDataset(data_root_path="/scratch/sk12184/climate_text_dataset_tokenized", split="eval")
 
-    training_args = TrainingArguments(
-        output_dir=args.output_dir,
-        num_train_epochs=args.num_train_epochs,
-        fp16 = args.use_fp16,
-        bf16 = args.use_bf16,
-        per_device_train_batch_size=args.per_device_train_batch_size,
-        gradient_accumulation_steps=args.gradient_accumulation_steps,
-        dataloader_num_workers=4,
-        logging_steps=100,
-        save_strategy="epoch",
-        save_steps=500,
-        dataloader_drop_last=True,
-        remove_unused_columns=False,
-        local_rank=rank,
-        ddp_backend=None,
-        fsdp=False,
-        use_cpu=False,
-        no_cuda=False
-    )
+    
 
     tp_plugin = TorchTensorParallelPlugin(tp_size=2)
     accelerator = Accelerator(
         torch_tp_plugin=tp_plugin,
     )
     tokenizer, model = get_model(args, model_name, accelerator)
-
+    training_args = TrainingArguments(
+            output_dir=args.output_dir,
+            num_train_epochs=args.num_train_epochs,
+            fp16 = args.use_fp16,
+            bf16 = args.use_bf16,
+            per_device_train_batch_size=args.per_device_train_batch_size,
+            gradient_accumulation_steps=args.gradient_accumulation_steps,
+            dataloader_num_workers=4,
+            logging_steps=100,
+            save_strategy="epoch",
+            save_steps=500,
+            dataloader_drop_last=True,
+            remove_unused_columns=False,
+            local_rank=rank,
+            ddp_backend=None,
+            fsdp=False,
+            use_cpu=False,
+            no_cuda=False,
+            accelerator_config=AcceleratorConfig(use_configured_state=True),
+        )
     data_collator = DataCollatorWithPadding(
         tokenizer=tokenizer,
         padding=True,  # Ensure padding is enabled
@@ -133,7 +134,6 @@ def main():
             train_dataset=train_dataset,
             eval_dataset=eval_dataset,
             data_collator=data_collator,
-            accelerator=accelerator,
         )
         
         trainer.train()
