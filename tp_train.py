@@ -16,6 +16,7 @@ from torch.distributed.tensor.parallel import (
 from torch.distributed.device_mesh import init_device_mesh
 from accelerate import Accelerator
 from accelerate.utils import TorchTensorParallelPlugin
+from transformers.trainer_pt_utils import AcceleratorConfig
 # torchrun --nproc_per_node=2 tp_train.py  --per_device_train_batch_size 8 --fine_tuning_type "qlora" --use_fp16 --gradient_checkpointing --num_train_epochs 2 --output_dir /scratch/sk12184/output/tensor_parallel/
 
 
@@ -35,8 +36,8 @@ def setup_tensor_parallel():
 
 def main():
     rank, world_size = setup_tensor_parallel()
-    tp_mesh = init_device_mesh("cuda", (world_size,), mesh_dim_names=("tp",))
-    print(f"Rank {rank}: Created device mesh -> {tp_mesh}")
+    # tp_mesh = init_device_mesh("cuda", (world_size,), mesh_dim_names=("tp",))
+    # print(f"Rank {rank}: Created device mesh -> {tp_mesh}")
     model_name = "/scratch/sk12184/llama3.2-3B-HF"
     
     train_dataset = ClimateDataset(data_root_path="/scratch/sk12184/climate_text_dataset_tokenized", split="train")
@@ -60,43 +61,17 @@ def main():
         fsdp=False,
         use_cpu=False,
         no_cuda=False
-        # accelerator_config={
-        #     "distributed_type": "TP",
-        # }
     )
 
-    tokenizer, model = get_model(args, model_name)
-
+    tokenizer, model = get_model(args, model_name, accelerator)
+    tp_plugin = TorchTensorParallelPlugin(tp_size=2)
+    accelerator = Accelerator(
+        torch_tp_plugin=tp_plugin,
+    )
     data_collator = DataCollatorWithPadding(
         tokenizer=tokenizer,
         padding=True,  # Ensure padding is enabled
     )
-    # parallelize_plan = {
-    #     "base_model.model.model.embed_tokens": ColwiseParallel(),
-    #     # Final LayerNorm - replicated on all devices
-    #     "base_model.model.model.norm": SequenceParallel()
-    # }
-    # for i in range(28):
-    #     parallelize_plan.update({
-    #         f"base_model.model.model.layers.{i}.self_attn.q_proj.base_layer": ColwiseParallel(),
-    #         f"base_model.model.model.layers.{i}.self_attn.q_proj.lora_A.default": ColwiseParallel(),
-    #         f"base_model.model.model.layers.{i}.self_attn.q_proj.lora_B.default": RowwiseParallel(),
-            
-    #         f"base_model.model.model.layers.{i}.self_attn.k_proj": ColwiseParallel(),
-            
-    #         f"base_model.model.model.layers.{i}.self_attn.v_proj.base_layer": ColwiseParallel(),
-    #         f"base_model.model.model.layers.{i}.self_attn.v_proj.lora_A.default": ColwiseParallel(),
-    #         f"base_model.model.model.layers.{i}.self_attn.v_proj.lora_B.default": RowwiseParallel(),
-            
-    #         f"base_model.model.model.layers.{i}.self_attn.o_proj": RowwiseParallel(),
-            
-    #         f"base_model.model.model.layers.{i}.mlp.gate_proj": ColwiseParallel(),
-    #         f"base_model.model.model.layers.{i}.mlp.up_proj": ColwiseParallel(),
-    #         f"base_model.model.model.layers.{i}.mlp.down_proj": RowwiseParallel(),
-            
-    #         f"base_model.model.model.layers.{i}.input_layernorm": SequenceParallel(),
-    #         f"base_model.model.model.layers.{i}.post_attention_layernorm": SequenceParallel()
-    #     })
     model = model.to("cuda")
     if dist.get_rank() == 0:
         print("\nModel structure BEFORE parallelization:")
@@ -104,7 +79,7 @@ def main():
              print(f"{name:80} | Device: {param.device} | Shape: {param.shape}")
     
     
-    with tp_mesh:
+    with tp_plugin.torch_device_mesh as tp_mesh:
         parallelize_module(
             model.model,
             tp_mesh,
@@ -149,9 +124,6 @@ def main():
             print(f"{name:80} | Device: {param.device} | Shape: {param.shape}")
         
         #print(list(model.named_parameters()))
-        accelerator = Accelerator(
-            torch_tp_plugin=TorchTensorParallelPlugin(tp_size=2),
-        )
         
         trainer = Trainer(
             model=model,
@@ -165,7 +137,7 @@ def main():
         
         trainer.train()
 
-def get_model(args, model_name):
+def get_model(args, model_name, accelerator):
 
     tokenizer = AutoTokenizer.from_pretrained(
         model_name,
@@ -218,7 +190,10 @@ def get_model(args, model_name):
 
         # model.print_trainable_parameters()
     else:
-        base_model = AutoModelForCausalLM.from_pretrained(model_name)
+        base_model = AutoModelForCausalLM.from_pretrained(
+            model_name,
+            device_map=accelerator.device_placement_map
+        )
         
         if args.gradient_checkpointing:
             base_model.gradient_checkpointing_enable()
