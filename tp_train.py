@@ -102,7 +102,9 @@ def main():
         )
         for transformer_block in model.model.layers:
             layer_plan = {
-                "self_attn.q_proj": colwise_parallel(),
+                "self_attn.q_proj": colwise_parallel(input_layouts=Shard(1),
+                                                    output_layouts=Shard(1),
+                                                    use_local_output=False),
                 "self_attn.k_proj": colwise_parallel(),
                 "self_attn.v_proj": colwise_parallel(),
                 "self_attn.o_proj": rowwise_parallel(output_layouts=Shard(1)),
