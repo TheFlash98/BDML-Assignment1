@@ -76,12 +76,12 @@ def main():
             model,
             tp_mesh,
             {
-                "lm_head": ColwiseParallel(output_layouts=Replicate()),
-                # "outputs": ColwiseParallel(
-                #     input_layouts=Shard(1),
-                #     output_layouts=Replicate(),
-                #     use_local_output=False,
-                # ),
+                # "lm_head": ColwiseParallel(output_layouts=Replicate()),
+                "lm_head": ColwiseParallel(
+                    input_layouts=Shard(1),
+                    output_layouts=Replicate(),
+                    use_local_output=False,
+                ),
             },
         )
         parallelize_module(
@@ -105,10 +105,10 @@ def main():
                 "self_attn.q_proj": colwise_parallel(),
                 "self_attn.k_proj": colwise_parallel(),
                 "self_attn.v_proj": colwise_parallel(),
-                "self_attn.o_proj": rowwise_parallel(),
+                "self_attn.o_proj": rowwise_parallel(output_layouts=Shard(1)),
                 "mlp.gate_proj": colwise_parallel(),
                 "mlp.up_proj": colwise_parallel(),
-                "mlp.down_proj": rowwise_parallel(),
+                "mlp.down_proj": rowwise_parallel(output_layouts=Shard(1)),
                 "input_layernorm": SequenceParallel(),
                 "post_attention_layernorm": SequenceParallel(),
             }
