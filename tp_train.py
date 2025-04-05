@@ -35,8 +35,8 @@ def setup_tensor_parallel():
     return rank, world_size
 
 def main():
-    # rank, world_size = setup_tensor_parallel()
-    # tp_mesh = init_device_mesh("cuda", (world_size,), mesh_dim_names=("tp",))
+    rank, world_size = setup_tensor_parallel()
+    tp_mesh = init_device_mesh("cuda", (world_size,), mesh_dim_names=("tp",))
     # print(f"Rank {rank}: Created device mesh -> {tp_mesh}")
     model_name = "/scratch/sk12184/llama3.2-3B-HF"
     
@@ -69,57 +69,48 @@ def main():
         padding=True,  # Ensure padding is enabled
     )
     # model = model.to("cuda")
-    # if dist.get_rank() == 0:
-    #     print("\nModel structure BEFORE parallelization:")
-    #     for name, param in model.named_parameters():
-    #          print(f"{name:80} | Device: {param.device} | Shape: {param.shape}")
     
     
-    # with tp_mesh:
-    #     parallelize_module(
-    #         model.model,
-    #         tp_mesh,
-    #         {
-    #             "embed_tokens": RowwiseParallel(
-    #                 input_layouts=Replicate(),
-    #                 output_layouts=Shard(1),
-    #             ),
-    #             "norm": SequenceParallel(),
-    #             "output": ColwiseParallel(
-    #                 input_layouts=Shard(1),
-    #                 output_layouts=Replicate(),
-    #                 use_local_output=False,
-    #             ),
-    #         },
-    #     )
-    #     rowwise_parallel, colwise_parallel, prepare_module_input = (
-    #         RowwiseParallel,
-    #         ColwiseParallel,
-    #         PrepareModuleInput,
-    #     )
-    #     for transformer_block in model.model.layers:
-    #         layer_plan = {
-    #             "self_attn.q_proj": colwise_parallel(),
-    #             "self_attn.k_proj": colwise_parallel(),
-    #             "self_attn.v_proj": colwise_parallel(),
-    #             "self_attn.o_proj": rowwise_parallel(),
-    #             "mlp.gate_proj": colwise_parallel(),
-    #             "mlp.up_proj": colwise_parallel(),
-    #             "mlp.down_proj": rowwise_parallel(),
-    #             "input_layernorm": SequenceParallel(),
-    #             "post_attention_layernorm": SequenceParallel(),
-    #         }
-    #         parallelize_module(
-    #             module=transformer_block,
-    #             device_mesh=tp_mesh,
-    #             parallelize_plan=layer_plan,
-    #         )
+    with tp_mesh:
+        parallelize_module(
+            model.model,
+            tp_mesh,
+            {
+                "embed_tokens": RowwiseParallel(
+                    input_layouts=Replicate(),
+                    output_layouts=Shard(1),
+                ),
+                "norm": SequenceParallel(),
+                "output": ColwiseParallel(
+                    input_layouts=Shard(1),
+                    output_layouts=Replicate(),
+                    use_local_output=False,
+                ),
+            },
+        )
+        rowwise_parallel, colwise_parallel, prepare_module_input = (
+            RowwiseParallel,
+            ColwiseParallel,
+            PrepareModuleInput,
+        )
+        for transformer_block in model.model.layers:
+            layer_plan = {
+                "self_attn.q_proj": colwise_parallel(),
+                "self_attn.k_proj": colwise_parallel(),
+                "self_attn.v_proj": colwise_parallel(),
+                "self_attn.o_proj": rowwise_parallel(),
+                "mlp.gate_proj": colwise_parallel(),
+                "mlp.up_proj": colwise_parallel(),
+                "mlp.down_proj": rowwise_parallel(),
+                "input_layernorm": SequenceParallel(),
+                "post_attention_layernorm": SequenceParallel(),
+            }
+            parallelize_module(
+                module=transformer_block,
+                device_mesh=tp_mesh,
+                parallelize_plan=layer_plan,
+            )
         
-    #     print(f"\nRank {dist.get_rank()} parameters:")
-    #     for name, param in model.named_parameters():
-    #         print(f"{name:80} | Device: {param.device} | Shape: {param.shape}")
-        
-        #print(list(model.named_parameters()))
         
     trainer = Trainer(
         model=model,
