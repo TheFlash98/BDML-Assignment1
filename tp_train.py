@@ -135,7 +135,7 @@ def main():
         }
         parallelize_module(
             module=transformer_block,
-            device_mesh=tp_mesh,
+            device_mesh=tp_mesh['tp'],
             parallelize_plan=layer_plan,
         )
     
