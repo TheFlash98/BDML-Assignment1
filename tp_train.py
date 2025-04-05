@@ -100,61 +100,62 @@ def main():
              print(f"{name:80} | Device: {param.device} | Shape: {param.shape}")
     
     
-    parallelize_module(
-        model.model,
-        tp_mesh,
-        {
-            "embed_tokens": RowwiseParallel(
-                input_layouts=Replicate(),
-                output_layouts=Shard(1),
-            ),
-            "norm": SequenceParallel(),
-            "output": ColwiseParallel(
-                input_layouts=Shard(1),
-                output_layouts=Replicate(),
-                use_local_output=False,
-            ),
-        },
-    )
-    rowwise_parallel, colwise_parallel, prepare_module_input = (
-        RowwiseParallel,
-        ColwiseParallel,
-        PrepareModuleInput,
-    )
-    for transformer_block in model.model.layers:
-        layer_plan = {
-            "self_attn.q_proj": colwise_parallel(),
-            "self_attn.k_proj": colwise_parallel(),
-            "self_attn.v_proj": colwise_parallel(),
-            "self_attn.o_proj": rowwise_parallel(),
-            "mlp.gate_proj": colwise_parallel(),
-            "mlp.up_proj": colwise_parallel(),
-            "mlp.down_proj": rowwise_parallel(),
-            "input_layernorm": SequenceParallel(),
-            "post_attention_layernorm": SequenceParallel(),
-        }
+    with tp_mesh:
         parallelize_module(
-            module=transformer_block,
-            device_mesh=tp_mesh,
-            parallelize_plan=layer_plan,
+            model.model,
+            tp_mesh,
+            {
+                "embed_tokens": RowwiseParallel(
+                    input_layouts=Replicate(),
+                    output_layouts=Shard(1),
+                ),
+                "norm": SequenceParallel(),
+                "output": ColwiseParallel(
+                    input_layouts=Shard(1),
+                    output_layouts=Replicate(),
+                    use_local_output=False,
+                ),
+            },
         )
-    
-    print(f"\nRank {dist.get_rank()} parameters:")
-    for name, param in model.named_parameters():
-        print(f"{name:80} | Device: {param.device} | Shape: {param.shape}")
-    
-    #print(list(model.named_parameters()))
-    
-    trainer = Trainer(
-        model=model,
-        tokenizer=tokenizer,
-        args=training_args,
-        train_dataset=train_dataset,
-        eval_dataset=eval_dataset,
-        data_collator=data_collator,
-    )
-    
-    trainer.train()
+        rowwise_parallel, colwise_parallel, prepare_module_input = (
+            RowwiseParallel,
+            ColwiseParallel,
+            PrepareModuleInput,
+        )
+        for transformer_block in model.model.layers:
+            layer_plan = {
+                "self_attn.q_proj": colwise_parallel(),
+                "self_attn.k_proj": colwise_parallel(),
+                "self_attn.v_proj": colwise_parallel(),
+                "self_attn.o_proj": rowwise_parallel(),
+                "mlp.gate_proj": colwise_parallel(),
+                "mlp.up_proj": colwise_parallel(),
+                "mlp.down_proj": rowwise_parallel(),
+                "input_layernorm": SequenceParallel(),
+                "post_attention_layernorm": SequenceParallel(),
+            }
+            parallelize_module(
+                module=transformer_block,
+                device_mesh=tp_mesh,
+                parallelize_plan=layer_plan,
+            )
+        
+        print(f"\nRank {dist.get_rank()} parameters:")
+        for name, param in model.named_parameters():
+            print(f"{name:80} | Device: {param.device} | Shape: {param.shape}")
+        
+        #print(list(model.named_parameters()))
+        
+        trainer = Trainer(
+            model=model,
+            tokenizer=tokenizer,
+            args=training_args,
+            train_dataset=train_dataset,
+            eval_dataset=eval_dataset,
+            data_collator=data_collator,
+        )
+        
+        trainer.train()
 
 def get_model(args, model_name):
 
