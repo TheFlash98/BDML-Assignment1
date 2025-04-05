@@ -20,7 +20,7 @@ if not verify_min_gpu_count(min_gpus=_min_gpu_count):
 # ---------------------------
 
 from torch.distributed._tensor.device_mesh import init_device_mesh
-
+import torch.distributed as dist
 
 
 
@@ -91,6 +91,11 @@ rank_log(_rank, logger, f"Device Mesh created: {device_mesh=}")
 # create model and move it to GPU - init"cuda"_mesh has already mapped GPU ids.
 tp_model = ToyModel().to("cuda")
 
+if dist.get_rank() == 0:
+    print("\nModel structure BEFORE parallelization:")
+    for name, param in tp_model.named_parameters():
+            print(f"{name:80} | Device: {param.device} | Shape: {param.shape}")
+
 # Create an optimizer for the parallelized module.
 lr = 0.25
 optimizer = torch.optim.AdamW(tp_model.parameters(), lr=lr, foreach=True)
@@ -104,6 +109,9 @@ tp_model = parallelize_module(
         "out_proj": RowwiseParallel(),
     },
 )
+print(f"\nRank {dist.get_rank()} parameters:")
+for name, param in tp_model.named_parameters():
+    print(f"{name:80} | Device: {param.device} | Shape: {param.shape}")
 # Perform a num of iterations of forward/backward
 # and optimizations for the sharded module.
 num_iters = 10

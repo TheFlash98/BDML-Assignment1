@@ -1,12 +1,17 @@
 import torch
 
-# Ensure the GPU is available
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+# Ensure GPUs are available
+if not torch.cuda.is_available():
+    raise RuntimeError("No GPUs are available!")
 
-# Create a large tensor
-dummy_tensor = torch.randn(10000, 10000, device=device)
+# Get all available GPUs
+device_count = torch.cuda.device_count()
+devices = [torch.device(f"cuda:{i}") for i in range(device_count)]
 
-# Infinite loop to keep the GPU busy
+# Create a large tensor on each GPU
+dummy_tensors = [torch.randn(10000, 10000, device=device) for device in devices]
+
+# Infinite loop to keep all GPUs busy
 while True:
-    dummy_tensor = torch.matmul(dummy_tensor, dummy_tensor)  # Matrix multiplication
-
+    for i, device in enumerate(devices):
+        dummy_tensors[i] = torch.matmul(dummy_tensors[i], dummy_tensors[i])  # Matrix multiplication
