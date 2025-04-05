@@ -80,8 +80,8 @@ def main():
     model = model.to(rank)
     if dist.get_rank() == 0:
         print("\nModel structure BEFORE parallelization:")
-        for name, _ in model.named_parameters():
-            print(name)
+        for name, param in model.named_parameters():
+             print(f"{name:80} | Device: {param.device} | Shape: {param.shape}")
     model = parallelize_module(model, tp_mesh, parallelize_plan)
     print(f"\nRank {dist.get_rank()} parameters:")
     for name, param in model.named_parameters():
