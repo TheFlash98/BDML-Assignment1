@@ -35,9 +35,9 @@ def setup_tensor_parallel():
     return rank, world_size
 
 def main():
-    rank, world_size = setup_tensor_parallel()
-    tp_mesh = init_device_mesh("cuda", (world_size,), mesh_dim_names=("tp",))
-    print(f"Rank {rank}: Created device mesh -> {tp_mesh}")
+    # rank, world_size = setup_tensor_parallel()
+    # tp_mesh = init_device_mesh("cuda", (world_size,), mesh_dim_names=("tp",))
+    # print(f"Rank {rank}: Created device mesh -> {tp_mesh}")
     model_name = "/scratch/sk12184/llama3.2-3B-HF"
     
     train_dataset = ClimateDataset(data_root_path="/scratch/sk12184/climate_text_dataset_tokenized", split="train")
@@ -58,7 +58,7 @@ def main():
             save_steps=500,
             dataloader_drop_last=True,
             remove_unused_columns=False,
-            local_rank=rank,
+            # local_rank=rank,
             ddp_backend=None,
             fsdp=False,
             use_cpu=False,
