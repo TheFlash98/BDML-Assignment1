@@ -14,7 +14,8 @@ from torch.distributed.tensor.parallel import (
     SequenceParallel, parallelize_module, PrepareModuleInput
 )
 from torch.distributed.device_mesh import init_device_mesh
-
+from accelerate import Accelerator
+from accelerate.utils import KwargsHandler
 # torchrun --nproc_per_node=2 tp_train.py  --per_device_train_batch_size 8 --fine_tuning_type "qlora" --use_fp16 --gradient_checkpointing --num_train_epochs 2 --output_dir /scratch/sk12184/output/tensor_parallel/
 
 
@@ -56,6 +57,9 @@ def main():
         remove_unused_columns=False,
         local_rank=rank,
         ddp_backend=None,
+        fsdp=False,
+        use_cpu=False,
+        no_cuda=False
         # accelerator_config={
         #     "distributed_type": "TP",
         # }
@@ -145,6 +149,11 @@ def main():
             print(f"{name:80} | Device: {param.device} | Shape: {param.shape}")
         
         #print(list(model.named_parameters()))
+        accelerator = Accelerator(
+            dispatch_batches=False,
+            split_batches=False,
+            kwargs_handlers=[KwargsHandler(use_distributed=False)]
+        )
         
         trainer = Trainer(
             model=model,
@@ -153,6 +162,7 @@ def main():
             train_dataset=train_dataset,
             eval_dataset=eval_dataset,
             data_collator=data_collator,
+            accelerator=accelerator,
         )
         
         trainer.train()
