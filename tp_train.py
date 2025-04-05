@@ -26,9 +26,9 @@ def setup_tensor_parallel():
     torch.cuda.set_device(rank)
     dist.init_process_group(
         backend="nccl",
-        init_method="env://",
-        rank=rank,
-        world_size=world_size
+        # init_method="env://",
+        # rank=rank,
+        # world_size=world_size
     )
     return rank, world_size
 
@@ -36,6 +36,7 @@ def main():
     rank, world_size = setup_tensor_parallel()
     tp_mesh = init_device_mesh("cuda", (1,world_size), mesh_dim_names=("dp", "tp"))
     print(f"Rank {rank}: Created device mesh -> {tp_mesh}")
+    print("Tp mesh:", tp_mesh['tp'])
     model_name = "/scratch/sk12184/llama3.2-3B-HF"
     
     train_dataset = ClimateDataset(data_root_path="/scratch/sk12184/climate_text_dataset_tokenized", split="train")
@@ -102,7 +103,7 @@ def main():
     
     parallelize_module(
         model.model,
-        tp_mesh,
+        tp_mesh['tp'],
         {
             "embed_tokens": RowwiseParallel(
                 input_layouts=Replicate(),
