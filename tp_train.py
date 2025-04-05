@@ -80,7 +80,12 @@ def main():
                     input_layouts=Shard(1),
                     output_layouts=Replicate(),
                     use_local_output=False,
-                )
+                ),
+                "outputs": ColwiseParallel(
+                    input_layouts=Shard(1),
+                    output_layouts=Replicate(),
+                    use_local_output=False,
+                ),
             },
         )
         parallelize_module(
