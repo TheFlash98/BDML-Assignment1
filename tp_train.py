@@ -63,11 +63,12 @@ def main():
         no_cuda=False
     )
 
-    tokenizer, model = get_model(args, model_name, accelerator)
     tp_plugin = TorchTensorParallelPlugin(tp_size=2)
     accelerator = Accelerator(
         torch_tp_plugin=tp_plugin,
     )
+    tokenizer, model = get_model(args, model_name, accelerator)
+
     data_collator = DataCollatorWithPadding(
         tokenizer=tokenizer,
         padding=True,  # Ensure padding is enabled
