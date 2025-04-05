@@ -94,6 +94,10 @@ def main():
         for name, param in model.named_parameters():
              print(f"{name:80} | Device: {param.device} | Shape: {param.shape}")
     
+    for layer_id, transformer_block in enumerate(model.layers):
+        print(f"Layer {layer_id} - {transformer_block.__class__.__name__}")
+        print(transformer_block)
+    
     model = parallelize_module(module=model,
                                device_mesh=tp_mesh,
                                parallelize_plan=parallelize_plan)
