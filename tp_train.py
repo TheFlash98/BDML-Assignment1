@@ -50,6 +50,9 @@ def main():
         torch_tp_plugin=tp_plugin,
     )
     tokenizer, model = get_model(args, model_name, accelerator)
+    model, train_dataset, eval_dataset = accelerator.prepare(
+        model, train_dataset, eval_dataset
+    )
     training_args = TrainingArguments(
             output_dir=args.output_dir,
             num_train_epochs=args.num_train_epochs,
@@ -68,9 +71,6 @@ def main():
             fsdp=False,
             use_cpu=False,
             no_cuda=False,
-            accelerator_config={
-                "torch_tp_plugin": tp_plugin,
-            },
         )
     data_collator = DataCollatorWithPadding(
         tokenizer=tokenizer,
@@ -195,7 +195,7 @@ def get_model(args, model_name, accelerator):
     else:
         base_model = AutoModelForCausalLM.from_pretrained(
             model_name,
-            device_map="auto",
+            device_map="auto"
         )
         
         if args.gradient_checkpointing:
