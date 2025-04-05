@@ -35,7 +35,7 @@ def setup_tensor_parallel():
 
 def main():
     rank, world_size = setup_tensor_parallel()
-    tp_mesh = init_device_mesh("cuda", (world_size,))
+    tp_mesh = init_device_mesh("cuda", (world_size,), mesh_dim_names=("tp",))
     print(f"Rank {rank}: Created device mesh -> {tp_mesh}")
     model_name = "/scratch/sk12184/llama3.2-3B-HF"
     
@@ -150,7 +150,7 @@ def main():
         
         #print(list(model.named_parameters()))
         accelerator = Accelerator(
-            torch_tp_plugin=TorchTensorParallelPlugin(),
+            torch_tp_plugin=TorchTensorParallelPlugin(tp_size=2),
         )
         
         trainer = Trainer(
