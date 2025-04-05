@@ -84,6 +84,9 @@ def main():
         "base_model.model.model.layers.{X}.post_attention_layernorm": SequenceParallel(),
         
         "base_model.model.lm_head": RowwiseParallel(),
+
+        "base_model.model.model.layers.{X}.input_layernorm": SequenceParallel(),
+        "base_model.model.model.layers.{X}.post_attention_layernorm": SequenceParallel(),
     }
     model = model.to(rank)
     if dist.get_rank() == 0:
