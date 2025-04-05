@@ -34,7 +34,7 @@ def setup_tensor_parallel():
 
 def main():
     rank, world_size = setup_tensor_parallel()
-    tp_mesh = init_device_mesh("cuda", (world_size,))
+    tp_mesh = init_device_mesh("cuda", (1,world_size), mesh_dim_names=("dp", "tp"))
     print(f"Rank {rank}: Created device mesh -> {tp_mesh}")
     model_name = "/scratch/sk12184/llama3.2-3B-HF"
     
@@ -56,9 +56,9 @@ def main():
         remove_unused_columns=False,
         local_rank=rank,
         ddp_backend=None,
-        accelerator_config={
-            "distributed_type": "TP",
-        }
+        # accelerator_config={
+        #     "distributed_type": "TP",
+        # }
     )
 
     tokenizer, model = get_model(args, model_name)
