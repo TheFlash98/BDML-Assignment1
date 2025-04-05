@@ -69,14 +69,14 @@ def main():
     for i in range(28):
         parallelize_plan.update({
             f"base_model.model.model.layers.{i}.self_attn.q_proj.base_layer": ColwiseParallel(),
-            # f"base_model.model.model.layers.{i}.self_attn.q_proj.lora_A.default": ColwiseParallel(),
-            # f"base_model.model.model.layers.{i}.self_attn.q_proj.lora_B.default": RowwiseParallel(),
+            f"base_model.model.model.layers.{i}.self_attn.q_proj.lora_A.default": ColwiseParallel(),
+            f"base_model.model.model.layers.{i}.self_attn.q_proj.lora_B.default": RowwiseParallel(),
             
             f"base_model.model.model.layers.{i}.self_attn.k_proj": ColwiseParallel(),
             
             f"base_model.model.model.layers.{i}.self_attn.v_proj.base_layer": ColwiseParallel(),
-            # f"base_model.model.model.layers.{i}.self_attn.v_proj.lora_A.default": ColwiseParallel(),
-            # f"base_model.model.model.layers.{i}.self_attn.v_proj.lora_B.default": RowwiseParallel(),
+            f"base_model.model.model.layers.{i}.self_attn.v_proj.lora_A.default": ColwiseParallel(),
+            f"base_model.model.model.layers.{i}.self_attn.v_proj.lora_B.default": RowwiseParallel(),
             
             f"base_model.model.model.layers.{i}.self_attn.o_proj": RowwiseParallel(),
             
