@@ -73,6 +73,17 @@ def main():
     
     with tp_mesh:
         parallelize_module(
+            model,
+            tp_mesh,
+            {
+                "lm_head": ColwiseParallel(
+                    input_layouts=Shard(1),
+                    output_layouts=Replicate(),
+                    use_local_output=False,
+                )
+            },
+        )
+        parallelize_module(
             model.model,
             tp_mesh,
             {
@@ -82,11 +93,6 @@ def main():
                 ),
                 "norm": SequenceParallel(),
                 "output": ColwiseParallel(
-                    input_layouts=Shard(1),
-                    output_layouts=Replicate(),
-                    use_local_output=False,
-                ),
-                "lm_head": ColwiseParallel(
                     input_layouts=Shard(1),
                     output_layouts=Replicate(),
                     use_local_output=False,
