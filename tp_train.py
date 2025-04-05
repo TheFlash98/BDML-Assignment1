@@ -117,7 +117,7 @@ def main():
         ColwiseParallel,
         PrepareModuleInput,
     )
-    for transformer_block in model.model.layer:
+    for transformer_block in model.model.layers:
         layer_plan = {
             "self_attn.q_proj": colwise_parallel(),
             "self_attn.k_proj": colwise_parallel(),
