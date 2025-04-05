@@ -13,15 +13,18 @@ from torch.distributed.tensor.parallel import (
     SequenceParallel, parallelize_module
 )
 from torch.distributed.device_mesh import init_device_mesh
+from torch.distributed.tensor.parallel import is_tensor_parallel_enabled
+
 
 
 def setup_tensor_parallel():
     """Initialize distributed environment for tensor parallelism"""
     rank = int(os.environ.get("RANK", 0))
     world_size = int(os.environ.get("WORLD_SIZE", 1))
-    
+    print(f"Rank: {rank}, World Size: {world_size}")
     dist.init_process_group(
         backend="nccl",
+        init_method="env://",
         rank=rank,
         world_size=world_size
     )
@@ -31,6 +34,7 @@ def setup_tensor_parallel():
 def main():
     rank, world_size = setup_tensor_parallel()
     tp_mesh = init_device_mesh("cuda", (world_size,))
+    print(f"Rank {rank}: Created device mesh -> {tp_mesh}")
     model_name = "/scratch/sk12184/llama3.2-3B-HF"
     
     train_dataset = ClimateDataset(data_root_path="/scratch/sk12184/climate_text_dataset_tokenized", split="train")
@@ -106,6 +110,7 @@ def main():
         eval_dataset=eval_dataset,
         data_collator=data_collator,
     )
+    print(f"Tensor Parallel Enabled: {is_tensor_parallel_enabled()}")
     
     trainer.train()
 
