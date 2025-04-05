@@ -36,23 +36,15 @@ def setup_tensor_parallel():
 
 def main():
     rank, world_size = setup_tensor_parallel()
-    # tp_mesh = init_device_mesh("cuda", (world_size,), mesh_dim_names=("tp",))
-    # print(f"Rank {rank}: Created device mesh -> {tp_mesh}")
+    tp_mesh = init_device_mesh("cuda", (world_size,), mesh_dim_names=("tp",))
+    print(f"Rank {rank}: Created device mesh -> {tp_mesh}")
     model_name = "/scratch/sk12184/llama3.2-3B-HF"
     
     train_dataset = ClimateDataset(data_root_path="/scratch/sk12184/climate_text_dataset_tokenized", split="train")
     eval_dataset = ClimateDataset(data_root_path="/scratch/sk12184/climate_text_dataset_tokenized", split="eval")
 
     
-
-    tp_plugin = TorchTensorParallelPlugin(tp_size=2)
-    accelerator = Accelerator(
-        torch_tp_plugin=tp_plugin,
-    )
-    tokenizer, model = get_model(args, model_name, accelerator)
-    model, train_dataset, eval_dataset = accelerator.prepare(
-        model, train_dataset, eval_dataset
-    )
+    tokenizer, model = get_model(args, model_name)
     training_args = TrainingArguments(
             output_dir=args.output_dir,
             num_train_epochs=args.num_train_epochs,
@@ -83,7 +75,7 @@ def main():
              print(f"{name:80} | Device: {param.device} | Shape: {param.shape}")
     
     
-    with tp_plugin.torch_device_mesh as tp_mesh:
+    with tp_mesh:
         parallelize_module(
             model.model,
             tp_mesh,
@@ -140,7 +132,7 @@ def main():
         
         trainer.train()
 
-def get_model(args, model_name, accelerator):
+def get_model(args, model_name):
 
     tokenizer = AutoTokenizer.from_pretrained(
         model_name,
@@ -195,7 +187,6 @@ def get_model(args, model_name, accelerator):
     else:
         base_model = AutoModelForCausalLM.from_pretrained(
             model_name,
-            device_map="auto"
         )
         
         if args.gradient_checkpointing:
