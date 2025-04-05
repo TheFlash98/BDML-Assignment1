@@ -6,17 +6,14 @@ from dataset import ClimateDataset
 from transformers import DataCollatorWithPadding
 import torch
 import argparse
-from datasets import load_dataset
 
 import torch.distributed as dist
-from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.distributed.tensor.parallel import (
     ColwiseParallel, RowwiseParallel,
     SequenceParallel, parallelize_module
 )
 from torch.distributed.device_mesh import init_device_mesh
 
-# Inspiration from - https://pytorch.org/tutorials/beginner/ddp_series_multigpu.html
 
 def setup_tensor_parallel():
     """Initialize distributed environment for tensor parallelism"""
@@ -33,7 +30,7 @@ def setup_tensor_parallel():
 
 def main():
     rank, world_size = setup_tensor_parallel()
-    tp_mesh = init_device_mesh("cuda", (2,))
+    tp_mesh = init_device_mesh("cuda", (world_size,))
     model_name = "/scratch/sk12184/llama3.2-3B-HF"
     
     train_dataset = ClimateDataset(data_root_path="/scratch/sk12184/climate_text_dataset_tokenized", split="train")
@@ -46,13 +43,13 @@ def main():
         bf16 = args.use_bf16,
         per_device_train_batch_size=args.per_device_train_batch_size,
         gradient_accumulation_steps=args.gradient_accumulation_steps,
-        ddp_find_unused_parameters=False,
         dataloader_num_workers=4,
         logging_steps=100,
         save_strategy="epoch",
         save_steps=500,
         dataloader_drop_last=True,
         remove_unused_columns=False,
+        local_rank=rank,
     )
 
     tokenizer, model = get_model(args, model_name)
@@ -63,37 +60,38 @@ def main():
     )
     parallelize_plan = {
         "base_model.model.model.embed_tokens": ColwiseParallel(),
-        
-        "base_model.model.model.layers.{X}.self_attn.q_proj.base_layer": ColwiseParallel(),
-        "base_model.model.model.layers.{X}.self_attn.q_proj.lora_A.default": ColwiseParallel(),
-        "base_model.model.model.layers.{X}.self_attn.q_proj.lora_B.default": RowwiseParallel(),
-        
-        "base_model.model.model.layers.{X}.self_attn.k_proj": ColwiseParallel(),
-        
-        "base_model.model.model.layers.{X}.self_attn.v_proj.base_layer": ColwiseParallel(),
-        "base_model.model.model.layers.{X}.self_attn.v_proj.lora_A.default": ColwiseParallel(),
-        "base_model.model.model.layers.{X}.self_attn.v_proj.lora_B.default": RowwiseParallel(),
-        
-        "base_model.model.model.layers.{X}.self_attn.o_proj": RowwiseParallel(),
-        
-        "base_model.model.model.layers.{X}.mlp.gate_proj": ColwiseParallel(),
-        "base_model.model.model.layers.{X}.mlp.up_proj": ColwiseParallel(),
-        "base_model.model.model.layers.{X}.mlp.down_proj": RowwiseParallel(),
-        
-        "base_model.model.model.layers.{X}.input_layernorm": SequenceParallel(),
-        "base_model.model.model.layers.{X}.post_attention_layernorm": SequenceParallel(),
-        
-        "base_model.model.lm_head": RowwiseParallel(),
-
-        "base_model.model.model.layers.{X}.input_layernorm": SequenceParallel(),
-        "base_model.model.model.layers.{X}.post_attention_layernorm": SequenceParallel(),
+        # Final LayerNorm - replicated on all devices
+        "base_model.model.model.norm": SequenceParallel()
     }
-    model = model.to(rank)
+    for i in range(28):
+        parallelize_plan.update({
+            f"base_model.model.model.layers.{i}.self_attn.q_proj.base_layer": ColwiseParallel(),
+            f"base_model.model.model.layers.{i}.self_attn.q_proj.lora_A.default": ColwiseParallel(),
+            f"base_model.model.model.layers.{i}.self_attn.q_proj.lora_B.default": RowwiseParallel(),
+            
+            f"base_model.model.model.layers.{i}.self_attn.k_proj": ColwiseParallel(),
+            
+            f"base_model.model.model.layers.{i}.self_attn.v_proj.base_layer": ColwiseParallel(),
+            f"base_model.model.model.layers.{i}.self_attn.v_proj.lora_A.default": ColwiseParallel(),
+            f"base_model.model.model.layers.{i}.self_attn.v_proj.lora_B.default": RowwiseParallel(),
+            
+            f"base_model.model.model.layers.{i}.self_attn.o_proj": RowwiseParallel(),
+            
+            f"base_model.model.model.layers.{i}.mlp.gate_proj": ColwiseParallel(),
+            f"base_model.model.model.layers.{i}.mlp.up_proj": ColwiseParallel(),
+            f"base_model.model.model.layers.{i}.mlp.down_proj": RowwiseParallel(),
+            
+            f"base_model.model.model.layers.{i}.input_layernorm": SequenceParallel(),
+            f"base_model.model.model.layers.{i}.post_attention_layernorm": SequenceParallel()
+        })
+    model = model.to("cuda")
     if dist.get_rank() == 0:
         print("\nModel structure BEFORE parallelization:")
         for name, param in model.named_parameters():
              print(f"{name:80} | Device: {param.device} | Shape: {param.shape}")
+    
     model = parallelize_module(model, tp_mesh, parallelize_plan)
+    
     print(f"\nRank {dist.get_rank()} parameters:")
     for name, param in model.named_parameters():
         print(f"{name:80} | Device: {param.device} | Shape: {param.shape}")
@@ -107,9 +105,6 @@ def main():
         train_dataset=train_dataset,
         eval_dataset=eval_dataset,
         data_collator=data_collator,
-        # sampler=train_sampler,
-        # train_dataloader=train_dataloader,
-        # eval_dataloader=eval_dataloader,
     )
     
     trainer.train()
