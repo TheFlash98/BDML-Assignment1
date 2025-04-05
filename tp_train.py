@@ -68,7 +68,9 @@ def main():
             fsdp=False,
             use_cpu=False,
             no_cuda=False,
-            accelerator_config=AcceleratorConfig(use_configured_state=True),
+            accelerator_config={
+                "torch_tp_plugin": tp_plugin,
+            },
         )
     data_collator = DataCollatorWithPadding(
         tokenizer=tokenizer,
