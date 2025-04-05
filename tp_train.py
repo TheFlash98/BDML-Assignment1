@@ -8,9 +8,10 @@ import torch
 import argparse
 
 import torch.distributed as dist
+from torch.distributed.tensor import Replicate, Shard
 from torch.distributed.tensor.parallel import (
     ColwiseParallel, RowwiseParallel,
-    SequenceParallel, parallelize_module
+    SequenceParallel, parallelize_module, PrepareModuleInput
 )
 from torch.distributed.device_mesh import init_device_mesh
 
@@ -62,45 +63,77 @@ def main():
         tokenizer=tokenizer,
         padding=True,  # Ensure padding is enabled
     )
-    parallelize_plan = {
-        "base_model.model.model.embed_tokens": ColwiseParallel(),
-        # Final LayerNorm - replicated on all devices
-        "base_model.model.model.norm": SequenceParallel()
-    }
-    for i in range(28):
-        parallelize_plan.update({
-            f"base_model.model.model.layers.{i}.self_attn.q_proj.base_layer": ColwiseParallel(),
-            f"base_model.model.model.layers.{i}.self_attn.q_proj.lora_A.default": ColwiseParallel(),
-            f"base_model.model.model.layers.{i}.self_attn.q_proj.lora_B.default": RowwiseParallel(),
+    # parallelize_plan = {
+    #     "base_model.model.model.embed_tokens": ColwiseParallel(),
+    #     # Final LayerNorm - replicated on all devices
+    #     "base_model.model.model.norm": SequenceParallel()
+    # }
+    # for i in range(28):
+    #     parallelize_plan.update({
+    #         f"base_model.model.model.layers.{i}.self_attn.q_proj.base_layer": ColwiseParallel(),
+    #         f"base_model.model.model.layers.{i}.self_attn.q_proj.lora_A.default": ColwiseParallel(),
+    #         f"base_model.model.model.layers.{i}.self_attn.q_proj.lora_B.default": RowwiseParallel(),
             
-            f"base_model.model.model.layers.{i}.self_attn.k_proj": ColwiseParallel(),
+    #         f"base_model.model.model.layers.{i}.self_attn.k_proj": ColwiseParallel(),
             
-            f"base_model.model.model.layers.{i}.self_attn.v_proj.base_layer": ColwiseParallel(),
-            f"base_model.model.model.layers.{i}.self_attn.v_proj.lora_A.default": ColwiseParallel(),
-            f"base_model.model.model.layers.{i}.self_attn.v_proj.lora_B.default": RowwiseParallel(),
+    #         f"base_model.model.model.layers.{i}.self_attn.v_proj.base_layer": ColwiseParallel(),
+    #         f"base_model.model.model.layers.{i}.self_attn.v_proj.lora_A.default": ColwiseParallel(),
+    #         f"base_model.model.model.layers.{i}.self_attn.v_proj.lora_B.default": RowwiseParallel(),
             
-            f"base_model.model.model.layers.{i}.self_attn.o_proj": RowwiseParallel(),
+    #         f"base_model.model.model.layers.{i}.self_attn.o_proj": RowwiseParallel(),
             
-            f"base_model.model.model.layers.{i}.mlp.gate_proj": ColwiseParallel(),
-            f"base_model.model.model.layers.{i}.mlp.up_proj": ColwiseParallel(),
-            f"base_model.model.model.layers.{i}.mlp.down_proj": RowwiseParallel(),
+    #         f"base_model.model.model.layers.{i}.mlp.gate_proj": ColwiseParallel(),
+    #         f"base_model.model.model.layers.{i}.mlp.up_proj": ColwiseParallel(),
+    #         f"base_model.model.model.layers.{i}.mlp.down_proj": RowwiseParallel(),
             
-            f"base_model.model.model.layers.{i}.input_layernorm": SequenceParallel(),
-            f"base_model.model.model.layers.{i}.post_attention_layernorm": SequenceParallel()
-        })
+    #         f"base_model.model.model.layers.{i}.input_layernorm": SequenceParallel(),
+    #         f"base_model.model.model.layers.{i}.post_attention_layernorm": SequenceParallel()
+    #     })
     model = model.to("cuda")
     if dist.get_rank() == 0:
         print("\nModel structure BEFORE parallelization:")
         for name, param in model.named_parameters():
              print(f"{name:80} | Device: {param.device} | Shape: {param.shape}")
     
-    for layer_id, transformer_block in enumerate(model.model.layers):
-        print(f"Layer {layer_id} - {transformer_block.__class__.__name__}")
-        print(transformer_block)
     
-    model = parallelize_module(module=model,
-                               device_mesh=tp_mesh,
-                               parallelize_plan=parallelize_plan)
+    parallelize_module(
+        model.model,
+        tp_mesh,
+        {
+            "embed_tokens": RowwiseParallel(
+                input_layouts=Replicate(),
+                output_layouts=Shard(1),
+            ),
+            "norm": SequenceParallel(),
+            "output": ColwiseParallel(
+                input_layouts=Shard(1),
+                output_layouts=Replicate(),
+                use_local_output=False,
+            ),
+        },
+    )
+    rowwise_parallel, colwise_parallel, prepare_module_input = (
+        RowwiseParallel,
+        ColwiseParallel,
+        PrepareModuleInput,
+    )
+    for transformer_block in model.model.layer:
+        layer_plan = {
+            "self_attn.q_proj": colwise_parallel(),
+            "self_attn.k_proj": colwise_parallel(),
+            "self_attn.v_proj": colwise_parallel(),
+            "self_attn.o_proj": rowwise_parallel(),
+            "mlp.gate_proj": colwise_parallel(),
+            "mlp.up_proj": colwise_parallel(),
+            "mlp.down_proj": rowwise_parallel(),
+            "input_layernorm": SequenceParallel(),
+            "post_attention_layernorm": SequenceParallel(),
+        }
+        parallelize_module(
+            module=transformer_block,
+            device_mesh=tp_mesh,
+            parallelize_plan=layer_plan,
+        )
     
     print(f"\nRank {dist.get_rank()} parameters:")
     for name, param in model.named_parameters():
