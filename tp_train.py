@@ -13,7 +13,6 @@ from torch.distributed.tensor.parallel import (
     SequenceParallel, parallelize_module
 )
 from torch.distributed.device_mesh import init_device_mesh
-from torch.distributed.tensor.parallel import is_tensor_parallel_enabled
 
 
 
@@ -110,7 +109,6 @@ def main():
         eval_dataset=eval_dataset,
         data_collator=data_collator,
     )
-    print(f"Tensor Parallel Enabled: {is_tensor_parallel_enabled()}")
     
     trainer.train()
 
