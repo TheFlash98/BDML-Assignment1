@@ -55,6 +55,7 @@ def main():
         dataloader_drop_last=True,
         remove_unused_columns=False,
         local_rank=rank,
+        ddp_backend=None
     )
 
     tokenizer, model = get_model(args, model_name)
@@ -148,7 +149,6 @@ def main():
         train_dataset=train_dataset,
         eval_dataset=eval_dataset,
         data_collator=data_collator,
-        accelerator_config={"distributed_type": "TP"}
     )
     
     trainer.train()
