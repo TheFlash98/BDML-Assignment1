@@ -193,7 +193,7 @@ def get_model(args, model_name, accelerator):
     else:
         base_model = AutoModelForCausalLM.from_pretrained(
             model_name,
-            device_map=accelerator.device_placement_map
+            device_map="auto",
         )
         
         if args.gradient_checkpointing:
