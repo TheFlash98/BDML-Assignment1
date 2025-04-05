@@ -62,20 +62,28 @@ def main():
         padding=True,  # Ensure padding is enabled
     )
     parallelize_plan = {
-        # Attention layers
-        "layers.{X}.attention.wq": ColwiseParallel(),
-        "layers.{X}.attention.wk": ColwiseParallel(),
-        "layers.{X}.attention.wv": ColwiseParallel(),
-        "layers.{X}.attention.wo": RowwiseParallel(),
+        "base_model.model.model.embed_tokens": ColwiseParallel(),
         
-        # FeedForward layers
-        "layers.{X}.feed_forward.w1": ColwiseParallel(),
-        "layers.{X}.feed_forward.w2": RowwiseParallel(),
-        "layers.{X}.feed_forward.w3": ColwiseParallel(),
+        "base_model.model.model.layers.{X}.self_attn.q_proj.base_layer": ColwiseParallel(),
+        "base_model.model.model.layers.{X}.self_attn.q_proj.lora_A.default": ColwiseParallel(),
+        "base_model.model.model.layers.{X}.self_attn.q_proj.lora_B.default": RowwiseParallel(),
         
-        # Normalization
-        "layers.{X}.attention_norm": SequenceParallel(),
-        "layers.{X}.ffn_norm": SequenceParallel(),
+        "base_model.model.model.layers.{X}.self_attn.k_proj": ColwiseParallel(),
+        
+        "base_model.model.model.layers.{X}.self_attn.v_proj.base_layer": ColwiseParallel(),
+        "base_model.model.model.layers.{X}.self_attn.v_proj.lora_A.default": ColwiseParallel(),
+        "base_model.model.model.layers.{X}.self_attn.v_proj.lora_B.default": RowwiseParallel(),
+        
+        "base_model.model.model.layers.{X}.self_attn.o_proj": RowwiseParallel(),
+        
+        "base_model.model.model.layers.{X}.mlp.gate_proj": ColwiseParallel(),
+        "base_model.model.model.layers.{X}.mlp.up_proj": ColwiseParallel(),
+        "base_model.model.model.layers.{X}.mlp.down_proj": RowwiseParallel(),
+        
+        "base_model.model.model.layers.{X}.input_layernorm": SequenceParallel(),
+        "base_model.model.model.layers.{X}.post_attention_layernorm": SequenceParallel(),
+        
+        "base_model.model.lm_head": RowwiseParallel(),
     }
     model = model.to(rank)
     if dist.get_rank() == 0:
