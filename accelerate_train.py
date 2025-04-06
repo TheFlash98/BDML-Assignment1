@@ -66,7 +66,14 @@ def main():
         pin_memory=True,
         drop_last=True
     )
-    train_loader, model, optimizer = accelerate.prepare(train_loader, model, optimizer)
+    eval_loader = DataLoader(
+        eval_dataset,
+        batch_size=args.per_device_train_batch_size,
+        collate_fn=data_collator,
+        num_workers=4,
+        pin_memory=True,
+    )
+    train_loader, eval_loader, model, optimizer = accelerate.prepare(train_loader, eval_loader, model, optimizer)
 
     model.train()
     for epoch in range(args.num_train_epochs):
@@ -86,8 +93,31 @@ def main():
             if step % args.gradient_accumulation_steps == 0:
                 optimizer.step()
                 optimizer.zero_grad()
-        accelerate.save_state(args.output_dir)
-        accelerate.load_state(args.output_dir)
+                break
+        # accelerate.save_state(args.output_dir)
+        # accelerate.load_state(args.output_dir)
+    model.eval()
+    total_loss = 0.0
+    total_samples = 0
+    with torch.no_grad():
+        for batch in tqdm(eval_loader, desc="Evaluating"):
+            inputs = batch["input_ids"]
+            labels = batch["labels"]
+            attention_mask = batch["attention_mask"]
+
+            outputs = model(
+                input_ids=inputs,
+                attention_mask=attention_mask,
+                labels=labels,
+            )
+            loss = outputs.loss
+            total_loss += loss.item()
+            total_samples += inputs.size(0)
+            break
+    avg_loss = total_loss / total_samples if total_samples > 0 else float("inf")
+    perplexity = torch.exp(torch.tensor(avg_loss))
+    print(f"Average Loss: {avg_loss:.4f}")
+    print(f"Perplexity: {perplexity:.4f}")
     if rank == 0:
         try:
             accelerate.wait_for_everyone()
