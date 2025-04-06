@@ -121,10 +121,10 @@ def main():
                                                     output_layouts=Shard(1),
                                                     use_local_output=False),
                 "self_attn.o_proj": rowwise_parallel(output_layouts=Shard(1)),
-                # "mlp": prepare_module_input(
-                #     input_layouts=(Shard(1),),
-                #     desired_input_layouts=(Replicate(),),
-                # ),
+                "mlp": prepare_module_input(
+                    input_layouts=(Shard(1),),
+                    desired_input_layouts=(Replicate(),),
+                ),
                 "mlp.gate_proj": colwise_parallel(),
                 "mlp.up_proj": colwise_parallel(),
                 "mlp.down_proj": rowwise_parallel(output_layouts=Shard(1)),
