@@ -127,7 +127,7 @@ def main():
     # Function to compute perplexity
     def compute_perplexity(text):
         tokens = tokenizer(text, return_tensors="pt", truncation=True, padding=True)
-        accelerate.to_device(tokens)
+        tokens = {key: value.to(accelerate.device) for key, value in tokens.items()}
         with torch.no_grad():
             outputs = model(**tokens, labels=tokens["input_ids"])
             loss = outputs.loss
