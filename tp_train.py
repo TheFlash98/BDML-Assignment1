@@ -108,8 +108,8 @@ def main():
         for transformer_block in model.model.layers:
             layer_plan = {
                 "self_attn": PrepareModuleInput(
-                    input_layouts=(Shard(1), None),
-                    desired_input_layouts=(Replicate(), None),
+                    input_layouts=(Shard(1), None, None, None, None),
+                    desired_input_layouts=(Replicate(), None, None, None, None),
                 ),
                 "self_attn.q_proj": colwise_parallel(input_layouts=Shard(1),
                                                     output_layouts=Shard(1),
