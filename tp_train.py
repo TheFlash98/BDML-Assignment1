@@ -105,7 +105,16 @@ def main():
             ColwiseParallel,
             PrepareModuleInput,
         )
+        def count_inputs_hook(module, args):
+            print(f"Module {module.__class__.__name__} received {len(args)} arguments")
+            for i, arg in enumerate(args):
+                if isinstance(arg, torch.Tensor):
+                    print(f"  Arg {i}: Tensor of shape {arg.shape} on device {arg.device}")
+                else:
+                    print(f"  Arg {i}: {type(arg)}")
+            return args
         for transformer_block in model.model.layers:
+            transformer_block.self_attn.register_forward_pre_hook(count_inputs_hook)
             layer_plan = {
                 "self_attn": PrepareModuleInput(
                     input_layouts=(Shard(1), None, None, None, None),
