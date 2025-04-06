@@ -117,8 +117,8 @@ def main():
             transformer_block.self_attn.register_forward_pre_hook(count_inputs_hook)
             layer_plan = {
                 "self_attn": PrepareModuleInput(
-                    input_layouts=(Shard(1), None, None, None, None),
-                    desired_input_layouts=(Replicate(), None, None, None, None),
+                    input_layouts=(Shard(1), (None, None), None, None, None),
+                    desired_input_layouts=(Shard(1), (None, None), None, None, None),
                 ),
                 "self_attn.q_proj": colwise_parallel(input_layouts=Shard(1),
                                                     output_layouts=Shard(1),
