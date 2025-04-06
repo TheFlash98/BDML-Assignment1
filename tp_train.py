@@ -105,16 +105,28 @@ def main():
             ColwiseParallel,
             PrepareModuleInput,
         )
-        def count_inputs_hook(module, args):
-            print(f"Module {module.__class__.__name__} received {len(args)} arguments")
+        # Add this function at the top level of your script
+        def debug_attention_inputs(module, args, kwargs):
+            print("\n===== ATTENTION LAYER DEBUG =====")
+            print(f"Module: {module.__class__.__name__}")
+            print(f"Number of positional arguments: {len(args)}")
+            
             for i, arg in enumerate(args):
                 if isinstance(arg, torch.Tensor):
                     print(f"  Arg {i}: Tensor of shape {arg.shape} on device {arg.device}")
+                elif isinstance(arg, tuple) and all(isinstance(item, torch.Tensor) for item in arg):
+                    print(f"  Arg {i}: Tuple of Tensors with shapes {[item.shape for item in arg]}")
                 else:
                     print(f"  Arg {i}: {type(arg)}")
-            return args
+            
+            if kwargs:
+                print("Keyword arguments:")
+                for k, v in kwargs.items():
+                    print(f"  {k}: {type(v)}")
+            
+            print("===== END DEBUG =====\n")
+            return args, kwargs
         for transformer_block in model.model.layers:
-            transformer_block.self_attn.register_forward_pre_hook(count_inputs_hook)
             layer_plan = {
                 "self_attn": PrepareModuleInput(
                     input_layouts=(Shard(1), (None, None), None, None, None),
@@ -145,7 +157,13 @@ def main():
                 device_mesh=tp_mesh,
                 parallelize_plan=layer_plan,
             )
-        
+    model.model.layers[0].self_attn.register_forward_hook(debug_attention_inputs)
+    test_input = torch.ones((1, 128), dtype=torch.long).to("cuda")
+    with torch.no_grad():
+        try:
+            _ = model(test_input)
+        except Exception as e:
+            print(f"Test run failed with: {e}")
         
     trainer = Trainer(
         model=model,
