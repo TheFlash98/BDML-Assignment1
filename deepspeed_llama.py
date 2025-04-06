@@ -44,8 +44,8 @@ def main():
         padding=True,  # Ensure padding is enabled
     )
     
-    if rank==0:
-        model.module.print_trainable_parameters()
+    # if rank==0:
+    #     model.module.print_trainable_parameters()
     
     trainer = Trainer(
         model=model,
