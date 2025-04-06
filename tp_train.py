@@ -92,6 +92,7 @@ def main():
                     input_layouts=Replicate(),
                     output_layouts=Shard(1),
                 ),
+                "norm": SequenceParallel(),
             },
         )
         rowwise_parallel, colwise_parallel, prepare_module_input = (
