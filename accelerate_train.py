@@ -64,7 +64,7 @@ def main():
     train_loader, model, optimizer = accelerate.prepare(train_loader, model, optimizer)
     model.train()
     for epoch in range(args.num_train_epochs):
-        pbar = tqdm(enumerate(train_loader, total=len(train_loader), desc=f"Epoch {epoch + 1}/{args.num_train_epochs}"))
+        pbar = tqdm(enumerate(train_loader), total=len(train_loader), desc=f"Epoch {epoch + 1}/{args.num_train_epochs}")
         for step, batch in pbar:
             inputs = batch["input_ids"]
             labels = batch["labels"]
