@@ -93,11 +93,11 @@ def main():
                     output_layouts=Shard(1),
                 ),
                 "norm": SequenceParallel(),
-                "layers.0": PrepareModuleInput(
-                    input_layouts=(Replicate(), None),
-                    desired_input_layouts=(Shard(1), None),
-                    use_local_output=True,
-                )
+                # "layers.0": PrepareModuleInput(
+                #     input_layouts=(Replicate(), None),
+                #     desired_input_layouts=(Shard(1), None),
+                #     use_local_output=True,
+                # )
             },
         )
         rowwise_parallel, colwise_parallel, prepare_module_input = (
@@ -107,10 +107,10 @@ def main():
         )
         for transformer_block in model.model.layers:
             layer_plan = {
-                # "self_attn": PrepareModuleInput(
-                #     input_layouts=(Shard(1), None),
-                #     desired_input_layouts=(Replicate(), None),
-                # ),
+                "self_attn": PrepareModuleInput(
+                    input_layouts=(Shard(1), None),
+                    desired_input_layouts=(Replicate(), None),
+                ),
                 "self_attn.q_proj": colwise_parallel(input_layouts=Shard(1),
                                                     output_layouts=Shard(1),
                                                     use_local_output=False),
