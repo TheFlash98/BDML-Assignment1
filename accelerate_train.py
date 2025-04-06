@@ -67,8 +67,7 @@ def main():
         drop_last=True
     )
     train_loader, model, optimizer = accelerate.prepare(train_loader, model, optimizer)
-    if rank == 0:
-        accelerate.save_model(model, args.output_dir)
+
     model.train()
     for epoch in range(args.num_train_epochs):
         pbar = tqdm(enumerate(train_loader), total=len(train_loader), desc=f"Epoch {epoch + 1}/{args.num_train_epochs}")
@@ -92,7 +91,14 @@ def main():
     if rank == 0:
         try:
             accelerate.wait_for_everyone()
-            accelerate.save_model(model, args.output_dir)
+            unwrapped_model = accelerate.unwrap_model(model)
+            unwrapped_model.save_pretrained(
+                args.output_dir,
+                is_main_process=accelerate.is_main_process,
+                save_function=accelerate.save,
+                state_dict=accelerate.get_state_dict(model),
+                safe_serialization=False  # this solves loading issue 
+            )
             print(f"Model saved to {args.output_dir}")
         except Exception as e:
             print(f"Error saving model: {e}")
