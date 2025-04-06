@@ -43,7 +43,6 @@ def main():
     model_name = "/scratch/sk12184/llama3.2-3B-HF"
     accelerate = Accelerator(
         mixed_precision="fp16" if args.use_fp16 else "bf16" if args.use_bf16 else None,
-        gradient_accumulation_steps=args.gradient_accumulation_steps,
         project_dir=args.output_dir,
     )
     train_dataset = ClimateDataset(data_root_path="/scratch/sk12184/climate_text_dataset_tokenized", split="train")
@@ -71,27 +70,29 @@ def main():
     for epoch in range(args.num_train_epochs):
         pbar = tqdm(enumerate(train_loader), total=len(train_loader), desc=f"Epoch {epoch + 1}/{args.num_train_epochs}")
         for step, batch in pbar:
-            with accelerate.accumulate(model):
-                inputs = batch["input_ids"]
-                labels = batch["labels"]
-                attention_mask = batch["attention_mask"]
+            inputs = batch["input_ids"]
+            labels = batch["labels"]
+            attention_mask = batch["attention_mask"]
 
-                outputs = model(
-                    input_ids=inputs,
-                    attention_mask=attention_mask,
-                    labels=labels,
-                )
-                loss = outputs.loss
-                accelerate.backward(loss)
+            outputs = model(
+                input_ids=inputs,
+                attention_mask=attention_mask,
+                labels=labels,
+            )
+            loss = outputs.loss
+            accelerate.backward(loss)
+            if step % args.gradient_accumulation_steps == 0:
                 optimizer.step()
                 optimizer.zero_grad()
         accelerate.save_state(args.output_dir)
         accelerate.load_state(args.output_dir)
     if rank == 0:
-        accelerate.wait_for_everyone()
-        unwrapped_model = accelerate.unwrap_model(model)
-        unwrapped_model.save_pretrained(args.output_dir)
-        tokenizer.save_pretrained(args.output_dir)
+        try:
+            accelerate.wait_for_everyone()
+            accelerate.save_model(model, args.output_dir)
+            print(f"Model saved to {args.output_dir}")
+        except Exception as e:
+            print(f"Error saving model: {e}")
 
     
 
