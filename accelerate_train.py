@@ -21,6 +21,7 @@ from accelerate.utils import TorchTensorParallelPlugin
 from transformers.trainer_pt_utils import AcceleratorConfig
 # torchrun --nproc_per_node=2 tp_train.py  --per_device_train_batch_size 8 --fine_tuning_type "qlora" --use_fp16 --gradient_checkpointing --num_train_epochs 2 --output_dir /scratch/sk12184/output/tensor_parallel/
 
+#accelerate launch --config_file ~/.cache/huggingface/accelerate/default_config.yaml --num_processes=2  accelerate_train.py  --per_device_train_batch_size 1 --fine_tuning_type "full" --use_fp16 --gradient_checkpointing --num_train_epochs 2 --output_dir /scratch/sk12184/output/tensor_parallel/ >> debug.txt
 
 def setup_tensor_parallel():
     """Initialize distributed environment for tensor parallelism"""
@@ -40,7 +41,11 @@ def main():
     rank, world_size = setup_tensor_parallel()
     # print(f"Rank {rank}: Created device mesh -> {tp_mesh}")
     model_name = "/scratch/sk12184/llama3.2-3B-HF"
-    accelerate = Accelerator()
+    accelerate = Accelerator(
+        mixed_precision="fp16" if args.use_fp16 else "bf16" if args.use_bf16 else None,
+        gradient_accumulation_steps=args.gradient_accumulation_steps,
+        project_dir=args.output_dir,
+    )
     train_dataset = ClimateDataset(data_root_path="/scratch/sk12184/climate_text_dataset_tokenized", split="train")
     eval_dataset = ClimateDataset(data_root_path="/scratch/sk12184/climate_text_dataset_tokenized", split="eval")
 
@@ -66,18 +71,18 @@ def main():
     for epoch in range(args.num_train_epochs):
         pbar = tqdm(enumerate(train_loader), total=len(train_loader), desc=f"Epoch {epoch + 1}/{args.num_train_epochs}")
         for step, batch in pbar:
-            inputs = batch["input_ids"]
-            labels = batch["labels"]
-            attention_mask = batch["attention_mask"]
+            with accelerate.accumulate(model):
+                inputs = batch["input_ids"]
+                labels = batch["labels"]
+                attention_mask = batch["attention_mask"]
 
-            outputs = model(
-                input_ids=inputs,
-                attention_mask=attention_mask,
-                labels=labels,
-            )
-            loss = outputs.loss
-            accelerate.backward(loss)
-            if step % args.gradient_accumulation_steps == 0:
+                outputs = model(
+                    input_ids=inputs,
+                    attention_mask=attention_mask,
+                    labels=labels,
+                )
+                loss = outputs.loss
+                accelerate.backward(loss)
                 optimizer.step()
                 optimizer.zero_grad()
     if rank == 0:
