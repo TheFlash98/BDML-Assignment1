@@ -146,10 +146,10 @@ def main():
         eval_dataset=eval_dataset,
         data_collator=data_collator,
     )
-    for param in model.parameters():
-        print(f"Parameter: {param} | Type: {type(param)} | Device: {param.device}")
     for name, param in model.named_parameters():
-        print(f"{name:60} | Type: {type(param)} | Device: {param.device}")
+        if "self_attn" in name:
+            print(f"{name:60} | Type: {type(param)} | Device: {param.device}")
+            print(param.placements.input_layouts)
     
     trainer.train()
 
