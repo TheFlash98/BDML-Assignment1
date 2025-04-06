@@ -89,10 +89,9 @@ def main():
             tp_mesh,
             {
                 "embed_tokens": RowwiseParallel(
-                    input_layouts=Replicate(),
+                    input_layouts=Shard(1),
                     output_layouts=Shard(1),
                 ),
-                "norm": SequenceParallel(),
             },
         )
         rowwise_parallel, colwise_parallel, prepare_module_input = (
