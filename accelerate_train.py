@@ -85,6 +85,8 @@ def main():
                 accelerate.backward(loss)
                 optimizer.step()
                 optimizer.zero_grad()
+        accelerate.save_state(args.output_dir)
+        accelerate.load_state(args.output_dir)
     if rank == 0:
         accelerate.wait_for_everyone()
         unwrapped_model = accelerate.unwrap_model(model)
