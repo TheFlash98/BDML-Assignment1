@@ -102,10 +102,10 @@ def main():
         )
         for transformer_block in model.model.layers:
             layer_plan = {
-                "self_attn": prepare_module_input(
-                    input_layouts=(Shard(1), None),
-                    desired_input_layouts=(Replicate(), None),
-                ),
+                # "self_attn": prepare_module_input(
+                #     input_layouts=(Shard(1), None),
+                #     desired_input_layouts=(Replicate(), None),
+                # ),
                 "self_attn.q_proj": colwise_parallel(input_layouts=Shard(1),
                                                     output_layouts=Shard(1),
                                                     use_local_output=False),
@@ -116,10 +116,10 @@ def main():
                                                     output_layouts=Shard(1),
                                                     use_local_output=False),
                 "self_attn.o_proj": rowwise_parallel(output_layouts=Shard(1)),
-                "mlp": prepare_module_input(
-                    input_layouts=(Shard(1),),
-                    desired_input_layouts=(Replicate(),),
-                ),
+                # "mlp": prepare_module_input(
+                #     input_layouts=(Shard(1),),
+                #     desired_input_layouts=(Replicate(),),
+                # ),
                 "mlp.gate_proj": colwise_parallel(),
                 "mlp.up_proj": colwise_parallel(),
                 "mlp.down_proj": rowwise_parallel(output_layouts=Shard(1)),
