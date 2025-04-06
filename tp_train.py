@@ -72,29 +72,29 @@ def main():
     
     
     with tp_mesh:
-        parallelize_module(
-            model,
-            tp_mesh,
-            {
-                # "lm_head": ColwiseParallel(output_layouts=Replicate()),
-                "lm_head": ColwiseParallel(
-                    input_layouts=Shard(1),
-                    output_layouts=Replicate(),
-                    use_local_output=False,
-                ),
-            },
-        )
-        parallelize_module(
-            model.model,
-            tp_mesh,
-            {
-                "embed_tokens": RowwiseParallel(
-                    input_layouts=Replicate(),
-                    output_layouts=Shard(1),
-                ),
-                "norm": SequenceParallel(),
-            },
-        )
+        # parallelize_module(
+        #     model,
+        #     tp_mesh,
+        #     {
+        #         # "lm_head": ColwiseParallel(output_layouts=Replicate()),
+        #         "lm_head": ColwiseParallel(
+        #             input_layouts=Shard(1),
+        #             output_layouts=Replicate(),
+        #             use_local_output=False,
+        #         ),
+        #     },
+        # )
+        # parallelize_module(
+        #     model.model,
+        #     tp_mesh,
+        #     {
+        #         "embed_tokens": RowwiseParallel(
+        #             input_layouts=Replicate(),
+        #             output_layouts=Shard(1),
+        #         ),
+        #         "norm": SequenceParallel(),
+        #     },
+        # )
         rowwise_parallel, colwise_parallel, prepare_module_input = (
             RowwiseParallel,
             ColwiseParallel,
