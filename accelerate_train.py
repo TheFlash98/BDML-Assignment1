@@ -1,5 +1,5 @@
 import os
-
+import math
 from transformers import AutoModelForCausalLM, AutoTokenizer, Trainer, TrainingArguments, BitsAndBytesConfig
 from peft import get_peft_model, LoraConfig, TaskType, prepare_model_for_kbit_training
 from dataset import ClimateDataset
@@ -97,27 +97,57 @@ def main():
         # accelerate.save_state(args.output_dir)
         # accelerate.load_state(args.output_dir)
     model.eval()
-    total_loss = 0.0
-    total_samples = 0
-    with torch.no_grad():
-        for batch in tqdm(eval_loader, desc="Evaluating"):
-            inputs = batch["input_ids"]
-            labels = batch["labels"]
-            attention_mask = batch["attention_mask"]
+    # total_loss = 0.0
+    # total_samples = 0
+    # with torch.no_grad():
+    #     for batch in tqdm(eval_loader, desc="Evaluating"):
+    #         inputs = batch["input_ids"]
+    #         labels = batch["labels"]
+    #         attention_mask = batch["attention_mask"]
 
-            outputs = model(
-                input_ids=inputs,
-                attention_mask=attention_mask,
-                labels=labels,
-            )
+    #         outputs = model(
+    #             input_ids=inputs,
+    #             attention_mask=attention_mask,
+    #             labels=labels,
+    #         )
+    #         loss = outputs.loss
+    #         total_loss += loss.item()
+    #         total_samples += inputs.size(0)
+    #         break
+    # avg_loss = total_loss / total_samples if total_samples > 0 else float("inf")
+    # perplexity = torch.exp(torch.tensor(avg_loss))
+    # print(f"Average Loss: {avg_loss:.4f}")
+    # print(f"Perplexity: {perplexity:.4f}")
+    test_dir = "climate_text_dataset_processed/eval"
+
+    # Get all .jsonl files in the directory
+    test_files = [os.path.join(test_dir, f) for f in os.listdir(test_dir) if f.endswith(".txt")]
+    total_perplexity = 0
+    num_samples = 0
+    # Function to compute perplexity
+    def compute_perplexity(text):
+        tokens = tokenizer(text, return_tensors="pt", truncation=True, padding=True)
+        accelerate.to_device(tokens)
+        with torch.no_grad():
+            outputs = model(**tokens, labels=tokens["input_ids"])
             loss = outputs.loss
-            total_loss += loss.item()
-            total_samples += inputs.size(0)
-            break
-    avg_loss = total_loss / total_samples if total_samples > 0 else float("inf")
-    perplexity = torch.exp(torch.tensor(avg_loss))
-    print(f"Average Loss: {avg_loss:.4f}")
-    print(f"Perplexity: {perplexity:.4f}")
+        return math.exp(loss)
+
+    for file_path in tqdm(test_files):
+        with open(file_path, "r") as f:
+            text = f.read()
+            words = text.split()
+            chunk_size = 1500
+            for i in range(0, len(words), chunk_size):
+                chunk = " ".join(words[i:i + chunk_size])
+                if chunk:
+                    ppl = compute_perplexity(chunk)
+                total_perplexity += ppl
+                num_samples += 1
+                break
+    # Average Perplexity
+    avg_perplexity = total_perplexity / num_samples if num_samples > 0 else float("inf")
+    print(f"Average Perplexity on Test Set: {avg_perplexity:.4f}")
     if rank == 0:
         try:
             accelerate.wait_for_everyone()
