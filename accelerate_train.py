@@ -38,8 +38,9 @@ def setup_tensor_parallel():
     return rank, world_size
 
 def main():
-    rank, world_size = setup_tensor_parallel()
+    # rank, world_size = setup_tensor_parallel()
     # print(f"Rank {rank}: Created device mesh -> {tp_mesh}")
+    rank = int(os.environ.get("RANK", 0))
     model_name = "/scratch/sk12184/llama3.2-3B-HF"
     accelerate = Accelerator(
         mixed_precision="fp16" if args.use_fp16 else "bf16" if args.use_bf16 else None,
@@ -66,6 +67,8 @@ def main():
         drop_last=True
     )
     train_loader, model, optimizer = accelerate.prepare(train_loader, model, optimizer)
+    if rank == 0:
+        accelerate.save_model(model, args.output_dir)
     model.train()
     for epoch in range(args.num_train_epochs):
         pbar = tqdm(enumerate(train_loader), total=len(train_loader), desc=f"Epoch {epoch + 1}/{args.num_train_epochs}")
