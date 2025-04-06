@@ -149,7 +149,7 @@ def main():
     for name, param in model.named_parameters():
         if "self_attn" in name:
             print(f"{name:60} | Type: {type(param)} | Device: {param.device}")
-            print(param.placements.input_layouts)
+            print(param)
     
     trainer.train()
 
