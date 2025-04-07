@@ -122,7 +122,6 @@ def main():
                     ppl = compute_perplexity(chunk)
                 total_perplexity += ppl
                 num_samples += 1
-                break
     # Average Perplexity
     avg_perplexity = total_perplexity / num_samples if num_samples > 0 else float("inf")
     print(f"Average Perplexity on Test Set: {avg_perplexity:.4f}")
