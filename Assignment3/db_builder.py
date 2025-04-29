@@ -9,12 +9,13 @@ from typing import List, Dict, Union
 import faiss
 import time
 from tqdm import tqdm
-from langchain.text_splitter import RecursiveCharacterTextSplitter
-from langchain.document_loaders import DirectoryLoader, TextLoader, PyPDFLoader
+from langchain_text_splitters import RecursiveCharacterTextSplitter
+from langchain_community.document_loaders import DirectoryLoader, TextLoader, PyPDFLoader
 from transformers import AutoTokenizer, AutoModel
 from sklearn.preprocessing import normalize
 import logging
 import json
+import argparse
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
@@ -307,8 +308,8 @@ def build_database(
     db.create_index(embeddings)
     
     # Save database
-    index_path = os.path.join(output_dir, "faiss_index.bin")
-    metadata_path = os.path.join(output_dir, "chunks_metadata.json")
+    index_path = os.path.join(output_dir, f"faiss_index_{index_type.lower()}.bin")
+    metadata_path = os.path.join(output_dir, f"chunks_metadata_{index_type.lower()}.json")
     db.save(index_path, metadata_path)
     
     logger.info(f"Database built successfully: {len(chunks)} chunks indexed")
@@ -322,10 +323,18 @@ def build_database(
 
 if __name__ == "__main__":
     # Example usage
-    DATA_DIR = "/path/to/your/data"
-    OUTPUT_DIR = "./rag_database"
-    MODEL_NAME = "sentence-transformers/all-MiniLM-L6-v2"  # Can also use "BAAI/bge-large-en" for better quality
-    INDEX_TYPE = "HNSW"  # Options: "Flat", "IVF", "HNSW", "PQ"
+    parser = argparse.ArgumentParser(description="Build a vector database for a RAG system.")
+    parser.add_argument("--data_dir", type=str, required=True, help="Directory containing the documents.")
+    parser.add_argument("--output_dir", type=str, required=True, help="Directory to save the database.")
+    parser.add_argument("--model_name", type=str, default="sentence-transformers/all-MiniLM-L6-v2", help="Name of the embedding model.")
+    parser.add_argument("--index_type", type=str, default="Flat", choices=["Flat", "IVF", "HNSW", "PQ"], help="Type of FAISS index to use.")
+    
+    args = parser.parse_args()
+
+    DATA_DIR = args.data_dir
+    OUTPUT_DIR = args.output_dir
+    MODEL_NAME = args.model_name
+    INDEX_TYPE = args.index_type
     
     start_time = time.time()
     results = build_database(DATA_DIR, OUTPUT_DIR, MODEL_NAME, INDEX_TYPE)
