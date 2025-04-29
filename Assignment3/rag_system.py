@@ -15,6 +15,7 @@ from tqdm.notebook import tqdm  # For better display in notebooks/Colab
 
 # Configure logging for better display in Colab
 import sys
+import argparse
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(levelname)s - %(message)s',
@@ -136,18 +137,8 @@ class DocumentRetriever:
             List of chunk metadata dictionaries
         """
         metadata = []
-        
-        # Check if the file is JSONL (line-by-line JSON)
-        if metadata_path.endswith('.jsonl'):
-            with open(metadata_path, 'r') as f:
-                for line in f:
-                    if line.strip():
-                        metadata.append(json.loads(line))
-        else:
-            # Assume regular JSON
-            with open(metadata_path, 'r') as f:
-                metadata = json.load(f)
-        
+        with open(metadata_path, 'r') as f:
+            metadata = json.load(f)
         return metadata
     
     def search(self, query: str, k: int = 5, rerank: bool = False) -> Tuple[List[Dict], List[float]]:
@@ -497,11 +488,21 @@ def compare_with_finetuned(rag_system: RAGSystem, finetuned_model_path: str, que
 
 if __name__ == "__main__":
     # Example usage
-    INDEX_PATH = "./rag_database/faiss_index.bin"
-    METADATA_PATH = "./rag_database/chunks_metadata.jsonl"  # or .json
-    EMBEDDING_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
-    LLAMA_MODEL_PATH = "/scratch/BDML25SP/llama-3b"
-    FINETUNED_MODEL_PATH = "/path/to/your/finetuned/llama"
+    # Parse arguments
+    parser = argparse.ArgumentParser(description="Run the RAG System")
+    parser.add_argument("--index_path", type=str, required=True, help="Path to the FAISS index")
+    parser.add_argument("--metadata_path", type=str, required=True, help="Path to the chunk metadata (JSON or JSONL)")
+    parser.add_argument("--embedding_model", type=str, default="sentence-transformers/all-MiniLM-L6-v2", help="Name of the embedding model")
+    parser.add_argument("--llama_model_path", type=str, required=True, help="Path to the LLaMA model")
+    parser.add_argument("--finetuned_model_path", type=str, required=True, help="Path to the fine-tuned LLaMA model")
+    args = parser.parse_args()
+
+    # Assign arguments to variables
+    INDEX_PATH = args.index_path
+    METADATA_PATH = args.metadata_path
+    EMBEDDING_MODEL = args.embedding_model
+    LLAMA_MODEL_PATH = args.llama_model_path
+    FINETUNED_MODEL_PATH = args.finetuned_model_path
     
     # Initialize RAG system
     rag = RAGSystem(
@@ -512,7 +513,7 @@ if __name__ == "__main__":
     )
     
     # Example question
-    question = "What is the architecture of a RAG system?"
+    question = "What is the climate?"
     result = rag.answer_question(question, show_retrieved=True)
     
     print(f"Question: {question}")
@@ -521,11 +522,16 @@ if __name__ == "__main__":
     
     # Benchmark different retrieval settings
     benchmark_questions = [
-        "What is a RAG system?",
-        "How does Product Quantization work?",
-        "What is HNSW and how is it used in vector search?",
-        "What are the benefits of reranking in RAG systems?",
-        "How are documents split into chunks in a RAG system?"
+        "How has the average global temperature changed over the last 100 years?",
+        "What are the top 5 regions most affected by climate change today?",
+        "Which sectors contribute the most to global CO₂ emissions?",
+        "What is the current atmospheric concentration of CO₂, and how does it compare to pre-industrial levels?",
+        "Has the frequency of extreme weather events (e.g., heatwaves, hurricanes) increased in the last 50 years?",
+        "Which areas are projected to face the highest risk of sea level rise by 2050?",
+        "How is climate change affecting global biodiversity and endangered species?",
+        "What are the projected temperature and precipitation changes for my region in the next 20 years?",
+        "What will happen if global warming exceeds 2°C above pre-industrial levels?",
+        "Which countries are on track to meet their Paris Agreement targets?"
     ]
     
     benchmark_results = rag.benchmark(benchmark_questions)
