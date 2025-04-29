@@ -495,6 +495,7 @@ if __name__ == "__main__":
     parser.add_argument("--embedding_model", type=str, default="sentence-transformers/all-MiniLM-L6-v2", help="Name of the embedding model")
     parser.add_argument("--llama_model_path", type=str, required=True, help="Path to the LLaMA model")
     parser.add_argument("--finetuned_model_path", type=str, required=True, help="Path to the fine-tuned LLaMA model")
+    parser.add_argument("--benchmark", action="store_true", help="Run benchmark tests")
     args = parser.parse_args()
 
     # Assign arguments to variables
@@ -503,6 +504,7 @@ if __name__ == "__main__":
     EMBEDDING_MODEL = args.embedding_model
     LLAMA_MODEL_PATH = args.llama_model_path
     FINETUNED_MODEL_PATH = args.finetuned_model_path
+    BENCHMARK = args.benchmark
     
     # Initialize RAG system
     rag = RAGSystem(
@@ -521,24 +523,25 @@ if __name__ == "__main__":
     print(f"Total time: {result['performance']['total_time']:.2f} seconds")
     
     # Benchmark different retrieval settings
-    # benchmark_questions = [
-    #     "How has the average global temperature changed over the last 100 years?",
-    #     "What are the top 5 regions most affected by climate change today?",
-    #     "Which sectors contribute the most to global CO₂ emissions?",
-    #     "What is the current atmospheric concentration of CO₂, and how does it compare to pre-industrial levels?",
-    #     "Has the frequency of extreme weather events (e.g., heatwaves, hurricanes) increased in the last 50 years?",
-    #     "Which areas are projected to face the highest risk of sea level rise by 2050?",
-    #     "How is climate change affecting global biodiversity and endangered species?",
-    #     "What are the projected temperature and precipitation changes for my region in the next 20 years?",
-    #     "What will happen if global warming exceeds 2°C above pre-industrial levels?",
-    #     "Which countries are on track to meet their Paris Agreement targets?"
-    # ]
-    
-    # benchmark_results = rag.benchmark(benchmark_questions)
-    # print("\nBenchmark Results:")
-    # print(benchmark_results[["question", "k", "rerank", "total_time", "retrieval_time", "generation_time"]])
-    
-    # # Compare with fine-tuned model
-    # comparison_results = compare_with_finetuned(rag, FINETUNED_MODEL_PATH, benchmark_questions)
-    # print("\nComparison with Fine-tuned Model:")
-    # print(comparison_results[["question", "rag_time", "ft_time", "time_difference"]])
+    if BENCHMARK:
+        benchmark_questions = [
+            "How has the average global temperature changed over the last 100 years?",
+            "What are the top 5 regions most affected by climate change today?",
+            "Which sectors contribute the most to global CO₂ emissions?",
+            "What is the current atmospheric concentration of CO₂, and how does it compare to pre-industrial levels?",
+            "Has the frequency of extreme weather events (e.g., heatwaves, hurricanes) increased in the last 50 years?",
+            "Which areas are projected to face the highest risk of sea level rise by 2050?",
+            "How is climate change affecting global biodiversity and endangered species?",
+            "What are the projected temperature and precipitation changes for my region in the next 20 years?",
+            "What will happen if global warming exceeds 2°C above pre-industrial levels?",
+            "Which countries are on track to meet their Paris Agreement targets?"
+        ]
+        
+        benchmark_results = rag.benchmark(benchmark_questions)
+        print("\nBenchmark Results:")
+        print(benchmark_results[["question", "k", "rerank", "total_time", "retrieval_time", "generation_time"]])
+        
+        # Compare with fine-tuned model
+        comparison_results = compare_with_finetuned(rag, FINETUNED_MODEL_PATH, benchmark_questions)
+        print("\nComparison with Fine-tuned Model:")
+        print(comparison_results[["question", "rag_time", "ft_time", "time_difference"]])
