@@ -25,35 +25,18 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 class EmbeddingModel:
-    """Class for generating embeddings"""
     
     def __init__(self, model_name: str = "sentence-transformers/all-MiniLM-L6-v2"):
-        """
-        Initialize the embedding model
-        
-        Args:
-            model_name: Name of the Hugging Face model to use
-        """
         logger.info(f"Loading embedding model: {model_name}")
         self.model_name = model_name
         self.tokenizer = AutoTokenizer.from_pretrained(model_name)
         self.model = AutoModel.from_pretrained(model_name)
         
-        # Move model to GPU if available
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.model.to(self.device)
         logger.info(f"Embedding model loaded and moved to {self.device}")
     
     def get_embedding(self, text: str) -> np.ndarray:
-        """
-        Generate embedding for a single text
-        
-        Args:
-            text: Text string
-            
-        Returns:
-            Embedding vector
-        """
         return self.get_embeddings([text])[0]
     
     def get_embeddings(self, texts: List[str], batch_size: int = 8) -> np.ndarray:
@@ -70,11 +53,9 @@ class EmbeddingModel:
         self.model.eval()
         embeddings = []
         
-        # Process in batches
         for i in range(0, len(texts), batch_size):
             batch_texts = texts[i:i + batch_size]
             
-            # Tokenize
             encoded_input = self.tokenizer(
                 batch_texts,
                 padding=True, 
@@ -83,11 +64,9 @@ class EmbeddingModel:
                 return_tensors='pt'
             ).to(self.device)
             
-            # Generate embeddings
             with torch.no_grad():
                 model_output = self.model(**encoded_input)
                 
-            # Mean pooling - use attention mask to calculate mean
             attention_mask = encoded_input['attention_mask']
             token_embeddings = model_output[0]  # First element contains token embeddings
             
@@ -96,28 +75,17 @@ class EmbeddingModel:
             sum_mask = torch.clamp(input_mask_expanded.sum(1), min=1e-9)
             batch_embeddings = (sum_embeddings / sum_mask).cpu().numpy()
             
-            # Normalize embeddings
             batch_embeddings = normalize(batch_embeddings, norm='l2', axis=1)
             
             embeddings.append(batch_embeddings)
             
-        # Combine all batches
         all_embeddings = np.vstack(embeddings)
         
         return all_embeddings
 
 class DocumentRetriever:
-    """Class for retrieving relevant documents from the vector database"""
     
     def __init__(self, index_path: str, metadata_path: str, embedding_model: EmbeddingModel):
-        """
-        Initialize the document retriever
-        
-        Args:
-            index_path: Path to the FAISS index
-            metadata_path: Path to the chunk metadata
-            embedding_model: Model for generating query embeddings
-        """
         logger.info(f"Loading index from {index_path}")
         self.index = faiss.read_index(index_path)
         
@@ -127,75 +95,36 @@ class DocumentRetriever:
         self.embedding_model = embedding_model
     
     def _load_metadata(self, metadata_path: str) -> List[Dict]:
-        """
-        Load chunk metadata from file
-        
-        Args:
-            metadata_path: Path to metadata file (JSON or JSONL)
-            
-        Returns:
-            List of chunk metadata dictionaries
-        """
         metadata = []
         with open(metadata_path, 'r') as f:
             metadata = json.load(f)
         return metadata
     
     def search(self, query: str, k: int = 5, rerank: bool = False) -> Tuple[List[Dict], List[float]]:
-        """
-        Search for most relevant chunks for a query
-        
-        Args:
-            query: Query string
-            k: Number of chunks to retrieve
-            rerank: Whether to apply reranking
-            
-        Returns:
-            List of chunk dictionaries and their similarity scores
-        """
         logger.info(f"Searching for: {query}")
         
-        # Get query embedding
         query_embedding = self.embedding_model.get_embedding(query)
         query_embedding = query_embedding.reshape(1, -1)
         
-        # Search index
         scores, indices = self.index.search(query_embedding, k=k)
         
-        # Get retrieved chunks
         chunks = []
         similarities = []
         
         for i, (score, idx) in enumerate(zip(scores[0], indices[0])):
-            if idx != -1:  # FAISS returns -1 if fewer than k results found
-                # Calculate similarity score (cosine similarity)
+            if idx != -1:
                 similarity = 1.0 - score / 2.0
                 similarities.append(similarity)
                 chunks.append(self.metadata[idx])
                 logger.info(f"Retrieved chunk {i+1}: Similarity={similarity:.4f}, Source={self.metadata[idx]['metadata'].get('source', 'unknown')}")
         
-        # Apply reranking if requested
         if rerank and chunks:
             chunks, similarities = self._rerank(query, chunks, similarities)
         
         return chunks, similarities
     
     def _rerank(self, query: str, chunks: List[Dict], similarities: List[float]) -> Tuple[List[Dict], List[float]]:
-        """
-        Rerank retrieved chunks for better relevance
-        
-        Args:
-            query: Query string
-            chunks: List of retrieved chunks
-            similarities: List of similarity scores
-            
-        Returns:
-            Reranked chunks and similarity scores
-        """
         logger.info("Applying reranking")
-        
-        # A simple implementation of reranking using term overlap
-        # For more advanced reranking, you could use a cross-encoder model
         reranked_items = []
         
         query_terms = set(query.lower().split())
@@ -203,47 +132,33 @@ class DocumentRetriever:
         for chunk, similarity in zip(chunks, similarities):
             text = chunk["text"].lower()
             
-            # Count term overlap
             chunk_terms = set(text.split())
             overlap = len(query_terms.intersection(chunk_terms))
             
-            # Adjust similarity score with term overlap
             adjusted_score = similarity * (1 + 0.1 * overlap)
             
             reranked_items.append((chunk, adjusted_score))
         
-        # Sort by adjusted score in descending order
         reranked_items.sort(key=lambda x: x[1], reverse=True)
         
-        # Unzip the sorted items
         reranked_chunks, reranked_similarities = zip(*reranked_items) if reranked_items else ([], [])
         
         return list(reranked_chunks), list(reranked_similarities)
 
 class LLaMAGenerator:
-    """Class for generating responses using LLaMA"""
     
     def __init__(self, model_path: str = "/scratch/BDML25SP/llama-3b"):
-        """
-        Initialize the LLaMA model
-        
-        Args:
-            model_path: Path to the pretrained or fine-tuned LLaMA model
-        """
         logger.info(f"Loading LLaMA model from {model_path}")
         self.tokenizer = AutoTokenizer.from_pretrained(model_path)
         
-        # Configure model loading
         device = "cuda" if torch.cuda.is_available() else "cpu"
         
-        # For better performance on limited GPU memory
         load_config = {
             "device_map": "auto",
             "torch_dtype": torch.float16 if device == "cuda" else torch.float32,
         }
         
         if device == "cuda":
-            # Check available GPU memory and configure accordingly
             self.model = AutoModelForCausalLM.from_pretrained(
                 model_path, 
                 **load_config,
@@ -259,26 +174,11 @@ class LLaMAGenerator:
     def generate(self, 
                 prompt: str, 
                 max_tokens: int = 256, 
-                temperature: float = 0.7,
-                top_p: float = 0.9,
-                repetition_penalty: float = 1.1) -> str:
-        """
-        Generate text from prompt
-        
-        Args:
-            prompt: Input prompt
-            max_tokens: Maximum number of tokens to generate
-            temperature: Temperature for sampling
-            top_p: Top-p sampling probability
-            repetition_penalty: Penalty for repetition
-            
-        Returns:
-            Generated text
-        """
-        # Tokenize input
+                temperature: float = 0.1,
+                top_p: float = 0.85,
+                repetition_penalty: float = 1.15) -> str:
         inputs = self.tokenizer(prompt, return_tensors="pt").to(self.model.device)
         
-        # Generate text
         start_time = time.time()
         
         with torch.no_grad():
@@ -291,10 +191,8 @@ class LLaMAGenerator:
                 do_sample=temperature > 0,
             )
         
-        # Decode generated text
         generated_text = self.tokenizer.decode(outputs[0], skip_special_tokens=True)
         
-        # Remove the input prompt from the generated text
         if generated_text.startswith(prompt):
             generated_text = generated_text[len(prompt):].strip()
         
@@ -304,29 +202,16 @@ class LLaMAGenerator:
         return generated_text
 
 class RAGSystem:
-    """Complete RAG System combining retrieval and generation"""
     
     def __init__(self, 
                 index_path: str, 
                 metadata_path: str, 
                 embedding_model_name: str = "sentence-transformers/all-MiniLM-L6-v2",
                 llama_model_path: str = "/scratch/BDML25SP/llama-3b"):
-        """
-        Initialize the RAG system
-        
-        Args:
-            index_path: Path to the FAISS index
-            metadata_path: Path to the chunk metadata
-            embedding_model_name: Name of the embedding model
-            llama_model_path: Path to the LLaMA model
-        """
-        # Initialize embedding model
         self.embedding_model = EmbeddingModel(embedding_model_name)
         
-        # Initialize document retriever
         self.retriever = DocumentRetriever(index_path, metadata_path, self.embedding_model)
         
-        # Initialize generator
         self.generator = LLaMAGenerator(llama_model_path)
     
     def answer_question(self, 
@@ -334,35 +219,20 @@ class RAGSystem:
                         k: int = 5, 
                         rerank: bool = True,
                         show_retrieved: bool = False) -> Dict:
-        """
-        Answer a question using the RAG system
-        
-        Args:
-            question: Question to answer
-            k: Number of chunks to retrieve
-            rerank: Whether to apply reranking
-            show_retrieved: Whether to include retrieved chunks in the response
-            
-        Returns:
-            Dictionary with answer, retrieved chunks, and performance metrics
-        """
         logger.info(f"Processing question: {question}")
         
         start_time = time.time()
         
-        # Retrieve relevant chunks
         retrieval_start = time.time()
         chunks, similarities = self.retriever.search(question, k=k, rerank=rerank)
         retrieval_time = time.time() - retrieval_start
         
-        # Format context for LLM
         context_texts = [f"[Document {i+1}]: {chunk['text']}" for i, chunk in enumerate(chunks)]
         context = "\n\n".join(context_texts)
         
-        # Create prompt for generation
         prompt = self._create_prompt(question, context)
         
-        # Generate answer
+        logger.info(f"Generated prompt for LLM:\n{prompt}")
         generation_start = time.time()
         answer = self.generator.generate(prompt)
         generation_time = time.time() - generation_start
@@ -394,16 +264,6 @@ class RAGSystem:
         return result
     
     def _create_prompt(self, question: str, context: str) -> str:
-        """
-        Create a prompt for the LLM
-        
-        Args:
-            question: Question to answer
-            context: Retrieved context
-            
-        Returns:
-            Formatted prompt
-        """
         return f"""You are a helpful assistant. Answer the question based on the provided context.
 If the context doesn't contain relevant information, say "I don't have enough information to answer this question."
 
@@ -415,16 +275,6 @@ Question: {question}
 Answer:"""
 
     def benchmark(self, questions: List[str], k_values: List[int] = [3, 5, 7]) -> pd.DataFrame:
-        """
-        Benchmark the RAG system with different retrieval settings
-        
-        Args:
-            questions: List of questions to benchmark
-            k_values: List of k values to test
-            
-        Returns:
-            DataFrame with benchmark results
-        """
         results = []
         
         for question in tqdm(questions, desc="Benchmarking questions"):
@@ -447,18 +297,6 @@ Answer:"""
         return pd.DataFrame(results)
 
 def compare_with_finetuned(rag_system: RAGSystem, finetuned_model_path: str, questions: List[str]) -> pd.DataFrame:
-    """
-    Compare RAG system with fine-tuned LLaMA
-    
-    Args:
-        rag_system: Initialized RAG system
-        finetuned_model_path: Path to fine-tuned LLaMA model
-        questions: List of questions to compare
-        
-    Returns:
-        DataFrame with comparison results
-    """
-    # Initialize fine-tuned model
     finetuned_generator = LLaMAGenerator(finetuned_model_path)
     
     results = []
@@ -487,8 +325,6 @@ def compare_with_finetuned(rag_system: RAGSystem, finetuned_model_path: str, que
     return pd.DataFrame(results)
 
 if __name__ == "__main__":
-    # Example usage
-    # Parse arguments
     parser = argparse.ArgumentParser(description="Run the RAG System")
     parser.add_argument("--index_path", type=str, required=True, help="Path to the FAISS index")
     parser.add_argument("--metadata_path", type=str, required=True, help="Path to the chunk metadata (JSON or JSONL)")
@@ -498,7 +334,6 @@ if __name__ == "__main__":
     parser.add_argument("--benchmark", action="store_true", help="Run benchmark tests")
     args = parser.parse_args()
 
-    # Assign arguments to variables
     INDEX_PATH = args.index_path
     METADATA_PATH = args.metadata_path
     EMBEDDING_MODEL = args.embedding_model
@@ -506,7 +341,6 @@ if __name__ == "__main__":
     FINETUNED_MODEL_PATH = args.finetuned_model_path
     BENCHMARK = args.benchmark
     
-    # Initialize RAG system
     rag = RAGSystem(
         index_path=INDEX_PATH,
         metadata_path=METADATA_PATH,
@@ -514,7 +348,6 @@ if __name__ == "__main__":
         llama_model_path=LLAMA_MODEL_PATH
     )
     
-    # Example question
     question = "What is the climate?"
     result = rag.answer_question(question, show_retrieved=True)
     
@@ -522,7 +355,6 @@ if __name__ == "__main__":
     print(f"Answer: {result['answer']}")
     print(f"Total time: {result['performance']['total_time']:.2f} seconds")
     
-    # Benchmark different retrieval settings
     if BENCHMARK:
         benchmark_questions = [
             "How has the average global temperature changed over the last 100 years?",
@@ -541,7 +373,6 @@ if __name__ == "__main__":
         print("\nBenchmark Results:")
         print(benchmark_results[["question", "k", "rerank", "total_time", "retrieval_time", "generation_time"]])
         
-        # Compare with fine-tuned model
         comparison_results = compare_with_finetuned(rag, FINETUNED_MODEL_PATH, benchmark_questions)
         print("\nComparison with Fine-tuned Model:")
         print(comparison_results[["question", "rag_time", "ft_time", "time_difference"]])
