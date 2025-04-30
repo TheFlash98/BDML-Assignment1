@@ -238,7 +238,7 @@ class RAGSystem:
         generation_time = time.time() - generation_start
         
         total_time = time.time() - start_time
-        
+        logger.info(f"Answer generated: {answer}")
         result = {
             "question": question,
             "answer": answer,
