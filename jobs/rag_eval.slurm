@@ -15,4 +15,5 @@ singularity exec --bind /scratch --nv --overlay  /scratch/sk12184/overlay-25GB-5
 source /ext3/env.sh
 conda activate bdml_env
 cd projects/BDML-Assignment1/Assignment3
-python rag_system.py --index_path rag_database/faiss_index_flat.bin --metadata_path rag_database/chunks_metadata_flat.json --embedding_model "sentence-transformers/all-MiniLM-L6-v2" --llama_model_path /scratch/sk12184/llama3.2-3B-HF --finetuned_model_path /scratch/sk12184/output/checkpoint-652 --benchmark"
+python rag_system.py --index_path rag_database/faiss_index_flat.bin --metadata_path rag_database/chunks_metadata_flat.json --embedding_model "sentence-transformers/all-MiniLM-L6-v2" --llama_model_path /scratch/sk12184/llama3.2-3B-HF --finetuned_model_path /scratch/sk12184/output/checkpoint-652 --benchmark
+"
