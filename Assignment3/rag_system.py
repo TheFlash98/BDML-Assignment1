@@ -11,7 +11,7 @@ import logging
 from transformers import AutoTokenizer, AutoModel, AutoModelForCausalLM
 from sklearn.preprocessing import normalize
 import pandas as pd
-from tqdm.notebook import tqdm  # For better display in notebooks/Colab
+from tqdm import tqdm  # For better display in notebooks/Colab
 
 # Configure logging for better display in Colab
 import sys
