@@ -1,7 +1,7 @@
 #!/bin/bash
 #SBATCH --job-name=flatrag
 #SBATCH --account=csci_ga_3033_077-2025sp
-#SBATCH --partition=n1s8-v100-1
+#SBATCH --partition=c12m85-a100-1
 #SBATCH --open-mode=append
 #SBATCH --output=./%j_%x.out
 #SBATCH --error=./%j_%x.err
