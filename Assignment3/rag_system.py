@@ -283,6 +283,10 @@ Answer:"""
                     # Run RAG with current settings
                     result = self.answer_question(question, k=k, rerank=rerank)
                     
+                    # Calculate time per token
+                    total_tokens = len(result["answer"].split())
+                    time_per_token = result["performance"]["total_time"] / total_tokens if total_tokens > 0 else 0
+                    
                     # Record result
                     results.append({
                         "question": question,
@@ -292,6 +296,7 @@ Answer:"""
                         "total_time": result["performance"]["total_time"],
                         "retrieval_time": result["performance"]["retrieval_time"],
                         "generation_time": result["performance"]["generation_time"],
+                        "time_per_token": time_per_token,
                     })
         
         return pd.DataFrame(results)
@@ -313,6 +318,12 @@ def compare_with_finetuned(rag_system: RAGSystem, finetuned_model_path: str, que
         ft_answer = finetuned_generator.generate(ft_prompt)
         ft_time = time.time() - ft_start
         
+        rag_tokens = len(rag_result["answer"].split())
+        ft_tokens = len(ft_answer.split())
+        
+        rag_time_per_token = rag_time / rag_tokens if rag_tokens > 0 else 0
+        ft_time_per_token = ft_time / ft_tokens if ft_tokens > 0 else 0
+        
         results.append({
             "question": question,
             "rag_answer": rag_result["answer"],
@@ -320,6 +331,8 @@ def compare_with_finetuned(rag_system: RAGSystem, finetuned_model_path: str, que
             "rag_time": rag_time,
             "ft_time": ft_time,
             "time_difference": rag_time - ft_time,
+            "rag_time_per_token": rag_time_per_token,
+            "ft_time_per_token": ft_time_per_token,
         })
     
     return pd.DataFrame(results)
