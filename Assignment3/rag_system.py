@@ -382,7 +382,7 @@ if __name__ == "__main__":
             "Which countries are on track to meet their Paris Agreement targets?"
         ]
         embedding_model_name_str = EMBEDDING_MODEL.split("/")[-1]
-        index_name = INDEX_PATH.split("/")[0]
+        index_name = INDEX_PATH.split("/")[1]
         benchmark_results = rag.benchmark(benchmark_questions)
         print("\nBenchmark Results:")
         print(benchmark_results)
