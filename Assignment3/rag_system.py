@@ -368,11 +368,19 @@ if __name__ == "__main__":
             "What will happen if global warming exceeds 2°C above pre-industrial levels?",
             "Which countries are on track to meet their Paris Agreement targets?"
         ]
-        
+        embedding_model_name_str = EMBEDDING_MODEL.split("/")[-1]
+        index_name = INDEX_PATH.split("/")[0]
         benchmark_results = rag.benchmark(benchmark_questions)
         print("\nBenchmark Results:")
-        print(benchmark_results[["question", "k", "rerank", "total_time", "retrieval_time", "generation_time"]])
+        print(benchmark_results)
+        benchmark_file_name = f'benchmark_results_{index_name}_{embedding_model_name_str}.csv'
+        benchmark_results.to_csv(benchmark_file_name, index=False)
+        print("\nBenchmark Results saved to %s" % benchmark_file_name)
         
         comparison_results = compare_with_finetuned(rag, FINETUNED_MODEL_PATH, benchmark_questions)
         print("\nComparison with Fine-tuned Model:")
-        print(comparison_results[["question", "rag_time", "ft_time", "time_difference"]])
+        print(comparison_results)
+        comparison_file_name = f'comparison_results_{index_name}_{embedding_model_name_str}.csv'
+        comparison_results.to_csv(comparison_file_name, index=False)
+        print("\nComparison with Fine-tuned Model saved to %s" % comparison_file_name)
+        print("\nAll tasks completed.")
